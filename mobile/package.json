@@ -44,7 +44,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@config-plugins/detox": "^11.0.0",
+    "@config-plugins/detox": "^12.0.0",
     "@types/react": "~19.1.0",
     "detox": "^20.50.1",
     "react-test-renderer": "19.1.0",
