@@ -126,11 +126,17 @@ export default function CardsScreen() {
                       style={[styles.deckSlot, styles.deckSlotFilled, { borderColor: rarityColor }]}
                     >
                       <View style={[styles.deckSlotGlow, { backgroundColor: rarityColor }]} />
-                      <MaterialIcons name={iconName as any} size={28} color={rarityColor} />
-                      <Text style={styles.deckSlotName} numberOfLines={1}>{card.collectionCard.name}</Text>
-                      <Text style={[styles.deckSlotRarity, { color: rarityColor }]}>
-                        {getRarityName(card.collectionCard.rarity)}
-                      </Text>
+
+                      {/* Top content — grows to fill available space */}
+                      <View style={styles.deckSlotBody}>
+                        <MaterialIcons name={iconName as any} size={28} color={rarityColor} />
+                        <Text style={styles.deckSlotName} numberOfLines={1}>{card.collectionCard.name}</Text>
+                        <Text style={[styles.deckSlotRarity, { color: rarityColor }]}>
+                          {getRarityName(card.collectionCard.rarity)}
+                        </Text>
+                      </View>
+
+                      {/* HP bar — always pinned to bottom */}
                       <View style={styles.healthBarContainer}>
                         <View style={[
                           styles.healthBarFill,
@@ -427,15 +433,29 @@ const getStyles = (Colors: any) => StyleSheet.create({
   },
   cashbackText: { fontFamily: 'Manrope-ExtraBold', color: Colors.primary, fontSize: Fonts.sizes.xs },
   deckGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, justifyContent: 'center' },
+
+  // Slot — flex column, space-between так что HP-бар всегда внизу
   deckSlot: {
-    width: '30%', aspectRatio: 0.7, borderRadius: BorderRadius.base, alignItems: 'center',
-    justifyContent: 'center', padding: Spacing.sm, gap: 4,
+    width: '30%',
+    aspectRatio: 0.7,
+    borderRadius: BorderRadius.base,
+    padding: Spacing.sm,
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   deckSlotFilled: {
     backgroundColor: Colors.surfaceContainerLow, borderWidth: 2, overflow: 'hidden',
   },
   deckSlotGlow: {
     position: 'absolute', top: 0, left: 0, right: 0, height: 4, opacity: 0.6,
+  },
+  // Верхний блок контента — занимает всё свободное место
+  deckSlotBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
   deckSlotEmpty: {
     backgroundColor: Colors.surfaceContainerHigh, borderWidth: 2,
@@ -445,9 +465,15 @@ const getStyles = (Colors: any) => StyleSheet.create({
     fontSize: 10, fontFamily: 'Manrope-Bold', color: Colors.onSurface, textAlign: 'center',
   },
   deckSlotRarity: { fontSize: 9, fontFamily: 'Manrope-ExtraBold', textTransform: 'uppercase', letterSpacing: 1 },
+
+  // HP-бар — всегда прибит к низу слота
   healthBarContainer: {
-    width: '80%', height: 4, backgroundColor: Colors.surfaceContainerHigh, borderRadius: 2,
-    overflow: 'hidden', marginTop: 4
+    width: '90%',
+    height: 4,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 2,
   },
   healthBarFill: { height: '100%', borderRadius: 2 },
 
