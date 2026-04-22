@@ -22,8 +22,8 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
   const [failed, setFailed] = useState(false);
   const [biometricType, setBiometricType] = useState<string>('');
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  // Флаг: в данный момент показывается системный диалог аутентификации
-  const isAuthDialogOpen = useRef(false);
+  // true пока системный диалог аутентификации ещё не закрыт или AppState ещё не вернулся
+  const authPhaseRef = useRef(false);
   const colors = useThemeColor();
   const s = useMemo(() => mk(colors), [colors]);
 
@@ -44,33 +44,33 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
     if (isChecking) return;
     setIsChecking(true);
     setFailed(false);
+
+    // Отмечаем что мы в фазе аутентификации — любой inactive/background игнорируется
+    authPhaseRef.current = true;
+
     try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
       if (!hasHardware || !isEnrolled) {
+        authPhaseRef.current = false;
         setIsUnlocked(true);
         return;
       }
 
       const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-      if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
-        setBiometricType('face');
-      } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
-        setBiometricType('fingerprint');
-      } else {
-        setBiometricType('pin');
-      }
+      if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) setBiometricType('face');
+      else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) setBiometricType('fingerprint');
+      else setBiometricType('pin');
 
-      // Отмечаем: системный диалог открыт
-      isAuthDialogOpen.current = true;
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Войдите в MTBKBank',
         fallbackLabel: 'Использовать ПИН-код',
         cancelLabel: 'Отмена',
         disableDeviceFallback: false,
       });
-      // Диалог закрыт
-      isAuthDialogOpen.current = false;
+
+      // Сбрасываем фазу только после получения результата — AppState вернётся сам после
+      authPhaseRef.current = false;
 
       if (result.success) {
         lockScale.value = withSequence(
@@ -78,20 +78,19 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
           withTiming(0.9, { duration: 100 }),
           withTiming(1.0, { duration: 100 }),
         );
-        setTimeout(() => setIsUnlocked(true), 200);
+        setTimeout(() => setIsUnlocked(true), 300);
       } else {
         setFailed(true);
         triggerShake();
       }
     } catch {
-      isAuthDialogOpen.current = false;
+      authPhaseRef.current = false;
       setIsUnlocked(true);
     } finally {
       setIsChecking(false);
     }
   };
 
-  // Проверяем наличие токена и запускаем биометрию
   useEffect(() => {
     SecureStore.getItemAsync('token')
       .then(t => {
@@ -101,14 +100,13 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
       .catch(() => setTokenChecked(true));
   }, []);
 
-  // Блокировка при возвращении из фона
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       const prev = appStateRef.current;
 
-      // Приложение вернулось из фона (не из-за диалога аутентификации)
       if (prev.match(/inactive|background/) && next === 'active') {
-        if (!isAuthDialogOpen.current && token) {
+        // Возвращаемся в active — если не из-за диалога аутентификации — перезапрашиваем
+        if (!authPhaseRef.current && token) {
           setIsUnlocked(false);
           setFailed(false);
           authenticate();
@@ -116,7 +114,7 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
       }
 
       // Сбрасываем только при полном сворачивании (без диалога)
-      if (next === 'background' && !isAuthDialogOpen.current) {
+      if (next === 'background' && !authPhaseRef.current) {
         setIsUnlocked(false);
       }
 
