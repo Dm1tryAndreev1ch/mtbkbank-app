@@ -11,18 +11,16 @@ import {
   Fonts, Spacing, BorderRadius, Shadows,
   getRarityName,
 } from '../../constants/theme';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useThemeColor } from '../../hooks/useThemeColor';
 
 export default function CardsScreen() {
   const { user, cards, decks, quests, loadCards, loadDecks, loadQuests, loadUser, unreadCount } = useStore();
   const [filter, setFilter] = useState<string | null>(null);
 
-  // Modals
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [pickerModalVisible, setPickerModalVisible] = useState(false);
   
-  // Selected Contexts
   const [selectedCard, setSelectedCard] = useState<any>(null);
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
 
@@ -48,7 +46,6 @@ export default function CardsScreen() {
   const activeDeck = decks.find((d: any) => d.isActive);
   const filteredCards = filter ? cards.filter((c: any) => c.collectionCard.rarity === filter) : cards;
 
-  // Handles Un-Equip natively via an Alert
   const handleSlotTap = (slotCard: any, index: number) => {
     if (slotCard) {
       Alert.alert(
@@ -77,32 +74,6 @@ export default function CardsScreen() {
   const handleOpenDetail = (card: any) => {
     setSelectedCard(card);
     setDetailModalVisible(true);
-  };
-
-  const handleConvert = async (cardId: string, cardName: string) => {
-    Alert.alert(
-      'Конвертировать карту',
-      `Уничтожить "${cardName}" и получить MB баллы?`,
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Конвертировать',
-          style: 'destructive',
-          onPress: async () => {
-             setDetailModalVisible(false);
-            try {
-              const { data } = await apiClient.convertCard(cardId);
-              Alert.alert('Готово!', `Получено ${data.totalMB || 0} MB баллов!`);
-              loadCards();
-              loadUser();
-              loadDecks();
-            } catch (err) {
-              Alert.alert('Ошибка', 'Не удалось конвертировать карту');
-            }
-          },
-        },
-      ]
-    );
   };
 
   const handleMockAction = (actionName: string) => {
@@ -159,7 +130,6 @@ export default function CardsScreen() {
                       <Text style={[styles.deckSlotRarity, { color: rarityColor }]}>
                         {getRarityName(card.collectionCard.rarity)}
                       </Text>
-                      {/* Health bar */}
                       <View style={styles.healthBarContainer}>
                         <View style={[
                           styles.healthBarFill,
@@ -291,14 +261,11 @@ export default function CardsScreen() {
                 <View style={[styles.rarityBadge, { backgroundColor: rarityColor }]}>
                    <Text style={styles.rarityBadgeText}>{getRarityName(c.rarity)}</Text>
                 </View>
-
                 <View style={styles.cardItemIcon}>
                    <MaterialIcons name={(c.brandIcon as any) || 'style'} size={32} color={rarityColor} />
                 </View>
-
                 <Text style={styles.cardItemName} numberOfLines={1}>{c.name}</Text>
                 <Text style={styles.cardItemBrand}>{c.brandName}</Text>
-                
                 <View style={styles.cardItemStats}>
                   <View style={styles.statRow}>
                     <MaterialIcons name="favorite" size={12} color={card.health > 50 ? '#22c55e' : colors.error} />
@@ -322,7 +289,7 @@ export default function CardsScreen() {
         </View>
       </ScrollView>
 
-      {/* Picker Modal (Bottom Sheet mock) */}
+      {/* Picker Modal */}
       <Modal visible={pickerModalVisible} transparent animationType="slide">
          <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
@@ -332,7 +299,6 @@ export default function CardsScreen() {
                    <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
                  </TouchableOpacity>
                </View>
-
                <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
                   {cards.length === 0 ? (
                       <Text style={styles.emptyStateText}>Нет доступных карточек</Text>
@@ -395,17 +361,12 @@ export default function CardsScreen() {
                     <View style={styles.actionButtonsCol}>
                         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary }]} onPress={() => handleMockAction('Жертвоприношение (Sacrifice)')}>
                            <MaterialIcons name="auto-awesome" size={20} color={colors.onPrimary} />
-                           <Text style={styles.actionBtnText}>Пожертвовать для HP</Text>
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.secondaryContainer }]} onPress={() => handleConvert(selectedCard.id, selectedCard.collectionCard.name)}>
-                           <MaterialIcons name="recycling" size={20} color={colors.onSurface} />
-                           <Text style={[styles.actionBtnText, { color: colors.onSurface }]}>Конвертировать ({selectedCard.collectionCard.mbValue} MB)</Text>
+                           <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>Пожертвовать для HP</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.surfaceContainerHigh }]} onPress={() => handleMockAction('Торговля (Trade)')}>
                            <MaterialIcons name="swap-horiz" size={20} color={colors.onSurface} />
-                           <Text style={styles.actionBtnText}>Обменять / Подарить</Text>
+                           <Text style={[styles.actionBtnText, { color: colors.onSurface }]}>Обменять / Подарить</Text>
                         </TouchableOpacity>
                     </View>
                   </>
@@ -565,7 +526,8 @@ const getStyles = (Colors: any) => StyleSheet.create({
     fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, textAlign: 'center', fontFamily: 'Manrope-Medium'
   },
   cardItemStats: {
-    flexDirection: 'row', justifyContent: 'space-around', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.transparentBorder
+    flexDirection: 'row', justifyContent: 'space-around', marginTop: 8, paddingTop: 8,
+    borderTopWidth: 1, borderTopColor: Colors.transparentBorder
   },
   statRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   statText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant },
@@ -577,7 +539,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
   emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.outlineVariant, textAlign: 'center', fontFamily: 'Manrope-Medium' },
   emptySlotText: { fontSize: 10, color: Colors.outlineVariant, fontFamily: 'Manrope-Medium', textAlign: 'center' },
 
-  // Picker Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalContent: {
      backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,
@@ -594,7 +555,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
   pickerItemDetails: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, marginTop: 4 },
   pickerRarity: { fontSize: 10, fontFamily: 'Manrope-ExtraBold', textTransform: 'uppercase' },
 
-  // Detail Modal
   modalCenterOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: Spacing.xl },
   detailCardContent: {
       backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.xl, padding: Spacing.xl,
@@ -611,8 +571,8 @@ const getStyles = (Colors: any) => StyleSheet.create({
   detailStatsBlock: { flexDirection: 'row', gap: Spacing.xl, marginVertical: Spacing.xl },
   detailStat: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerHigh, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
   detailStatText: { fontFamily: 'Manrope-Bold', color: Colors.onSurface, fontSize: Fonts.sizes.sm },
-  
+
   actionButtonsCol: { width: '100%', gap: Spacing.sm },
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: BorderRadius.base, gap: 8 },
-  actionBtnText: { fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface, fontSize: Fonts.sizes.sm }
+  actionBtnText: { fontFamily: 'Manrope-ExtraBold', fontSize: Fonts.sizes.sm },
 });
