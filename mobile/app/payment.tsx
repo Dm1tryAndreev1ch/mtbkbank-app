@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -129,33 +129,52 @@ export default function PaymentScreen() {
           ))}
         </ScrollView>
       ) : (
-        <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined} style={{flex:1}}>
-          <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
-            <View style={s.svcHeader}>
-              <View style={[s.svcIcoBig, { backgroundColor: `${selected.color}18` }]}>
-                <MaterialIcons name={service.icon as any} size={32} color={selected.color} />
-              </View>
-              <Text style={s.svcTitle}>{service.name}</Text>
-              <Text style={s.svcCat}>{selected.title}</Text>
-            </View>
-            <Text style={s.fieldLbl}>Номер лицевого счёта</Text>
-            <TextInput style={s.input} value={account} onChangeText={setAccount} placeholder="Введите номер счёта" placeholderTextColor={colors.outlineVariant} keyboardType="numeric" />
-            <Text style={s.fieldLbl}>Сумма оплаты</Text>
-            <TextInput style={[s.input, s.inputBig]} value={amount} onChangeText={setAmount} placeholder="0.00 ₽" placeholderTextColor={colors.outlineVariant} keyboardType="numeric" />
-            {mainAcc && (
-              <View style={s.fromCard}>
-                <MaterialIcons name="credit-card" size={20} color={colors.primary} />
-                <View style={{flex:1}}>
-                  <Text style={s.fromLbl}>Списание с</Text>
-                  <Text style={s.fromNum}>•••• {mainAcc.bankCards?.[0]?.maskedNumber?.slice(-4) || '0000'}</Text>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
+              <View style={s.svcHeader}>
+                <View style={[s.svcIcoBig, { backgroundColor: `${selected.color}18` }]}>
+                  <MaterialIcons name={service.icon as any} size={32} color={selected.color} />
                 </View>
-                <Text style={s.fromBal}>{formatMoney(mainAcc.balance)}</Text>
+                <Text style={s.svcTitle}>{service.name}</Text>
+                <Text style={s.svcCat}>{selected.title}</Text>
               </View>
-            )}
-            <TouchableOpacity style={[s.btn, loading && {opacity:0.7}]} onPress={handlePay} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.btnT}>Оплатить</Text>}
-            </TouchableOpacity>
-          </ScrollView>
+              <Text style={s.fieldLbl}>Номер лицевого счёта</Text>
+              <TextInput
+                style={s.input}
+                value={account}
+                onChangeText={setAccount}
+                placeholder="Введите номер счёта"
+                placeholderTextColor={colors.outlineVariant}
+                keyboardType="numeric"
+                returnKeyType="next"
+              />
+              <Text style={s.fieldLbl}>Сумма оплаты</Text>
+              <TextInput
+                style={[s.input, s.inputBig]}
+                value={amount}
+                onChangeText={setAmount}
+                placeholder="0.00 ₽"
+                placeholderTextColor={colors.outlineVariant}
+                keyboardType="numeric"
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+              />
+              {mainAcc && (
+                <View style={s.fromCard}>
+                  <MaterialIcons name="credit-card" size={20} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.fromLbl}>Списание с</Text>
+                    <Text style={s.fromNum}>•••• {mainAcc.bankCards?.[0]?.maskedNumber?.slice(-4) || '0000'}</Text>
+                  </View>
+                  <Text style={s.fromBal}>{formatMoney(mainAcc.balance)}</Text>
+                </View>
+              )}
+              <TouchableOpacity style={[s.btn, loading && { opacity: 0.7 }]} onPress={handlePay} disabled={loading}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.btnT}>Оплатить</Text>}
+              </TouchableOpacity>
+            </ScrollView>
+          </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
       )}
     </SafeAreaView>
@@ -163,35 +182,35 @@ export default function PaymentScreen() {
 }
 
 const mk = (C: any) => StyleSheet.create({
-  root: { flex:1, backgroundColor:C.background },
-  hdr: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:Spacing.base, paddingVertical:Spacing.sm, borderBottomWidth:1, borderBottomColor:C.transparentBorder },
-  back: { padding:8 },
-  hdrt: { fontSize:Fonts.sizes.lg, fontFamily:'Manrope-Bold', color:C.onSurface, flex:1, textAlign:'center' },
-  list: { padding:Spacing.xl, paddingBottom:80 },
-  searchBar: { flexDirection:'row', alignItems:'center', gap:Spacing.sm, backgroundColor:C.surfaceContainerLow, borderRadius:BorderRadius.base, paddingHorizontal:Spacing.base, paddingVertical:4, borderWidth:1, borderColor:C.transparentBorder, marginBottom:Spacing.xl },
-  searchInput: { flex:1, fontSize:Fonts.sizes.base, color:C.onSurface, paddingVertical:Spacing.md, fontFamily:'Manrope-Medium' },
-  secTitle: { fontSize:Fonts.sizes.sm, fontFamily:'Manrope-Bold', color:C.onSurfaceVariant, letterSpacing:2, marginBottom:Spacing.base },
-  catRow: { flexDirection:'row', alignItems:'center', backgroundColor:C.surfaceContainerLowest, borderRadius:BorderRadius.lg, padding:Spacing.base, marginBottom:Spacing.sm, borderWidth:1, borderColor:C.transparentBorder, ...Shadows.sm },
-  catIco: { width:48, height:48, borderRadius:14, alignItems:'center', justifyContent:'center' },
-  catTxt: { flex:1, marginLeft:Spacing.base },
-  catTitle: { fontSize:Fonts.sizes.base, fontFamily:'Manrope-Bold', color:C.onSurface },
-  catDesc: { fontSize:Fonts.sizes.sm, fontFamily:'Manrope-Medium', color:C.onSurfaceVariant, marginTop:2 },
-  svcRow: { flexDirection:'row', alignItems:'center', gap:Spacing.base, backgroundColor:C.surfaceContainerLowest, borderRadius:BorderRadius.lg, padding:Spacing.base, marginBottom:Spacing.sm, borderWidth:1, borderColor:C.transparentBorder },
-  svcIco: { width:40, height:40, borderRadius:12, alignItems:'center', justifyContent:'center' },
-  svcName: { flex:1, fontSize:Fonts.sizes.base, fontFamily:'Manrope-Bold', color:C.onSurface },
-  empty: { textAlign:'center', color:C.onSurfaceVariant, marginTop:Spacing['2xl'], fontFamily:'Manrope-Medium' },
-  form: { padding:Spacing.xl, paddingBottom:80 },
-  svcHeader: { alignItems:'center', marginBottom:Spacing.xl },
-  svcIcoBig: { width:64, height:64, borderRadius:20, alignItems:'center', justifyContent:'center', marginBottom:Spacing.base },
-  svcTitle: { fontSize:Fonts.sizes.xl, fontFamily:'Manrope-ExtraBold', color:C.onSurface },
-  svcCat: { fontSize:Fonts.sizes.sm, fontFamily:'Manrope-Medium', color:C.onSurfaceVariant, marginTop:4 },
-  fieldLbl: { fontSize:Fonts.sizes.sm, fontFamily:'Manrope-Bold', color:C.onSurfaceVariant, marginBottom:8, marginTop:Spacing.base },
-  input: { backgroundColor:C.surfaceContainerLowest, color:C.onSurface, fontFamily:'Manrope-Medium', fontSize:Fonts.sizes.base, padding:Spacing.base, borderRadius:BorderRadius.md, borderWidth:1, borderColor:C.transparentBorder },
-  inputBig: { fontSize:Fonts.sizes.xl, fontFamily:'Manrope-Bold', textAlign:'center', paddingVertical:Spacing.lg },
-  fromCard: { flexDirection:'row', alignItems:'center', gap:Spacing.base, backgroundColor:C.surfaceContainerLowest, borderRadius:BorderRadius.md, padding:Spacing.base, marginTop:Spacing.xl, borderWidth:1, borderColor:C.transparentBorder },
-  fromLbl: { fontSize:Fonts.sizes.xs, fontFamily:'Manrope-Medium', color:C.onSurfaceVariant },
-  fromNum: { fontSize:Fonts.sizes.base, fontFamily:'Manrope-Bold', color:C.onSurface },
-  fromBal: { fontSize:Fonts.sizes.sm, fontFamily:'Manrope-Bold', color:C.primary },
-  btn: { backgroundColor:C.primary, borderRadius:BorderRadius.base, paddingVertical:Spacing.base, alignItems:'center', marginTop:Spacing.xl, ...Shadows.primary },
-  btnT: { color:C.onPrimary, fontFamily:'Manrope-ExtraBold', fontSize:Fonts.sizes.md },
+  root: { flex: 1, backgroundColor: C.background },
+  hdr: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: C.transparentBorder },
+  back: { padding: 8 },
+  hdrt: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-Bold', color: C.onSurface, flex: 1, textAlign: 'center' },
+  list: { padding: Spacing.xl, paddingBottom: 80 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: C.surfaceContainerLow, borderRadius: BorderRadius.base, paddingHorizontal: Spacing.base, paddingVertical: 4, borderWidth: 1, borderColor: C.transparentBorder, marginBottom: Spacing.xl },
+  searchInput: { flex: 1, fontSize: Fonts.sizes.base, color: C.onSurface, paddingVertical: Spacing.md, fontFamily: 'Manrope-Medium' },
+  secTitle: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant, letterSpacing: 2, marginBottom: Spacing.base },
+  catRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.base, marginBottom: Spacing.sm, borderWidth: 1, borderColor: C.transparentBorder, ...Shadows.sm },
+  catIco: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  catTxt: { flex: 1, marginLeft: Spacing.base },
+  catTitle: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: C.onSurface },
+  catDesc: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant, marginTop: 2 },
+  svcRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base, backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.base, marginBottom: Spacing.sm, borderWidth: 1, borderColor: C.transparentBorder },
+  svcIco: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  svcName: { flex: 1, fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: C.onSurface },
+  empty: { textAlign: 'center', color: C.onSurfaceVariant, marginTop: Spacing['2xl'], fontFamily: 'Manrope-Medium' },
+  form: { padding: Spacing.xl, paddingBottom: 80 },
+  svcHeader: { alignItems: 'center', marginBottom: Spacing.xl },
+  svcIcoBig: { width: 64, height: 64, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.base },
+  svcTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: C.onSurface },
+  svcCat: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant, marginTop: 4 },
+  fieldLbl: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant, marginBottom: 8, marginTop: Spacing.base },
+  input: { backgroundColor: C.surfaceContainerLowest, color: C.onSurface, fontFamily: 'Manrope-Medium', fontSize: Fonts.sizes.base, padding: Spacing.base, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: C.transparentBorder },
+  inputBig: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', textAlign: 'center', paddingVertical: Spacing.lg },
+  fromCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base, backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.md, padding: Spacing.base, marginTop: Spacing.xl, borderWidth: 1, borderColor: C.transparentBorder },
+  fromLbl: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant },
+  fromNum: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: C.onSurface },
+  fromBal: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.primary },
+  btn: { backgroundColor: C.primary, borderRadius: BorderRadius.base, paddingVertical: Spacing.base, alignItems: 'center', marginTop: Spacing.xl, ...Shadows.primary },
+  btnT: { color: C.onPrimary, fontFamily: 'Manrope-ExtraBold', fontSize: Fonts.sizes.md },
 });
