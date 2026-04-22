@@ -16,69 +16,24 @@ import Animated2, { FadeIn } from 'react-native-reanimated';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import { LinearGradient } from 'expo-linear-gradient';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Rarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
-interface ShopCard {
-  id: number;
+interface CollectionCard {
+  id: string;
   name: string;
   rarity: Rarity;
-  price: number;
-  description: string;
-  emoji: string;
-  partnerColor: string;
-  bonus: string;
+  cashbackPercent: number;
+  description?: string;
+  brandName?: string;
+  brandIcon?: string;
+  maxHealth: number;
+  mbPrice?: number;
+  isActive: boolean;
 }
 
-// ─── All cards pool ───────────────────────────────────────────────────────────
-
-const ALL_SHOP_CARDS: ShopCard[] = [
-  { id: 1,  name: "McDonald's",    rarity: 'COMMON',    price: 150,  emoji: '🍔', partnerColor: '#FFC72C', description: 'Кэшбэк в McDonald\'s', bonus: '+3% кэшбэк навсегда' },
-  { id: 2,  name: 'Starbucks',     rarity: 'RARE',      price: 600,  emoji: '☕️', partnerColor: '#00704A', description: 'Бонусы за кофе',       bonus: '+5% кэшбэк в Starbucks' },
-  { id: 3,  name: 'IKEA',          rarity: 'EPIC',      price: 1200, emoji: '🛋',  partnerColor: '#0058A3', description: 'Скидки на мебель',     bonus: '+7% кэшбэк в IKEA' },
-  { id: 4,  name: 'Spotify',       rarity: 'RARE',      price: 550,  emoji: '🎵', partnerColor: '#1DB954', description: 'Музыка без рекламы',   bonus: '+5% кэшбэк на подписку' },
-  { id: 5,  name: 'Netflix',       rarity: 'EPIC',      price: 1400, emoji: '🎬', partnerColor: '#E50914', description: 'Кино и сериалы',       bonus: '+8% кэшбэк Netflix' },
-  { id: 6,  name: 'Nike',          rarity: 'RARE',      price: 700,  emoji: '👟', partnerColor: '#111111', description: 'Скидки на спорттовары', bonus: '+5% кэшбэк в Nike' },
-  { id: 7,  name: 'Apple',         rarity: 'LEGENDARY', price: 3000, emoji: '🍎', partnerColor: '#555555', description: 'Бонусы Apple Store',   bonus: '+10% кэшбэк Apple' },
-  { id: 8,  name: 'Zara',          rarity: 'COMMON',    price: 200,  emoji: '👗', partnerColor: '#1a1a1a', description: 'Мода по выгодной цене', bonus: '+3% кэшбэк в Zara' },
-  { id: 9,  name: 'Wildberries',   rarity: 'COMMON',    price: 100,  emoji: '📦', partnerColor: '#A020F0', description: 'Онлайн-шопинг',        bonus: '+2% кэшбэк WB' },
-  { id: 10, name: 'Ozon',          rarity: 'COMMON',    price: 120,  emoji: '🛒', partnerColor: '#005BFF', description: 'Маркетплейс',           bonus: '+2% кэшбэк Ozon' },
-  { id: 11, name: 'Burger King',   rarity: 'COMMON',    price: 130,  emoji: '👑', partnerColor: '#D62300', description: 'Вкусные бургеры',      bonus: '+3% кэшбэк BK' },
-  { id: 12, name: 'KFC',           rarity: 'COMMON',    price: 140,  emoji: '🍗', partnerColor: '#F40027', description: 'Курица и стрипсы',     bonus: '+3% кэшбэк KFC' },
-  { id: 13, name: 'Лента',         rarity: 'RARE',      price: 500,  emoji: '🏪', partnerColor: '#E4202C', description: 'Продукты питания',     bonus: '+4% кэшбэк в Ленте' },
-  { id: 14, name: 'Перекрёсток',   rarity: 'RARE',      price: 520,  emoji: '🛒', partnerColor: '#009A3D', description: 'Свежие продукты',      bonus: '+4% кэшбэк Перекрёсток' },
-  { id: 15, name: 'Яндекс',        rarity: 'EPIC',      price: 1100, emoji: '🔍', partnerColor: '#FC3F1D', description: 'Экосистема Яндекс',    bonus: '+6% кэшбэк Яндекс' },
-  { id: 16, name: 'ВкусВилл',      rarity: 'RARE',      price: 580,  emoji: '🥗', partnerColor: '#5DB15A', description: 'Здоровое питание',     bonus: '+5% кэшбэк ВкусВилл' },
-  { id: 17, name: 'Детский мир',   rarity: 'COMMON',    price: 180,  emoji: '🧸', partnerColor: '#F6921E', description: 'Товары для детей',     bonus: '+3% кэшбэк ДМ' },
-  { id: 18, name: 'Самокат',       rarity: 'RARE',      price: 600,  emoji: '🛵', partnerColor: '#FF5C00', description: 'Быстрая доставка',     bonus: '+5% кэшбэк Самокат' },
-  { id: 19, name: 'Delivery Club', rarity: 'RARE',      price: 560,  emoji: '🚴', partnerColor: '#FF2D55', description: 'Доставка еды',         bonus: '+4% кэшбэк DC' },
-  { id: 20, name: 'DNS',           rarity: 'LEGENDARY', price: 2500, emoji: '💻', partnerColor: '#E42313', description: 'Техника и электроника', bonus: '+9% кэшбэк DNS' },
-  { id: 21, name: 'Steam',         rarity: 'LEGENDARY', price: 3500, emoji: '🎮', partnerColor: '#1B2838', description: 'Игровая платформа',    bonus: '+12% кэшбэк Steam' },
-  { id: 22, name: 'Золотое яблоко',rarity: 'EPIC',      price: 1500, emoji: '💄', partnerColor: '#B5A642', description: 'Красота и уход',       bonus: '+8% кэшбэк ЗЯ' },
-];
-
-// Weighted random by rarity
-const RARITY_WEIGHTS: Record<Rarity, number> = {
-  COMMON: 50, RARE: 30, EPIC: 15, LEGENDARY: 5,
-};
-
-function rollShopCards(): ShopCard[] {
-  const picked: ShopCard[] = [];
-  const pool = [...ALL_SHOP_CARDS];
-  while (picked.length < 6 && pool.length > 0) {
-    const totalWeight = pool.reduce((s, c) => s + RARITY_WEIGHTS[c.rarity], 0);
-    let r = Math.random() * totalWeight;
-    const idx = pool.findIndex((c) => { r -= RARITY_WEIGHTS[c.rarity]; return r <= 0; }) ?? 0;
-    picked.push(pool.splice(idx < 0 ? 0 : idx, 1)[0]);
-  }
-  return picked;
-}
-
-const REFRESH_HOURS = 8;
-const FORCE_REFRESH_COST = 500;
-
-// ─── Rarity helpers ──────────────────────────────────────────────────────────
+// ─── Rarity helpers ───────────────────────────────────────────────────────────
 
 const RARITY_GRADIENTS: Record<Rarity, [string, string, string]> = {
   COMMON:    ['#4b5563', '#374151', '#1f2937'],
@@ -91,6 +46,10 @@ const RARITY_BADGE_COLORS: Record<Rarity, string> = {
   COMMON: '#9ca3af', RARE: '#60a5fa', EPIC: '#a78bfa', LEGENDARY: '#fbbf24',
 };
 
+const DEFAULT_PRICES: Record<Rarity, number> = {
+  COMMON: 300, RARE: 800, EPIC: 1500, LEGENDARY: 3500,
+};
+
 function formatTimer(ms: number): string {
   if (ms <= 0) return '00:00:00';
   const h = Math.floor(ms / 3600000);
@@ -99,7 +58,7 @@ function formatTimer(ms: number): string {
   return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
 }
 
-// ─── LegendaryGlow component ─────────────────────────────────────────────────
+// ─── LegendaryGlow ────────────────────────────────────────────────────────────
 
 function LegendaryGlow() {
   const anim = useRef(new Animated.Value(0)).current;
@@ -111,29 +70,34 @@ function LegendaryGlow() {
       ])
     ).start();
   }, []);
-  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.55] });
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.15, 0.5] });
   return (
-    <Animated.View style={[
-      StyleSheet.absoluteFill,
-      { borderRadius: BorderRadius.base, backgroundColor: '#fbbf24', opacity },
-    ]} pointerEvents="none" />
+    <Animated.View
+      style={[StyleSheet.absoluteFill, { borderRadius: BorderRadius.base, backgroundColor: '#fbbf24', opacity }]}
+      pointerEvents="none"
+    />
   );
 }
 
 // ─── ShopCardItem ─────────────────────────────────────────────────────────────
 
 interface ShopCardItemProps {
-  card: ShopCard;
+  card: CollectionCard;
   purchased: boolean;
   canAfford: boolean;
-  onBuy: (card: ShopCard) => void;
-  colors: any;
+  onBuy: (card: CollectionCard) => void;
 }
 
-function ShopCardItem({ card, purchased, canAfford, onBuy, colors }: ShopCardItemProps) {
+function ShopCardItem({ card, purchased, canAfford, onBuy }: ShopCardItemProps) {
   const gradient = RARITY_GRADIENTS[card.rarity];
   const badgeColor = RARITY_BADGE_COLORS[card.rarity];
   const isLegendary = card.rarity === 'LEGENDARY';
+  const price = card.mbPrice ?? DEFAULT_PRICES[card.rarity];
+  const initials = (card.brandName ?? card.name)
+    .split(' ')
+    .slice(0, 2)
+    .map((w: string) => w[0]?.toUpperCase() ?? '')
+    .join('');
 
   return (
     <View style={shopStyles.cardWrap}>
@@ -145,21 +109,25 @@ function ShopCardItem({ card, purchased, canAfford, onBuy, colors }: ShopCardIte
           <Text style={shopStyles.rarityBadgeText}>{getRarityName(card.rarity).toUpperCase()}</Text>
         </View>
 
-        {/* Stars for legendary */}
-        {isLegendary && (
-          <View style={shopStyles.starsRow}>
-            {['✨', '⭐', '✨'].map((s, i) => <Text key={i} style={shopStyles.starText}>{s}</Text>)}
+        {/* Brand icon / initials */}
+        <View style={shopStyles.brandIconWrap}>
+          <View style={[shopStyles.brandCircle, { borderColor: badgeColor }]}>
+            {card.brandIcon ? (
+              <MaterialIcons name={toMaterialIconName(card.brandIcon) as any} size={32} color={badgeColor} />
+            ) : (
+              <Text style={[shopStyles.initialsText, { color: badgeColor }]}>{initials}</Text>
+            )}
           </View>
-        )}
-
-        {/* Emoji */}
-        <Text style={shopStyles.cardEmoji}>{card.emoji}</Text>
+        </View>
 
         {/* Name */}
-        <Text style={shopStyles.cardName} numberOfLines={1}>{card.name}</Text>
+        <Text style={shopStyles.cardName} numberOfLines={1}>{card.brandName ?? card.name}</Text>
 
-        {/* Bonus */}
-        <Text style={shopStyles.cardBonus} numberOfLines={2}>{card.bonus}</Text>
+        {/* Cashback */}
+        <View style={shopStyles.cashbackRow}>
+          <MaterialIcons name="percent" size={12} color="rgba(255,255,255,0.9)" />
+          <Text style={shopStyles.cashbackText}>{card.cashbackPercent}% кэшбэк</Text>
+        </View>
 
         {/* Price + Buy */}
         {purchased ? (
@@ -174,12 +142,11 @@ function ShopCardItem({ card, purchased, canAfford, onBuy, colors }: ShopCardIte
             disabled={!canAfford}
             activeOpacity={0.8}
           >
-            <Text style={shopStyles.buyBtnText}>{card.price.toLocaleString('ru-RU')} 💎</Text>
+            <Text style={shopStyles.buyBtnText}>{price.toLocaleString('ru-RU')} MB</Text>
           </TouchableOpacity>
         )}
       </LinearGradient>
 
-      {/* Purchased overlay */}
       {purchased && <View style={shopStyles.purchasedOverlay} />}
     </View>
   );
@@ -187,17 +154,23 @@ function ShopCardItem({ card, purchased, canAfford, onBuy, colors }: ShopCardIte
 
 const shopStyles = StyleSheet.create({
   cardWrap: { width: '47%', borderRadius: BorderRadius.base, overflow: 'hidden', ...Shadows.md },
-  cardGradient: { padding: Spacing.md, gap: 6, minHeight: 200, borderRadius: BorderRadius.base, overflow: 'hidden' },
+  cardGradient: { padding: Spacing.md, gap: 6, minHeight: 210, borderRadius: BorderRadius.base, overflow: 'hidden' },
   rarityBadge: {
     position: 'absolute', top: 8, right: 8,
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: BorderRadius.full,
   },
   rarityBadgeText: { fontSize: 7, fontFamily: 'Manrope-ExtraBold', color: '#fff', letterSpacing: 0.5 },
-  starsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  starText: { fontSize: 12 },
-  cardEmoji: { fontSize: 42, textAlign: 'center', marginTop: 16 },
+  brandIconWrap: { alignItems: 'center', marginTop: 20, marginBottom: 4 },
+  brandCircle: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  initialsText: { fontSize: 22, fontFamily: 'Manrope-ExtraBold' },
   cardName: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-ExtraBold', color: '#fff', textAlign: 'center' },
-  cardBonus: { fontSize: 10, fontFamily: 'Manrope-Medium', color: 'rgba(255,255,255,0.75)', textAlign: 'center' },
+  cashbackRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
+  cashbackText: { fontSize: 10, fontFamily: 'Manrope-Bold', color: 'rgba(255,255,255,0.85)' },
   buyBtn: {
     backgroundColor: 'rgba(255,255,255,0.25)',
     borderRadius: BorderRadius.full, paddingVertical: 8,
@@ -221,22 +194,52 @@ const shopStyles = StyleSheet.create({
 
 // ─── ShopTab ──────────────────────────────────────────────────────────────────
 
-function ShopTab({ userPoints, onPointsChange, colors, styles }: {
+const REFRESH_HOURS = 8;
+const FORCE_REFRESH_COST = 500;
+
+function ShopTab({ userPoints, onPointsChange, colors }: {
   userPoints: number;
   onPointsChange: (delta: number) => void;
   colors: any;
-  styles: any;
 }) {
-  const [shopCards, setShopCards] = useState<ShopCard[]>(() => rollShopCards());
-  const [purchasedIds, setPurchasedIds] = useState<number[]>([]);
+  const [allCards, setAllCards] = useState<CollectionCard[]>([]);
+  const [shopCards, setShopCards] = useState<CollectionCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [purchasedIds, setPurchasedIds] = useState<string[]>([]);
   const [nextRefresh, setNextRefresh] = useState<Date>(() => {
     const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS); return d;
   });
   const [timerMs, setTimerMs] = useState(0);
   const [filterRarity, setFilterRarity] = useState<Rarity | null>(null);
-  const [confirmCard, setConfirmCard] = useState<ShopCard | null>(null);
-  const [successCard, setSuccessCard] = useState<ShopCard | null>(null);
+  const [confirmCard, setConfirmCard] = useState<CollectionCard | null>(null);
+  const [successCard, setSuccessCard] = useState<CollectionCard | null>(null);
   const successAnim = useRef(new Animated.Value(0)).current;
+
+  // Load EPIC + LEGENDARY cards from backend
+  const loadShopCards = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [epicRes, legendaryRes] = await Promise.all([
+        apiClient.getCollection('EPIC'),
+        apiClient.getCollection('LEGENDARY'),
+      ]);
+      const combined: CollectionCard[] = [...(epicRes.data ?? []), ...(legendaryRes.data ?? [])];
+      setAllCards(combined);
+      rollFromPool(combined);
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось загрузить карты магазина');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadShopCards(); }, []);
+
+  function rollFromPool(pool: CollectionCard[]) {
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    setShopCards(shuffled.slice(0, 6));
+    setPurchasedIds([]);
+  }
 
   // Timer tick
   useEffect(() => {
@@ -248,41 +251,40 @@ function ShopTab({ userPoints, onPointsChange, colors, styles }: {
 
   // Auto-refresh when timer hits 0
   useEffect(() => {
-    if (timerMs === 0) {
+    if (timerMs === 0 && allCards.length > 0) {
       const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS);
       setNextRefresh(d);
-      setShopCards(rollShopCards());
-      setPurchasedIds([]);
+      rollFromPool(allCards);
     }
   }, [timerMs]);
 
   const handleForceRefresh = () => {
     if (userPoints < FORCE_REFRESH_COST) {
-      Alert.alert('Недостаточно баллов', `Нужно ${FORCE_REFRESH_COST} 💎 для обновления`);
+      Alert.alert('Недостаточно MB', `Нужно ${FORCE_REFRESH_COST} MB для обновления`);
       return;
     }
     Alert.alert(
       'Обновить магазин?',
-      `Стоимость: ${FORCE_REFRESH_COST} 💎. Текущие карты будут заменены.`,
+      `Стоимость: ${FORCE_REFRESH_COST} MB. Текущие карты будут заменены.`,
       [
         { text: 'Отмена', style: 'cancel' },
         { text: 'Обновить', onPress: () => {
           onPointsChange(-FORCE_REFRESH_COST);
           const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS);
           setNextRefresh(d);
-          setShopCards(rollShopCards());
-          setPurchasedIds([]);
+          rollFromPool(allCards);
         }},
       ]
     );
   };
 
-  const handleBuy = (card: ShopCard) => setConfirmCard(card);
+  const handleBuy = (card: CollectionCard) => setConfirmCard(card);
 
   const handleConfirmBuy = () => {
     if (!confirmCard) return;
+    const price = confirmCard.mbPrice ?? DEFAULT_PRICES[confirmCard.rarity];
     setConfirmCard(null);
-    onPointsChange(-confirmCard.price);
+    onPointsChange(-price);
     setPurchasedIds((prev) => [...prev, confirmCard.id]);
     setSuccessCard(confirmCard);
     successAnim.setValue(0);
@@ -297,20 +299,29 @@ function ShopTab({ userPoints, onPointsChange, colors, styles }: {
 
   const FILTERS: Array<{ key: Rarity | null; label: string; color: string }> = [
     { key: null,        label: 'Все',         color: colors.primary },
-    { key: 'COMMON',    label: 'Обычные',     color: '#9ca3af' },
-    { key: 'RARE',      label: 'Редкие',      color: '#60a5fa' },
     { key: 'EPIC',      label: 'Эпические',   color: '#a78bfa' },
     { key: 'LEGENDARY', label: 'Легендарные', color: '#fbbf24' },
   ];
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ color: colors.onSurfaceVariant, fontFamily: 'Manrope-Medium', fontSize: Fonts.sizes.sm }}>
+          Загрузка магазина...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
       {/* Header */}
       <View style={shopTabStyles.header}>
         <View>
-          <Text style={shopTabStyles.headerTitle}>🏪 Магазин карт</Text>
+          <Text style={shopTabStyles.headerTitle}>Магазин карт</Text>
           <Text style={[shopTabStyles.points, { color: colors.primary }]}>
-            Баланс: {userPoints.toLocaleString('ru-RU')} 💎
+            Баланс: {userPoints.toLocaleString('ru-RU')} MB
           </Text>
         </View>
         <TouchableOpacity
@@ -320,7 +331,7 @@ function ShopTab({ userPoints, onPointsChange, colors, styles }: {
         >
           <MaterialIcons name="refresh" size={14} color={colors.primary} />
           <Text style={[shopTabStyles.refreshBtnText, { color: colors.primary }]}>
-            {FORCE_REFRESH_COST} 💎
+            {FORCE_REFRESH_COST} MB
           </Text>
         </TouchableOpacity>
       </View>
@@ -357,7 +368,7 @@ function ShopTab({ userPoints, onPointsChange, colors, styles }: {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={shopTabStyles.grid}>
         {filteredCards.length === 0 ? (
           <View style={shopTabStyles.emptyState}>
-            <Text style={{ fontSize: 40 }}>🏪</Text>
+            <MaterialIcons name="storefront" size={48} color={colors.outlineVariant} />
             <Text style={[shopTabStyles.emptyText, { color: colors.onSurfaceVariant }]}>Нет карт этой редкости</Text>
           </View>
         ) : filteredCards.map((card) => (
@@ -365,9 +376,8 @@ function ShopTab({ userPoints, onPointsChange, colors, styles }: {
             key={card.id}
             card={card}
             purchased={purchasedIds.includes(card.id)}
-            canAfford={userPoints >= card.price}
+            canAfford={userPoints >= (card.mbPrice ?? DEFAULT_PRICES[card.rarity])}
             onBuy={handleBuy}
-            colors={colors}
           />
         ))}
         <View style={{ height: 120 }} />
@@ -376,61 +386,84 @@ function ShopTab({ userPoints, onPointsChange, colors, styles }: {
       {/* Confirm Modal */}
       <Modal visible={!!confirmCard} transparent animationType="fade">
         <View style={shopTabStyles.modalOverlay}>
-          {confirmCard && (
-            <View style={[shopTabStyles.confirmBox, { backgroundColor: colors.surfaceContainerLowest }]}>
-              <LinearGradient
-                colors={RARITY_GRADIENTS[confirmCard.rarity]}
-                style={shopTabStyles.confirmCardPreview}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              >
-                {confirmCard.rarity === 'LEGENDARY' && <LegendaryGlow />}
-                <Text style={{ fontSize: 56, textAlign: 'center' }}>{confirmCard.emoji}</Text>
-                <Text style={[shopTabStyles.confirmCardName]}>{confirmCard.name}</Text>
-                <View style={[shopTabStyles.rarityPill, { backgroundColor: RARITY_BADGE_COLORS[confirmCard.rarity] }]}>
-                  <Text style={shopTabStyles.rarityPillText}>{getRarityName(confirmCard.rarity)}</Text>
+          {confirmCard && (() => {
+            const price = confirmCard.mbPrice ?? DEFAULT_PRICES[confirmCard.rarity];
+            const initials = (confirmCard.brandName ?? confirmCard.name)
+              .split(' ').slice(0, 2).map((w: string) => w[0]?.toUpperCase() ?? '').join('');
+            return (
+              <View style={[shopTabStyles.confirmBox, { backgroundColor: colors.surfaceContainerLowest }]}>
+                <LinearGradient
+                  colors={RARITY_GRADIENTS[confirmCard.rarity]}
+                  style={shopTabStyles.confirmCardPreview}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                >
+                  {confirmCard.rarity === 'LEGENDARY' && <LegendaryGlow />}
+                  <View style={[shopStyles.brandCircle, { width: 72, height: 72, borderRadius: 36, borderColor: RARITY_BADGE_COLORS[confirmCard.rarity] }]}>
+                    {confirmCard.brandIcon ? (
+                      <MaterialIcons name={toMaterialIconName(confirmCard.brandIcon) as any} size={36} color={RARITY_BADGE_COLORS[confirmCard.rarity]} />
+                    ) : (
+                      <Text style={[shopStyles.initialsText, { color: RARITY_BADGE_COLORS[confirmCard.rarity], fontSize: 26 }]}>{initials}</Text>
+                    )}
+                  </View>
+                  <Text style={shopTabStyles.confirmCardName}>{confirmCard.brandName ?? confirmCard.name}</Text>
+                  <View style={[shopTabStyles.rarityPill, { backgroundColor: RARITY_BADGE_COLORS[confirmCard.rarity] }]}>
+                    <Text style={shopTabStyles.rarityPillText}>{getRarityName(confirmCard.rarity)}</Text>
+                  </View>
+                </LinearGradient>
+                <Text style={[shopTabStyles.confirmTitle, { color: colors.onSurface }]}>Купить карту?</Text>
+                <Text style={[shopTabStyles.confirmBonus, { color: colors.onSurfaceVariant }]}>
+                  {confirmCard.cashbackPercent}% кэшбэк
+                </Text>
+                <Text style={[shopTabStyles.confirmPrice, { color: colors.primary }]}>
+                  {price.toLocaleString('ru-RU')} MB
+                </Text>
+                <View style={shopTabStyles.confirmBtns}>
+                  <TouchableOpacity
+                    style={[shopTabStyles.confirmCancelBtn, { borderColor: colors.outlineVariant }]}
+                    onPress={() => setConfirmCard(null)}
+                  >
+                    <Text style={[shopTabStyles.confirmCancelText, { color: colors.onSurfaceVariant }]}>Отмена</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[shopTabStyles.confirmBuyBtn, { backgroundColor: colors.primary }]}
+                    onPress={handleConfirmBuy}
+                  >
+                    <Text style={shopTabStyles.confirmBuyText}>Купить за {price.toLocaleString('ru-RU')} MB</Text>
+                  </TouchableOpacity>
                 </View>
-              </LinearGradient>
-              <Text style={[shopTabStyles.confirmTitle, { color: colors.onSurface }]}>Купить карту?</Text>
-              <Text style={[shopTabStyles.confirmBonus, { color: colors.onSurfaceVariant }]}>{confirmCard.bonus}</Text>
-              <Text style={[shopTabStyles.confirmPrice, { color: colors.primary }]}>
-                {confirmCard.price.toLocaleString('ru-RU')} 💎
-              </Text>
-              <View style={shopTabStyles.confirmBtns}>
-                <TouchableOpacity
-                  style={[shopTabStyles.confirmCancelBtn, { borderColor: colors.outlineVariant }]}
-                  onPress={() => setConfirmCard(null)}
-                >
-                  <Text style={[shopTabStyles.confirmCancelText, { color: colors.onSurfaceVariant }]}>Отмена</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[shopTabStyles.confirmBuyBtn, { backgroundColor: colors.primary }]}
-                  onPress={handleConfirmBuy}
-                >
-                  <Text style={shopTabStyles.confirmBuyText}>Купить за {confirmCard.price.toLocaleString('ru-RU')} 💎</Text>
-                </TouchableOpacity>
               </View>
-            </View>
-          )}
+            );
+          })()}
         </View>
       </Modal>
 
       {/* Success overlay */}
-      {successCard && (
-        <Animated.View
-          style={[
-            shopTabStyles.successOverlay,
-            {
-              opacity: successAnim,
-              transform: [{ scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }],
-            },
-          ]}
-          pointerEvents="none"
-        >
-          <Text style={{ fontSize: 64 }}>{successCard.emoji}</Text>
-          <Text style={shopTabStyles.successTitle}>Карта добавлена!</Text>
-          <Text style={shopTabStyles.successSub}>«{successCard.name}» теперь в вашей коллекции</Text>
-        </Animated.View>
-      )}
+      {successCard && (() => {
+        const initials = (successCard.brandName ?? successCard.name)
+          .split(' ').slice(0, 2).map((w: string) => w[0]?.toUpperCase() ?? '').join('');
+        return (
+          <Animated.View
+            style={[
+              shopTabStyles.successOverlay,
+              {
+                opacity: successAnim,
+                transform: [{ scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }],
+              },
+            ]}
+            pointerEvents="none"
+          >
+            <View style={[shopStyles.brandCircle, { width: 80, height: 80, borderRadius: 40, borderColor: RARITY_BADGE_COLORS[successCard.rarity] }]}>
+              {successCard.brandIcon ? (
+                <MaterialIcons name={toMaterialIconName(successCard.brandIcon) as any} size={40} color={RARITY_BADGE_COLORS[successCard.rarity]} />
+              ) : (
+                <Text style={[shopStyles.initialsText, { color: RARITY_BADGE_COLORS[successCard.rarity], fontSize: 28 }]}>{initials}</Text>
+              )}
+            </View>
+            <Text style={shopTabStyles.successTitle}>Карта добавлена!</Text>
+            <Text style={shopTabStyles.successSub}>«{successCard.brandName ?? successCard.name}» теперь в вашей коллекции</Text>
+          </Animated.View>
+        );
+      })()}
     </View>
   );
 }
@@ -467,10 +500,9 @@ const shopTabStyles = StyleSheet.create({
   },
   emptyState: { width: '100%', alignItems: 'center', paddingVertical: 48, gap: 12 },
   emptyText: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold' },
-  // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: Spacing.xl },
   confirmBox: { borderRadius: BorderRadius.xl, overflow: 'hidden', ...Shadows.xl },
-  confirmCardPreview: { padding: Spacing.xl, alignItems: 'center', gap: 8 },
+  confirmCardPreview: { padding: Spacing.xl, alignItems: 'center', gap: 10 },
   confirmCardName: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: '#fff', textAlign: 'center' },
   rarityPill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: BorderRadius.full },
   rarityPillText: { fontSize: 10, fontFamily: 'Manrope-ExtraBold', color: '#fff', textTransform: 'uppercase', letterSpacing: 1 },
@@ -485,11 +517,10 @@ const shopTabStyles = StyleSheet.create({
   confirmCancelText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
   confirmBuyBtn: { flex: 2, borderRadius: BorderRadius.base, paddingVertical: 14, alignItems: 'center' },
   confirmBuyText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#fff' },
-  // Success
   successOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.82)',
-    alignItems: 'center', justifyContent: 'center', gap: 12,
+    alignItems: 'center', justifyContent: 'center', gap: 16,
     zIndex: 999,
   },
   successTitle: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: '#22c55e' },
@@ -516,7 +547,6 @@ export default function CardsScreen() {
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
   const [isEquipping, setIsEquipping] = useState(false);
 
-  // Local MB balance (synced from user, updated optimistically for shop)
   const [localPoints, setLocalPoints] = useState<number>(user?.mbPoints ?? 0);
   useEffect(() => { setLocalPoints(user?.mbPoints ?? 0); }, [user?.mbPoints]);
 
@@ -666,7 +696,6 @@ export default function CardsScreen() {
           userPoints={localPoints}
           onPointsChange={(delta) => setLocalPoints((p) => Math.max(0, p + delta))}
           colors={colors}
-          styles={styles}
         />
       )}
 
@@ -955,23 +984,14 @@ export default function CardsScreen() {
                 <View style={styles.actionButtonsCol}>
                   {equippedCardIds.has(selectedCard.id) ? (
                     <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.error + '22' }]}
-                      onPress={() => {
-                        const cardToRemove = selectedCard;
-                        setDetailModalVisible(false);
-                        handleRemoveCard(cardToRemove);
-                      }}
+                      onPress={() => { const c = selectedCard; setDetailModalVisible(false); handleRemoveCard(c); }}
                     >
                       <MaterialIcons name="remove-circle-outline" size={20} color={colors.error} />
                       <Text style={[styles.actionBtnText, { color: colors.error }]}>Убрать из колоды</Text>
                     </TouchableOpacity>
                   ) : activeDeck && (activeDeck.deckCards?.length ?? 0) < 5 ? (
                     <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary + '22' }]}
-                      onPress={() => {
-                        const cardToEquip = selectedCard;
-                        const nextSlot = activeDeck.deckCards?.length ?? 0;
-                        setDetailModalVisible(false);
-                        handleEquipCard(cardToEquip, nextSlot);
-                      }}
+                      onPress={() => { const c = selectedCard; const slot = activeDeck.deckCards?.length ?? 0; setDetailModalVisible(false); handleEquipCard(c, slot); }}
                     >
                       <MaterialIcons name="add-circle-outline" size={20} color={colors.primary} />
                       <Text style={[styles.actionBtnText, { color: colors.primary }]}>Добавить в колоду</Text>
@@ -1010,13 +1030,9 @@ const getStyles = (Colors: any) => StyleSheet.create({
   pageTitle: { fontSize: Fonts.sizes['3xl'], fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface, letterSpacing: -0.5 },
   mbBadge: { backgroundColor: Colors.secondaryContainer, paddingHorizontal: 12, paddingVertical: 6, borderRadius: BorderRadius.full },
   mbBadgeText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#131313' },
-
-  // Tab switcher
   tabSwitcher: { flexDirection: 'row', marginHorizontal: Spacing.base, marginBottom: Spacing.base, backgroundColor: Colors.surfaceContainerHigh, borderRadius: BorderRadius.full, padding: 4 },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: BorderRadius.full },
   tabBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold' },
-
-  // Deck
   deckSection: { marginHorizontal: Spacing.base, marginTop: Spacing.sm, backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.xl, ...Shadows.md, borderWidth: 1, borderColor: Colors.transparentBorder },
   deckHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.base },
   deckName: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface },
@@ -1036,8 +1052,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
   healthBarContainer: { width: '90%', height: 4, backgroundColor: Colors.surfaceContainerHigh, borderRadius: 2, overflow: 'hidden', marginBottom: 2 },
   healthBarFill: { height: '100%', borderRadius: 2 },
   emptySlotText: { fontSize: 10, color: Colors.outlineVariant, fontFamily: 'Manrope-Medium', textAlign: 'center' },
-
-  // Sections
   section: { paddingHorizontal: Spacing.base, marginTop: Spacing.xl },
   sectionTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface, marginBottom: Spacing.base, letterSpacing: -0.3 },
   questScroll: { marginHorizontal: -Spacing.base, paddingHorizontal: Spacing.base },
@@ -1063,8 +1077,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
   filterTabActive: { backgroundColor: Colors.primary },
   filterTabText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant },
   filterTabTextActive: { color: Colors.onPrimary },
-
-  // Card grid
   cardGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.base, gap: Spacing.base, marginTop: Spacing.base },
   cardItem: { width: '47%', backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base, padding: Spacing.base, gap: 6, borderWidth: 2, overflow: 'hidden', ...Shadows.sm },
   cardItemInDeck: { opacity: 0.75 },
@@ -1082,8 +1094,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
   emptyContainer: { width: '100%', alignItems: 'center', paddingVertical: Spacing['3xl'], gap: Spacing.sm },
   emptyStateText: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, textAlign: 'center' },
   emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.outlineVariant, textAlign: 'center', fontFamily: 'Manrope-Medium' },
-
-  // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing.xl, ...Shadows.lg, paddingBottom: 60 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.base },
