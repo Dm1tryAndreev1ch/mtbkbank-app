@@ -14,10 +14,10 @@ router.get('/me', async (req, res) => {
         mbPoints: true, status: true, isAdmin: true, createdAt: true,
       },
     });
-    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+    if (!user) return res.status(404).json({ error: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d' });
     res.json(user);
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(500).json({ error: '\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430' });
   }
 });
 
@@ -35,7 +35,7 @@ router.put('/me', async (req, res) => {
     });
     res.json(user);
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(500).json({ error: '\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430' });
   }
 });
 
@@ -51,14 +51,32 @@ router.get('/me/stats', async (req, res) => {
       req.prisma.cardTrade.count({
         where: { fromUserId: req.userId, status: 'ACCEPTED' },
       }),
-      req.prisma.questProgress.count({
+      // UserQuest — \u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043c\u043e\u0434\u0435\u043b\u0438 \u0438\u0437 schema.prisma
+      req.prisma.userQuest.count({
         where: { userId: req.userId, claimed: true },
       }),
+      // \u0410\u043a\u0442\u0438\u0432\u043d\u0430\u044f \u043a\u043e\u043b\u043e\u0434\u0430 \u0441 \u043a\u0430\u0440\u0442\u0430\u043c\u0438 \u0438 \u043f\u0440\u043e\u0446\u0435\u043d\u0442\u0430\u043c\u0438 \u043a\u044d\u0448\u0431\u044d\u043a\u0430
       req.prisma.deck.findFirst({
         where: { userId: req.userId, isActive: true },
-        select: { cashbackRate: true },
+        include: {
+          deckCards: {
+            include: {
+              userCard: {
+                include: { collectionCard: { select: { cashbackPercent: true } } },
+              },
+            },
+          },
+        },
       }),
     ]);
+
+    // \u0421\u0443\u043c\u043c\u0430\u0440\u043d\u044b\u0439 \u043a\u044d\u0448\u0431\u044d\u043a \u043f\u043e \u0432\u0441\u0435\u043c \u043a\u0430\u0440\u0442\u0430\u043c \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0439 \u043a\u043e\u043b\u043e\u0434\u044b
+    const activeCashback = activeDeck
+      ? activeDeck.deckCards.reduce(
+          (sum, dc) => sum + (dc.userCard?.collectionCard?.cashbackPercent ?? 0),
+          0
+        )
+      : 0;
 
     res.json({
       mbPoints: user.mbPoints,
@@ -66,10 +84,11 @@ router.get('/me/stats', async (req, res) => {
       totalCards: cardCount,
       completedTrades: tradeCount,
       questsCompleted: questsClaimed,
-      activeCashback: activeDeck?.cashbackRate ?? 0,
+      activeCashback: Math.round(activeCashback * 10) / 10,
     });
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка сервера' });
+    console.error('Stats error:', err);
+    res.status(500).json({ error: '\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430' });
   }
 });
 
@@ -93,7 +112,7 @@ router.get('/search', async (req, res) => {
 
     res.json(users);
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(500).json({ error: '\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430' });
   }
 });
 
