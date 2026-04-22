@@ -9,7 +9,7 @@ import { useStore } from '../../stores/useStore';
 import * as apiClient from '../../services/api';
 import {
   Fonts, Spacing, BorderRadius, Shadows,
-  getRarityName,
+  getRarityName, toMaterialIconName,
 } from '../../constants/theme';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useThemeColor } from '../../hooks/useThemeColor';
@@ -117,6 +117,7 @@ export default function CardsScreen() {
                 if (deckCard) {
                   const card = deckCard.userCard;
                   const rarityColor = getRarityCol(card.collectionCard.rarity);
+                  const iconName = toMaterialIconName(card.collectionCard.brandIcon);
                   return (
                     <TouchableOpacity
                       key={slot}
@@ -125,7 +126,7 @@ export default function CardsScreen() {
                       style={[styles.deckSlot, styles.deckSlotFilled, { borderColor: rarityColor }]}
                     >
                       <View style={[styles.deckSlotGlow, { backgroundColor: rarityColor }]} />
-                      <MaterialIcons name={(card.collectionCard.brandIcon as any) || 'style'} size={28} color={rarityColor} />
+                      <MaterialIcons name={iconName as any} size={28} color={rarityColor} />
                       <Text style={styles.deckSlotName} numberOfLines={1}>{card.collectionCard.name}</Text>
                       <Text style={[styles.deckSlotRarity, { color: rarityColor }]}>
                         {getRarityName(card.collectionCard.rarity)}
@@ -172,7 +173,7 @@ export default function CardsScreen() {
               <View key={q.id} style={styles.questCard}>
                 <View style={styles.questIconRow}>
                   <View style={styles.questIcon}>
-                    <MaterialIcons name={(q.quest?.icon as any) || 'emoji_events'} size={24} color={colors.primary} />
+                    <MaterialIcons name={toMaterialIconName(q.quest?.icon) as any} size={24} color={colors.primary} />
                   </View>
                   <Text style={styles.questReward}>+{q.quest?.rewardMB || 0} MB</Text>
                 </View>
@@ -250,6 +251,7 @@ export default function CardsScreen() {
           {filteredCards.map((card: any) => {
             const c = card.collectionCard;
             const rarityColor = getRarityCol(c.rarity);
+            const iconName = toMaterialIconName(c.brandIcon);
             return (
               <TouchableOpacity 
                  key={card.id} 
@@ -262,7 +264,7 @@ export default function CardsScreen() {
                    <Text style={styles.rarityBadgeText}>{getRarityName(c.rarity)}</Text>
                 </View>
                 <View style={styles.cardItemIcon}>
-                   <MaterialIcons name={(c.brandIcon as any) || 'style'} size={32} color={rarityColor} />
+                   <MaterialIcons name={iconName as any} size={32} color={rarityColor} />
                 </View>
                 <Text style={styles.cardItemName} numberOfLines={1}>{c.name}</Text>
                 <Text style={styles.cardItemBrand}>{c.brandName}</Text>
@@ -305,13 +307,14 @@ export default function CardsScreen() {
                   ) : cards.map((card: any) => {
                      const c = card.collectionCard;
                      const rarityColor = getRarityCol(c.rarity);
+                     const iconName = toMaterialIconName(c.brandIcon);
                      return (
                         <TouchableOpacity 
                            key={card.id} 
                            style={[styles.pickerItem, { borderColor: rarityColor }]}
                            onPress={() => handleEquipCard(card)}
                         >
-                           <MaterialIcons name={(c.brandIcon as any) || 'style'} size={32} color={rarityColor} />
+                           <MaterialIcons name={iconName as any} size={32} color={rarityColor} />
                            <View style={{ flex: 1 }}>
                               <Text style={styles.pickerItemName}>{c.name}</Text>
                               <Text style={styles.pickerItemDetails}>Cashback: {c.cashbackPercent}% • HP: {card.health}%</Text>
@@ -341,7 +344,7 @@ export default function CardsScreen() {
                     </View>
                     
                     <View style={styles.detailIconWrap}>
-                       <MaterialIcons name={(selectedCard.collectionCard.brandIcon as any) || 'style'} size={60} color={getRarityCol(selectedCard.collectionCard.rarity)} />
+                       <MaterialIcons name={toMaterialIconName(selectedCard.collectionCard.brandIcon) as any} size={60} color={getRarityCol(selectedCard.collectionCard.rarity)} />
                     </View>
 
                     <Text style={styles.detailTitle}>{selectedCard.collectionCard.name}</Text>
