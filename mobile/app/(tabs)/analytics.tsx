@@ -25,9 +25,9 @@ const SkeletonPulse = ({ style, colors }: { style: any; colors: any }) => {
 };
 
 const PERIODS = [
-  { id: 'week', label: 'Неделя' },
-  { id: 'month', label: 'Месяц' },
-  { id: 'year', label: 'Год' },
+  { id: 'week', label: '\u041d\u0435\u0434\u0435\u043b\u044f' },
+  { id: 'month', label: '\u041c\u0435\u0441\u044f\u0446' },
+  { id: 'year', label: '\u0413\u043e\u0434' },
 ];
 
 const CATEGORY_COLORS = ['#4F8EF7', '#9333EA', '#0ea5e9', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#14b8a6'];
@@ -49,10 +49,10 @@ export default function AnalyticsScreen() {
         setAnalytics({
           totalSpent: 45200,
           breakdown: [
-            { category: 'Супермаркеты', amount: 15000 },
-            { category: 'Переводы', amount: 12000 },
-            { category: 'Рестораны', amount: 8200 },
-            { category: 'Развлечения', amount: 10000 },
+            { category: '\u0421\u0443\u043f\u0435\u0440\u043c\u0430\u0440\u043a\u0435\u0442\u044b', amount: 15000 },
+            { category: '\u041f\u0435\u0440\u0435\u0432\u043e\u0434\u044b', amount: 12000 },
+            { category: '\u0420\u0435\u0441\u0442\u043e\u0440\u0430\u043d\u044b', amount: 8200 },
+            { category: '\u0420\u0430\u0437\u0432\u043b\u0435\u0447\u0435\u043d\u0438\u044f', amount: 10000 },
           ],
         });
         setLoading(false);
@@ -70,6 +70,11 @@ export default function AnalyticsScreen() {
   useEffect(() => { fetchAnalytics(period); }, [period]);
 
   const breakdown: any[] = analytics?.breakdown || [];
+
+  // chart width = screenWidth - card horizontal margins (base*2) - card padding (base*2)
+  const chartWidth = screenWidth - Spacing.base * 4;
+  // paddingLeft centers the pie: half of (chartWidth - pieSize) where pieSize ≈ 200 * 0.8 = 160
+  const piePaddingLeft = String(Math.max(0, Math.round((chartWidth - 160) / 2)));
 
   const chartData = breakdown.map((cat, index) => ({
     name: ' ',
@@ -114,10 +119,10 @@ export default function AnalyticsScreen() {
         <View style={styles.chartCard}>
 
           {/* Total spent */}
-          <Text style={styles.totalLabel} allowFontScaling={false}>Всего потрачено</Text>
+          <Text style={styles.totalLabel} allowFontScaling={false}>\u0412\u0441\u0435\u0433\u043e \u043f\u043e\u0442\u0440\u0430\u0447\u0435\u043d\u043e</Text>
           {loading
             ? <SkeletonPulse style={{ width: 160, height: 38, borderRadius: 8, marginTop: 6, marginBottom: 4, alignSelf: 'center' }} colors={colors} />
-            : <Text style={styles.totalAmount} allowFontScaling={false}>₽ {analytics ? Math.round(analytics.totalSpent).toLocaleString('ru-RU') : '0'}</Text>
+            : <Text style={styles.totalAmount} allowFontScaling={false}>\u20bd {analytics ? Math.round(analytics.totalSpent).toLocaleString('ru-RU') : '0'}</Text>
           }
 
           {/* Pie chart */}
@@ -127,7 +132,7 @@ export default function AnalyticsScreen() {
             <Animated.View entering={FadeIn} style={styles.pieWrap}>
               <PieChart
                 data={chartData}
-                width={screenWidth - 48}
+                width={chartWidth}
                 height={200}
                 chartConfig={{
                   color: (opacity = 1) => `rgba(100,100,100,${opacity})`,
@@ -137,19 +142,18 @@ export default function AnalyticsScreen() {
                 }}
                 accessor="population"
                 backgroundColor="transparent"
-                paddingLeft="0"
-                center={[0, 0]}
+                paddingLeft={piePaddingLeft}
                 absolute
                 hasLegend={false}
               />
             </Animated.View>
           ) : (
-            <Text style={styles.emptyChart}>Нет данных за этот период</Text>
+            <Text style={styles.emptyChart}>\u041d\u0435\u0442 \u0434\u0430\u043d\u043d\u044b\u0445 \u0437\u0430 \u044d\u0442\u043e\u0442 \u043f\u0435\u0440\u0438\u043e\u0434</Text>
           )}
 
           {/* Legend */}
           <View style={styles.legendDivider} />
-          <Text style={styles.legendTitle} allowFontScaling={false}>Категории</Text>
+          <Text style={styles.legendTitle} allowFontScaling={false}>\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438</Text>
 
           <View style={styles.legendGrid}>
             {loading
@@ -166,7 +170,7 @@ export default function AnalyticsScreen() {
                         <View style={[styles.legendDot, { backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }]} />
                         <Text style={styles.legendCat} numberOfLines={1} allowFontScaling={false}>{cat.category}</Text>
                       </View>
-                      <Text style={styles.legendAmt} numberOfLines={1} allowFontScaling={false}>₽ {Math.round(cat.amount).toLocaleString('ru-RU')}</Text>
+                      <Text style={styles.legendAmt} numberOfLines={1} allowFontScaling={false}>\u20bd {Math.round(cat.amount).toLocaleString('ru-RU')}</Text>
                       <Text style={styles.legendPct} allowFontScaling={false}>{pct.toFixed(1)}%</Text>
                     </View>
                   );
@@ -179,14 +183,14 @@ export default function AnalyticsScreen() {
         {/* Subscriptions */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle} allowFontScaling={false}>Подписки</Text>
+            <Text style={styles.sectionTitle} allowFontScaling={false}>\u041f\u043e\u0434\u043f\u0438\u0441\u043a\u0438</Text>
             <Text style={styles.sectionBadge} allowFontScaling={false}>
-              {subscriptions.filter((s: any) => s.isActive).length} активных
+              {subscriptions.filter((s: any) => s.isActive).length} \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445
             </Text>
           </View>
           <View style={styles.subsList}>
             {subscriptions.length === 0
-              ? <Text style={styles.emptyText}>У вас нет подписок</Text>
+              ? <Text style={styles.emptyText}>\u0423 \u0432\u0430\u0441 \u043d\u0435\u0442 \u043f\u043e\u0434\u043f\u0438\u0441\u043e\u043a</Text>
               : subscriptions.map((sub: any) => (
                 <View key={sub.id} style={styles.subItem}>
                   <View style={styles.subLeft}>
@@ -196,7 +200,7 @@ export default function AnalyticsScreen() {
                     <View style={styles.subTextWrap}>
                       <Text style={styles.subName} numberOfLines={1} allowFontScaling={false}>{sub.name}</Text>
                       <Text style={styles.subDetail} numberOfLines={1} allowFontScaling={false}>
-                        Списание {new Date(sub.nextPayment).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} • ₽ {sub.amount}
+                        \u0421\u043f\u0438\u0441\u0430\u043d\u0438\u0435 {new Date(sub.nextPayment).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} \u2022 \u20bd {sub.amount}
                       </Text>
                     </View>
                   </View>
@@ -215,14 +219,14 @@ export default function AnalyticsScreen() {
         {/* Limits */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle} allowFontScaling={false}>Лимиты трат</Text>
+            <Text style={styles.sectionTitle} allowFontScaling={false}>\u041b\u0438\u043c\u0438\u0442\u044b \u0442\u0440\u0430\u0442</Text>
             <TouchableOpacity onPress={() => router.push('/account')}>
               <MaterialIcons name="settings" size={20} color={colors.onSurfaceVariant} />
             </TouchableOpacity>
           </View>
           <View style={styles.limitsCard}>
             {limits.length === 0
-              ? <Text style={styles.emptyText}>Лимиты не установлены</Text>
+              ? <Text style={styles.emptyText}>\u041b\u0438\u043c\u0438\u0442\u044b \u043d\u0435 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u044b</Text>
               : limits.map((limit: any) => {
                 const progress = limit.limitAmount > 0 ? Math.min(limit.spentAmount / limit.limitAmount, 1) : 0;
                 const warn = progress > 0.8;
@@ -231,7 +235,7 @@ export default function AnalyticsScreen() {
                     <View style={styles.limitHeader}>
                       <Text style={styles.limitCat} numberOfLines={1} allowFontScaling={false}>{limit.category}</Text>
                       <Text style={[styles.limitAmts, warn && { color: colors.error }]} allowFontScaling={false} numberOfLines={1}>
-                        ₽ {Math.round(limit.spentAmount).toLocaleString('ru-RU')} / ₽ {Math.round(limit.limitAmount).toLocaleString('ru-RU')}
+                        \u20bd {Math.round(limit.spentAmount).toLocaleString('ru-RU')} / \u20bd {Math.round(limit.limitAmount).toLocaleString('ru-RU')}
                       </Text>
                     </View>
                     <View style={styles.limitBarBg}>
@@ -278,13 +282,12 @@ const getStyles = (C: any) => StyleSheet.create({
   },
   totalLabel: { fontSize: Fonts.sizes.sm, color: C.onSurfaceVariant, fontFamily: 'Manrope-Medium', marginTop: Spacing.sm, textAlign: 'center' },
   totalAmount: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: C.onSurface, textAlign: 'center', marginTop: 4, marginBottom: 4 },
-  pieWrap: { alignItems: 'center' },
+  pieWrap: { alignItems: 'center', overflow: 'hidden' },
   emptyChart: { color: C.onSurfaceVariant, fontFamily: 'Manrope-Medium', textAlign: 'center', paddingVertical: 40 },
 
   legendDivider: { height: 1, backgroundColor: C.transparentBorder, marginVertical: Spacing.base },
   legendTitle: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: Spacing.sm },
 
-  // 2-column grid: flexBasis 48% + gap via marginRight on odd items
   legendGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
