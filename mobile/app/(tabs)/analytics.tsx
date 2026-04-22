@@ -25,9 +25,9 @@ const SkeletonPulse = ({ style, colors }: { style: any; colors: any }) => {
 };
 
 const PERIODS = [
-  { id: 'week', label: '\u041d\u0435\u0434\u0435\u043b\u044f' },
-  { id: 'month', label: '\u041c\u0435\u0441\u044f\u0446' },
-  { id: 'year', label: '\u0413\u043e\u0434' },
+  { id: 'week', label: 'Неделя' },
+  { id: 'month', label: 'Месяц' },
+  { id: 'year', label: 'Год' },
 ];
 
 const CATEGORY_COLORS = ['#4F8EF7', '#9333EA', '#0ea5e9', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#14b8a6'];
@@ -49,10 +49,10 @@ export default function AnalyticsScreen() {
         setAnalytics({
           totalSpent: 45200,
           breakdown: [
-            { category: '\u0421\u0443\u043f\u0435\u0440\u043c\u0430\u0440\u043a\u0435\u0442\u044b', amount: 15000 },
-            { category: '\u041f\u0435\u0440\u0435\u0432\u043e\u0434\u044b', amount: 12000 },
-            { category: '\u0420\u0435\u0441\u0442\u043e\u0440\u0430\u043d\u044b', amount: 8200 },
-            { category: '\u0420\u0430\u0437\u0432\u043b\u0435\u0447\u0435\u043d\u0438\u044f', amount: 10000 },
+            { category: 'Супермаркеты', amount: 15000 },
+            { category: 'Переводы', amount: 12000 },
+            { category: 'Рестораны', amount: 8200 },
+            { category: 'Развлечения', amount: 10000 },
           ],
         });
         setLoading(false);
@@ -119,10 +119,10 @@ export default function AnalyticsScreen() {
         <View style={styles.chartCard}>
 
           {/* Total spent */}
-          <Text style={styles.totalLabel} allowFontScaling={false}>\u0412\u0441\u0435\u0433\u043e \u043f\u043e\u0442\u0440\u0430\u0447\u0435\u043d\u043e</Text>
+          <Text style={styles.totalLabel} allowFontScaling={false}>Всего потрачено</Text>
           {loading
             ? <SkeletonPulse style={{ width: 160, height: 38, borderRadius: 8, marginTop: 6, marginBottom: 4, alignSelf: 'center' }} colors={colors} />
-            : <Text style={styles.totalAmount} allowFontScaling={false}>\u20bd {analytics ? Math.round(analytics.totalSpent).toLocaleString('ru-RU') : '0'}</Text>
+            : <Text style={styles.totalAmount} allowFontScaling={false} adjustsFontSizeToFit numberOfLines={1}>₽ {analytics ? Math.round(analytics.totalSpent).toLocaleString('ru-RU') : '0'}</Text>
           }
 
           {/* Pie chart */}
@@ -148,12 +148,12 @@ export default function AnalyticsScreen() {
               />
             </Animated.View>
           ) : (
-            <Text style={styles.emptyChart}>\u041d\u0435\u0442 \u0434\u0430\u043d\u043d\u044b\u0445 \u0437\u0430 \u044d\u0442\u043e\u0442 \u043f\u0435\u0440\u0438\u043e\u0434</Text>
+            <Text style={styles.emptyChart}>Нет данных за этот период</Text>
           )}
 
           {/* Legend */}
           <View style={styles.legendDivider} />
-          <Text style={styles.legendTitle} allowFontScaling={false}>\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438</Text>
+          <Text style={styles.legendTitle} allowFontScaling={false}>Категории</Text>
 
           <View style={styles.legendGrid}>
             {loading
@@ -170,7 +170,7 @@ export default function AnalyticsScreen() {
                         <View style={[styles.legendDot, { backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }]} />
                         <Text style={styles.legendCat} numberOfLines={1} allowFontScaling={false}>{cat.category}</Text>
                       </View>
-                      <Text style={styles.legendAmt} numberOfLines={1} allowFontScaling={false}>\u20bd {Math.round(cat.amount).toLocaleString('ru-RU')}</Text>
+                      <Text style={styles.legendAmt} numberOfLines={1} allowFontScaling={false}>₽ {Math.round(cat.amount).toLocaleString('ru-RU')}</Text>
                       <Text style={styles.legendPct} allowFontScaling={false}>{pct.toFixed(1)}%</Text>
                     </View>
                   );
@@ -183,14 +183,14 @@ export default function AnalyticsScreen() {
         {/* Subscriptions */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle} allowFontScaling={false}>\u041f\u043e\u0434\u043f\u0438\u0441\u043a\u0438</Text>
+            <Text style={styles.sectionTitle} allowFontScaling={false}>Подписки</Text>
             <Text style={styles.sectionBadge} allowFontScaling={false}>
-              {subscriptions.filter((s: any) => s.isActive).length} \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445
+              {subscriptions.filter((s: any) => s.isActive).length} активных
             </Text>
           </View>
           <View style={styles.subsList}>
             {subscriptions.length === 0
-              ? <Text style={styles.emptyText}>\u0423 \u0432\u0430\u0441 \u043d\u0435\u0442 \u043f\u043e\u0434\u043f\u0438\u0441\u043e\u043a</Text>
+              ? <Text style={styles.emptyText}>У вас нет подписок</Text>
               : subscriptions.map((sub: any) => (
                 <View key={sub.id} style={styles.subItem}>
                   <View style={styles.subLeft}>
@@ -200,7 +200,7 @@ export default function AnalyticsScreen() {
                     <View style={styles.subTextWrap}>
                       <Text style={styles.subName} numberOfLines={1} allowFontScaling={false}>{sub.name}</Text>
                       <Text style={styles.subDetail} numberOfLines={1} allowFontScaling={false}>
-                        \u0421\u043f\u0438\u0441\u0430\u043d\u0438\u0435 {new Date(sub.nextPayment).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} \u2022 \u20bd {sub.amount}
+                        Списание {new Date(sub.nextPayment).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} • ₽ {sub.amount}
                       </Text>
                     </View>
                   </View>
@@ -219,14 +219,14 @@ export default function AnalyticsScreen() {
         {/* Limits */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle} allowFontScaling={false}>\u041b\u0438\u043c\u0438\u0442\u044b \u0442\u0440\u0430\u0442</Text>
+            <Text style={styles.sectionTitle} allowFontScaling={false}>Лимиты трат</Text>
             <TouchableOpacity onPress={() => router.push('/account')}>
               <MaterialIcons name="settings" size={20} color={colors.onSurfaceVariant} />
             </TouchableOpacity>
           </View>
           <View style={styles.limitsCard}>
             {limits.length === 0
-              ? <Text style={styles.emptyText}>\u041b\u0438\u043c\u0438\u0442\u044b \u043d\u0435 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u044b</Text>
+              ? <Text style={styles.emptyText}>Лимиты не установлены</Text>
               : limits.map((limit: any) => {
                 const progress = limit.limitAmount > 0 ? Math.min(limit.spentAmount / limit.limitAmount, 1) : 0;
                 const warn = progress > 0.8;
@@ -235,7 +235,7 @@ export default function AnalyticsScreen() {
                     <View style={styles.limitHeader}>
                       <Text style={styles.limitCat} numberOfLines={1} allowFontScaling={false}>{limit.category}</Text>
                       <Text style={[styles.limitAmts, warn && { color: colors.error }]} allowFontScaling={false} numberOfLines={1}>
-                        \u20bd {Math.round(limit.spentAmount).toLocaleString('ru-RU')} / \u20bd {Math.round(limit.limitAmount).toLocaleString('ru-RU')}
+                        ₽ {Math.round(limit.spentAmount).toLocaleString('ru-RU')} / ₽ {Math.round(limit.limitAmount).toLocaleString('ru-RU')}
                       </Text>
                     </View>
                     <View style={styles.limitBarBg}>
@@ -294,7 +294,7 @@ const getStyles = (C: any) => StyleSheet.create({
     gap: 8,
   },
   legendItem: {
-    flexBasis: '48%',
+    flexBasis: '47%',
     flexGrow: 0,
     flexShrink: 0,
     backgroundColor: C.surfaceContainerHigh,
@@ -303,7 +303,7 @@ const getStyles = (C: any) => StyleSheet.create({
     gap: 2,
     minHeight: 72,
   },
-  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
   legendDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
   legendCat: { fontSize: Fonts.sizes.xs, color: C.onSurfaceVariant, fontFamily: 'Manrope-Medium', flex: 1 },
   legendAmt: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurface, marginTop: 2 },
@@ -325,8 +325,8 @@ const getStyles = (C: any) => StyleSheet.create({
   limitsCard: { backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.xl, gap: Spacing.xl, borderWidth: 1, borderColor: C.transparentBorder, ...Shadows.sm },
   limitItem: { gap: Spacing.sm },
   limitHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: Spacing.sm },
-  limitCat: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Bold', color: C.onSurface, flex: 1 },
-  limitAmts: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant, flexShrink: 0 },
+  limitCat: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Bold', color: C.onSurface, flex: 1, minWidth: 0 },
+  limitAmts: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant, flexShrink: 0, maxWidth: '55%' },
   limitBarBg: { width: '100%', height: 8, backgroundColor: C.surfaceContainerHigh, borderRadius: 4, overflow: 'hidden' },
   limitBarFill: { height: '100%', backgroundColor: C.primary, borderRadius: 4 },
 
