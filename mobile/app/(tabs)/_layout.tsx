@@ -1,0 +1,118 @@
+import React from 'react';
+import { Tabs } from 'expo-router';
+import { View, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { Shadows } from '../../constants/theme';
+import { useThemeColor } from '../../hooks/useThemeColor';
+
+export default function TabLayout() {
+  const colors = useThemeColor();
+
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.onSurfaceVariant,
+        tabBarStyle: {
+          position: 'absolute',
+          backgroundColor: colors.surfaceContainerLowest,
+          borderTopWidth: 1,
+          borderTopColor: colors.transparentBorder,
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+          height: Platform.OS === 'ios' ? 88 : 72,
+          paddingTop: 8,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+          ...Shadows.lg,
+        },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '700',
+          letterSpacing: 1,
+          textTransform: 'uppercase',
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Главная',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="home" size={26} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="analytics"
+        options={{
+          title: 'Аналитика',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="insights" size={26} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="payments"
+        options={{
+          title: '',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={styles.fabContainer}>
+              <View style={[styles.fab, focused && styles.fabActive, { backgroundColor: colors.primary }]}>
+                <MaterialIcons name="arrow-upward" size={30} color={colors.onPrimary} />
+              </View>
+            </View>
+          ),
+        }}
+      />
+      {/* Replaced Products tab with Cards tab conceptually */}
+      <Tabs.Screen
+        name="cards"
+        options={{
+          title: 'Карты',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="style" size={26} color={color} />
+          ),
+          href: "/cards"
+        }}
+      />
+      <Tabs.Screen
+        name="account"
+        options={{
+          title: 'Профиль',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="person" size={26} color={color} />
+          ),
+        }}
+      />
+      
+      {/* Hide products if we don't need it visible anymore */}
+      <Tabs.Screen
+        name="products"
+        options={{
+          href: null,
+        }}
+      />
+    </Tabs>
+  );
+}
+
+const styles = StyleSheet.create({
+  fabContainer: {
+    position: 'relative',
+    top: -20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fab: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.primary,
+  },
+  fabActive: {
+    transform: [{ scale: 1.05 }],
+  },
+});
