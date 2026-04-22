@@ -20,7 +20,7 @@ export default function CardsScreen() {
 
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [pickerModalVisible, setPickerModalVisible] = useState(false);
-  
+
   const [selectedCard, setSelectedCard] = useState<any>(null);
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
 
@@ -55,7 +55,7 @@ export default function CardsScreen() {
           { text: 'Отмена', style: 'cancel' },
           {
             text: 'Убрать', style: 'destructive', onPress: () => {
-              Alert.alert('Успех', 'Карта убрана (Mock). Обновите бэкенд в Phase 2.');
+              Alert.alert('Успех', 'Карта убрана (Mock).');
             }
           }
         ]
@@ -91,9 +91,9 @@ export default function CardsScreen() {
             <Text style={styles.pageTitle}>Моя колода</Text>
           </View>
           <View style={styles.headerRight}>
-             <TouchableOpacity style={styles.mbBadge} onPress={() => {}}>
-               <Text style={styles.mbBadgeText}>MB {(user?.mbPoints || 0).toLocaleString('ru-RU')}</Text>
-             </TouchableOpacity>
+            <TouchableOpacity style={styles.mbBadge} onPress={() => {}}>
+              <Text style={styles.mbBadgeText}>MB {(user?.mbPoints || 0).toLocaleString('ru-RU')}</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.bellBtn} onPress={() => router.push('/notifications')}>
               <MaterialIcons name="notifications-none" size={24} color={colors.onSurfaceVariant} />
               {unreadCount > 0 && <View style={styles.bellDot} />}
@@ -143,11 +143,11 @@ export default function CardsScreen() {
                   );
                 }
                 return (
-                  <TouchableOpacity 
-                     key={slot} 
-                     activeOpacity={0.7}
-                     onPress={() => handleSlotTap(null, slot)}
-                     style={[styles.deckSlot, styles.deckSlotEmpty]}
+                  <TouchableOpacity
+                    key={slot}
+                    activeOpacity={0.7}
+                    onPress={() => handleSlotTap(null, slot)}
+                    style={[styles.deckSlot, styles.deckSlotEmpty]}
                   >
                     <MaterialIcons name="add" size={28} color={colors.outlineVariant} />
                     <Text style={styles.emptySlotText}>Экипировать</Text>
@@ -158,7 +158,7 @@ export default function CardsScreen() {
           </Animated.View>
         ) : (
           <View style={styles.deckSection}>
-             <Text style={[styles.emptyStateText, { marginVertical: Spacing.xl }]}>У вас нет активной колоды.</Text>
+            <Text style={[styles.emptyStateText, { marginVertical: Spacing.xl }]}>У вас нет активной колоды.</Text>
           </View>
         )}
 
@@ -167,7 +167,7 @@ export default function CardsScreen() {
           <Text style={styles.sectionTitle}>Ежедневные задания</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.questScroll}>
             {quests.length === 0 ? (
-               <Text style={[styles.emptyStateText, { marginHorizontal: Spacing.base }]}>На сегодня заданий нет</Text>
+              <Text style={[styles.emptyStateText, { marginHorizontal: Spacing.base }]}>На сегодня заданий нет</Text>
             ) : quests.map((q: any) => (
               <View key={q.id} style={styles.questCard}>
                 <View style={styles.questIconRow}>
@@ -206,19 +206,18 @@ export default function CardsScreen() {
 
         {/* Advanced Actions Row */}
         <View style={{ flexDirection: 'row', paddingHorizontal: Spacing.xl, marginBottom: Spacing.lg, gap: 12 }}>
-           <TouchableOpacity 
-              onPress={() => router.push('/collection')}
-              style={{ flex: 1, backgroundColor: colors.surfaceVariant, padding: Spacing.md, borderRadius: BorderRadius.lg, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-              <MaterialIcons name="auto-awesome-mosaic" size={20} color={colors.primary} />
-              <Text style={{ color: colors.primary, fontFamily: 'Manrope-Bold', marginLeft: 8 }}>Коллекция</Text>
-           </TouchableOpacity>
-           
-           <TouchableOpacity 
-              onPress={() => router.push('/trade')}
-              style={{ flex: 1, backgroundColor: colors.surfaceVariant, padding: Spacing.md, borderRadius: BorderRadius.lg, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-              <MaterialIcons name="swap-horiz" size={22} color={colors.primary} />
-              <Text style={{ color: colors.primary, fontFamily: 'Manrope-Bold', marginLeft: 8 }}>Трейды</Text>
-           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/collection')}
+            style={{ flex: 1, backgroundColor: colors.surfaceVariant, padding: Spacing.md, borderRadius: BorderRadius.lg, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+            <MaterialIcons name="auto-awesome-mosaic" size={20} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontFamily: 'Manrope-Bold', marginLeft: 8 }}>Коллекция</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/trade')}
+            style={{ flex: 1, backgroundColor: colors.surfaceVariant, padding: Spacing.md, borderRadius: BorderRadius.lg, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+            <MaterialIcons name="swap-horiz" size={22} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontFamily: 'Manrope-Bold', marginLeft: 8 }}>Трейды</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Filter tabs */}
@@ -250,30 +249,47 @@ export default function CardsScreen() {
           {filteredCards.map((card: any) => {
             const c = card.collectionCard;
             const rarityColor = getRarityCol(c.rarity);
+            const healthColor = card.health > 50 ? '#22c55e' : card.health > 25 ? '#eab308' : colors.error;
             return (
-              <TouchableOpacity 
-                 key={card.id} 
-                 activeOpacity={0.8}
-                 onPress={() => handleOpenDetail(card)}
-                 style={[styles.cardItem, { borderColor: rarityColor }]}
+              <TouchableOpacity
+                key={card.id}
+                activeOpacity={0.8}
+                onPress={() => handleOpenDetail(card)}
+                style={[styles.cardItem, { borderColor: rarityColor }]}
               >
+                {/* Top glow strip */}
                 <View style={[styles.cardItemGlow, { backgroundColor: rarityColor }]} />
+
+                {/* Rarity badge */}
                 <View style={[styles.rarityBadge, { backgroundColor: rarityColor }]}>
-                   <Text style={styles.rarityBadgeText}>{getRarityName(c.rarity)}</Text>
+                  <Text style={styles.rarityBadgeText}>{getRarityName(c.rarity)}</Text>
                 </View>
+
+                {/* Icon */}
                 <View style={styles.cardItemIcon}>
-                   <MaterialIcons name={(c.brandIcon as any) || 'style'} size={32} color={rarityColor} />
+                  <MaterialIcons name={(c.brandIcon as any) || 'style'} size={32} color={rarityColor} />
                 </View>
-                <Text style={styles.cardItemName} numberOfLines={1}>{c.name}</Text>
-                <Text style={styles.cardItemBrand}>{c.brandName}</Text>
-                <View style={styles.cardItemStats}>
-                  <View style={styles.statRow}>
-                    <MaterialIcons name="favorite" size={12} color={card.health > 50 ? '#22c55e' : colors.error} />
-                    <Text style={styles.statText}>{card.health}%</Text>
+
+                {/* Name + brand — flex:1 pushes health to bottom */}
+                <View style={styles.cardItemBody}>
+                  <Text style={styles.cardItemName} numberOfLines={2}>{c.name}</Text>
+                  <Text style={styles.cardItemBrand} numberOfLines={1}>{c.brandName}</Text>
+                </View>
+
+                {/* Cashback row */}
+                <View style={styles.cashbackRow}>
+                  <MaterialIcons name="percent" size={12} color={colors.primary} />
+                  <Text style={styles.cashbackStat}>{c.cashbackPercent}% cashback</Text>
+                </View>
+
+                {/* Health bar — always at the bottom */}
+                <View style={styles.cardHealthSection}>
+                  <View style={styles.cardHealthLabelRow}>
+                    <MaterialIcons name="favorite" size={11} color={healthColor} />
+                    <Text style={[styles.cardHealthLabel, { color: healthColor }]}>{card.health}%</Text>
                   </View>
-                  <View style={styles.statRow}>
-                    <MaterialIcons name="percent" size={12} color={colors.primary} />
-                    <Text style={styles.statText}>{c.cashbackPercent}%</Text>
+                  <View style={styles.cardHealthBar}>
+                    <View style={[styles.cardHealthFill, { width: `${card.health}%`, backgroundColor: healthColor }]} />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -281,9 +297,9 @@ export default function CardsScreen() {
           })}
           {filteredCards.length === 0 && (
             <View style={styles.emptyContainer}>
-               <MaterialIcons name="style" size={48} color={colors.outlineVariant} />
-               <Text style={styles.emptyStateText}>Нет карточек</Text>
-               <Text style={styles.emptySubtext}>Совершайте покупки, чтобы получить новые карточки!</Text>
+              <MaterialIcons name="style" size={48} color={colors.outlineVariant} />
+              <Text style={styles.emptyStateText}>Нет карточек</Text>
+              <Text style={styles.emptySubtext}>Совершайте покупки, чтобы получить новые карточки!</Text>
             </View>
           )}
         </View>
@@ -291,90 +307,88 @@ export default function CardsScreen() {
 
       {/* Picker Modal */}
       <Modal visible={pickerModalVisible} transparent animationType="slide">
-         <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-               <View style={styles.modalHeader}>
-                 <Text style={styles.modalTitle}>Выберите карту для Экипировки</Text>
-                 <TouchableOpacity onPress={() => setPickerModalVisible(false)}>
-                   <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
-                 </TouchableOpacity>
-               </View>
-               <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
-                  {cards.length === 0 ? (
-                      <Text style={styles.emptyStateText}>Нет доступных карточек</Text>
-                  ) : cards.map((card: any) => {
-                     const c = card.collectionCard;
-                     const rarityColor = getRarityCol(c.rarity);
-                     return (
-                        <TouchableOpacity 
-                           key={card.id} 
-                           style={[styles.pickerItem, { borderColor: rarityColor }]}
-                           onPress={() => handleEquipCard(card)}
-                        >
-                           <MaterialIcons name={(c.brandIcon as any) || 'style'} size={32} color={rarityColor} />
-                           <View style={{ flex: 1 }}>
-                              <Text style={styles.pickerItemName}>{c.name}</Text>
-                              <Text style={styles.pickerItemDetails}>Cashback: {c.cashbackPercent}% • HP: {card.health}%</Text>
-                           </View>
-                           <Text style={[styles.pickerRarity, { color: rarityColor }]}>{getRarityName(c.rarity)}</Text>
-                        </TouchableOpacity>
-                     );
-                  })}
-               </ScrollView>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Выберите карту для Экипировки</Text>
+              <TouchableOpacity onPress={() => setPickerModalVisible(false)}>
+                <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
+              </TouchableOpacity>
             </View>
-         </View>
+            <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+              {cards.length === 0 ? (
+                <Text style={styles.emptyStateText}>Нет доступных карточек</Text>
+              ) : cards.map((card: any) => {
+                const c = card.collectionCard;
+                const rarityColor = getRarityCol(c.rarity);
+                return (
+                  <TouchableOpacity
+                    key={card.id}
+                    style={[styles.pickerItem, { borderColor: rarityColor }]}
+                    onPress={() => handleEquipCard(card)}
+                  >
+                    <MaterialIcons name={(c.brandIcon as any) || 'style'} size={32} color={rarityColor} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.pickerItemName}>{c.name}</Text>
+                      <Text style={styles.pickerItemDetails}>Cashback: {c.cashbackPercent}% • HP: {card.health}%</Text>
+                    </View>
+                    <Text style={[styles.pickerRarity, { color: rarityColor }]}>{getRarityName(c.rarity)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
 
       {/* Card Detail Modal */}
       <Modal visible={detailModalVisible} transparent animationType="fade">
-         <View style={styles.modalCenterOverlay}>
-            <View style={[styles.detailCardContent, selectedCard && { borderColor: getRarityCol(selectedCard.collectionCard.rarity) }]}>
-               {selectedCard && (
-                  <>
-                    <View style={styles.detailHeader}>
-                      <View style={[styles.rarityBadge, { backgroundColor: getRarityCol(selectedCard.collectionCard.rarity), alignSelf: 'center' }]}>
-                         <Text style={styles.rarityBadgeText}>{getRarityName(selectedCard.collectionCard.rarity)}</Text>
-                      </View>
-                      <TouchableOpacity onPress={() => setDetailModalVisible(false)} style={styles.closeAbsolute}>
-                         <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
-                      </TouchableOpacity>
-                    </View>
-                    
-                    <View style={styles.detailIconWrap}>
-                       <MaterialIcons name={(selectedCard.collectionCard.brandIcon as any) || 'style'} size={60} color={getRarityCol(selectedCard.collectionCard.rarity)} />
-                    </View>
+        <View style={styles.modalCenterOverlay}>
+          <View style={[styles.detailCardContent, selectedCard && { borderColor: getRarityCol(selectedCard.collectionCard.rarity) }]}>
+            {selectedCard && (
+              <>
+                <View style={styles.detailHeader}>
+                  <View style={[styles.rarityBadge, { backgroundColor: getRarityCol(selectedCard.collectionCard.rarity), alignSelf: 'center' }]}>
+                    <Text style={styles.rarityBadgeText}>{getRarityName(selectedCard.collectionCard.rarity)}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setDetailModalVisible(false)} style={styles.closeAbsolute}>
+                    <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
+                  </TouchableOpacity>
+                </View>
 
-                    <Text style={styles.detailTitle}>{selectedCard.collectionCard.name}</Text>
-                    <Text style={styles.detailDesc}>{selectedCard.collectionCard.brandName}</Text>
+                <View style={styles.detailIconWrap}>
+                  <MaterialIcons name={(selectedCard.collectionCard.brandIcon as any) || 'style'} size={60} color={getRarityCol(selectedCard.collectionCard.rarity)} />
+                </View>
 
-                    <View style={styles.detailStatsBlock}>
-                        <View style={styles.detailStat}>
-                           <MaterialIcons name="percent" size={18} color={colors.primary} />
-                           <Text style={styles.detailStatText}> {selectedCard.collectionCard.cashbackPercent}% Cashback</Text>
-                        </View>
-                        <View style={styles.detailStat}>
-                           <MaterialIcons name="favorite" size={18} color={selectedCard.health > 50 ? '#22c55e' : colors.error} />
-                           <Text style={styles.detailStatText}> {selectedCard.health}% Здоровье</Text>
-                        </View>
-                    </View>
+                <Text style={styles.detailTitle}>{selectedCard.collectionCard.name}</Text>
+                <Text style={styles.detailDesc}>{selectedCard.collectionCard.brandName}</Text>
 
-                    <View style={styles.actionButtonsCol}>
-                        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary }]} onPress={() => handleMockAction('Жертвоприношение (Sacrifice)')}>
-                           <MaterialIcons name="auto-awesome" size={20} color={colors.onPrimary} />
-                           <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>Пожертвовать для HP</Text>
-                        </TouchableOpacity>
+                <View style={styles.detailStatsBlock}>
+                  <View style={styles.detailStat}>
+                    <MaterialIcons name="percent" size={18} color={colors.primary} />
+                    <Text style={styles.detailStatText}> {selectedCard.collectionCard.cashbackPercent}% Cashback</Text>
+                  </View>
+                  <View style={styles.detailStat}>
+                    <MaterialIcons name="favorite" size={18} color={selectedCard.health > 50 ? '#22c55e' : colors.error} />
+                    <Text style={styles.detailStatText}> {selectedCard.health}% Здоровье</Text>
+                  </View>
+                </View>
 
-                        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.surfaceContainerHigh }]} onPress={() => handleMockAction('Торговля (Trade)')}>
-                           <MaterialIcons name="swap-horiz" size={20} color={colors.onSurface} />
-                           <Text style={[styles.actionBtnText, { color: colors.onSurface }]}>Обменять / Подарить</Text>
-                        </TouchableOpacity>
-                    </View>
-                  </>
-               )}
-            </View>
-         </View>
+                <View style={styles.actionButtonsCol}>
+                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary }]} onPress={() => handleMockAction('Жертвоприношение (Sacrifice)')}>
+                    <MaterialIcons name="auto-awesome" size={20} color={colors.onPrimary} />
+                    <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>Пожертвовать для HP</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.surfaceContainerHigh }]} onPress={() => handleMockAction('Торговля (Trade)')}>
+                    <MaterialIcons name="swap-horiz" size={20} color={colors.onSurface} />
+                    <Text style={[styles.actionBtnText, { color: colors.onSurface }]}>Обменять / Подарить</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
       </Modal>
-
     </SafeAreaView>
   );
 }
@@ -410,7 +424,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
   deckSection: {
     marginHorizontal: Spacing.base, marginTop: Spacing.base,
     backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.lg,
-    padding: Spacing.xl, ...Shadows.md, borderWidth: 1, borderColor: Colors.transparentBorder
+    padding: Spacing.xl, ...Shadows.md, borderWidth: 1, borderColor: Colors.transparentBorder,
   },
   deckHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -428,30 +442,24 @@ const getStyles = (Colors: any) => StyleSheet.create({
     width: '30%', aspectRatio: 0.7, borderRadius: BorderRadius.base, alignItems: 'center',
     justifyContent: 'center', padding: Spacing.sm, gap: 4,
   },
-  deckSlotFilled: {
-    backgroundColor: Colors.surfaceContainerLow, borderWidth: 2, overflow: 'hidden',
-  },
-  deckSlotGlow: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: 4, opacity: 0.6,
-  },
+  deckSlotFilled: { backgroundColor: Colors.surfaceContainerLow, borderWidth: 2, overflow: 'hidden' },
+  deckSlotGlow: { position: 'absolute', top: 0, left: 0, right: 0, height: 4, opacity: 0.6 },
   deckSlotEmpty: {
     backgroundColor: Colors.surfaceContainerHigh, borderWidth: 2,
     borderColor: Colors.outlineVariant, borderStyle: 'dashed',
   },
-  deckSlotName: {
-    fontSize: 10, fontFamily: 'Manrope-Bold', color: Colors.onSurface, textAlign: 'center',
-  },
+  deckSlotName: { fontSize: 10, fontFamily: 'Manrope-Bold', color: Colors.onSurface, textAlign: 'center' },
   deckSlotRarity: { fontSize: 9, fontFamily: 'Manrope-ExtraBold', textTransform: 'uppercase', letterSpacing: 1 },
   healthBarContainer: {
     width: '80%', height: 4, backgroundColor: Colors.surfaceContainerHigh, borderRadius: 2,
-    overflow: 'hidden', marginTop: 4
+    overflow: 'hidden', marginTop: 4,
   },
   healthBarFill: { height: '100%', borderRadius: 2 },
 
   section: { paddingHorizontal: Spacing.base, marginTop: Spacing.xl },
   sectionTitle: {
     fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface,
-    marginBottom: Spacing.base, letterSpacing: -0.3
+    marginBottom: Spacing.base, letterSpacing: -0.3,
   },
   questScroll: { marginHorizontal: -Spacing.base, paddingHorizontal: Spacing.base },
   questCard: {
@@ -464,31 +472,22 @@ const getStyles = (Colors: any) => StyleSheet.create({
     width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.surfaceContainerLow,
     alignItems: 'center', justifyContent: 'center',
   },
-  questReward: {
-    fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: Colors.secondaryContainer,
-  },
+  questReward: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: Colors.secondaryContainer },
   questTitle: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Bold', color: Colors.onSurface },
   questDesc: { fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Medium' },
   claimButton: {
     backgroundColor: Colors.primary, borderRadius: BorderRadius.full,
-    paddingVertical: 8, alignItems: 'center', ...Shadows.primary, marginTop: 4
+    paddingVertical: 8, alignItems: 'center', ...Shadows.primary, marginTop: 4,
   },
   claimButtonText: { color: Colors.onPrimary, fontFamily: 'Manrope-Bold', fontSize: Fonts.sizes.sm },
-  completedBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center', marginTop: 4
-  },
+  completedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center', marginTop: 4 },
   completedText: { fontSize: Fonts.sizes.sm, color: '#22c55e', fontFamily: 'Manrope-Bold' },
   progressRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  progressBar: {
-    flex: 1, height: 6, backgroundColor: Colors.surfaceContainerHigh, borderRadius: 3,
-    overflow: 'hidden',
-  },
+  progressBar: { flex: 1, height: 6, backgroundColor: Colors.surfaceContainerHigh, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 3 },
   progressText: { fontSize: Fonts.sizes.xs, color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Bold' },
 
-  filterRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm,
-  },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   filterTab: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: BorderRadius.full,
     backgroundColor: Colors.surfaceContainerLow,
@@ -501,55 +500,78 @@ const getStyles = (Colors: any) => StyleSheet.create({
     flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.base,
     gap: Spacing.base, marginTop: Spacing.base,
   },
+
+  // Card item — flex column, health bar pinned to bottom
   cardItem: {
-    width: '47%', backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: BorderRadius.base, padding: Spacing.base, gap: 6,
-    borderWidth: 2, overflow: 'hidden', ...Shadows.sm,
+    width: '47%',
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.base,
+    padding: Spacing.base,
+    borderWidth: 2,
+    overflow: 'hidden',
+    ...Shadows.sm,
+    // flex layout so body grows and health stays at bottom
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    minHeight: 190,
   },
-  cardItemGlow: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: 4, opacity: 0.7,
-  },
-  rarityBadge: {
-    alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: BorderRadius.full,
-  },
+  cardItemGlow: { position: 'absolute', top: 0, left: 0, right: 0, height: 4, opacity: 0.7 },
+  rarityBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: BorderRadius.full },
   rarityBadgeText: {
     fontSize: 9, fontFamily: 'Manrope-ExtraBold', color: Colors.onPrimary,
     textTransform: 'uppercase', letterSpacing: 1,
   },
   cardItemIcon: {
-    width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.surfaceContainerLow,
+    width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.surfaceContainerLow,
     alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginVertical: 8,
   },
-  cardItemName: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Bold', textAlign: 'center', color: Colors.onSurface },
+  // grows to fill available space, pushes health bar down
+  cardItemBody: { flex: 1 },
+  cardItemName: {
+    fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', textAlign: 'center',
+    color: Colors.onSurface, marginBottom: 2,
+  },
   cardItemBrand: {
-    fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, textAlign: 'center', fontFamily: 'Manrope-Medium'
+    fontSize: Fonts.sizes.xs, color: Colors.onSurfaceVariant, textAlign: 'center', fontFamily: 'Manrope-Medium',
   },
-  cardItemStats: {
-    flexDirection: 'row', justifyContent: 'space-around', marginTop: 8, paddingTop: 8,
-    borderTopWidth: 1, borderTopColor: Colors.transparentBorder
+  cashbackRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 3, marginTop: 6,
   },
-  statRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant },
+  cashbackStat: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant },
 
-  emptyContainer: {
-    width: '100%', alignItems: 'center', paddingVertical: Spacing['3xl'], gap: Spacing.sm,
+  // Health bar — always pinned at the very bottom
+  cardHealthSection: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.transparentBorder,
+    gap: 4,
   },
+  cardHealthLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  cardHealthLabel: { fontSize: 10, fontFamily: 'Manrope-Bold' },
+  cardHealthBar: {
+    width: '100%', height: 4, backgroundColor: Colors.surfaceContainerHigh,
+    borderRadius: 2, overflow: 'hidden',
+  },
+  cardHealthFill: { height: '100%', borderRadius: 2 },
+
+  emptyContainer: { width: '100%', alignItems: 'center', paddingVertical: Spacing['3xl'], gap: Spacing.sm },
   emptyStateText: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, textAlign: 'center' },
   emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.outlineVariant, textAlign: 'center', fontFamily: 'Manrope-Medium' },
   emptySlotText: { fontSize: 10, color: Colors.outlineVariant, fontFamily: 'Manrope-Medium', textAlign: 'center' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalContent: {
-     backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,
-     padding: Spacing.xl, ...Shadows.lg, paddingBottom: 60
+    backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,
+    padding: Spacing.xl, ...Shadows.lg, paddingBottom: 60,
   },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xl },
   modalTitle: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface },
   pickerItem: {
-     flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md,
-     backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base,
-     marginBottom: Spacing.sm, borderWidth: 1
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md,
+    backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base,
+    marginBottom: Spacing.sm, borderWidth: 1,
   },
   pickerItemName: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: Colors.onSurface },
   pickerItemDetails: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, marginTop: 4 },
@@ -557,21 +579,23 @@ const getStyles = (Colors: any) => StyleSheet.create({
 
   modalCenterOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: Spacing.xl },
   detailCardContent: {
-      backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.xl, padding: Spacing.xl,
-      alignItems: 'center', borderWidth: 2, ...Shadows.lg
+    backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.xl, padding: Spacing.xl,
+    alignItems: 'center', borderWidth: 2, ...Shadows.lg,
   },
   closeAbsolute: { position: 'absolute', right: 0, top: 0, padding: Spacing.sm },
   detailHeader: { width: '100%', alignItems: 'center', marginBottom: Spacing.lg },
   detailIconWrap: {
-      width: 100, height: 100, borderRadius: 50, backgroundColor: Colors.surfaceContainerLow,
-      alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.lg
+    width: 100, height: 100, borderRadius: 50, backgroundColor: Colors.surfaceContainerLow,
+    alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.lg,
   },
   detailTitle: { fontSize: 22, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface, textAlign: 'center' },
   detailDesc: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, marginTop: 8 },
   detailStatsBlock: { flexDirection: 'row', gap: Spacing.xl, marginVertical: Spacing.xl },
-  detailStat: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerHigh, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  detailStat: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerHigh,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
+  },
   detailStatText: { fontFamily: 'Manrope-Bold', color: Colors.onSurface, fontSize: Fonts.sizes.sm },
-
   actionButtonsCol: { width: '100%', gap: Spacing.sm },
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: BorderRadius.base, gap: 8 },
   actionBtnText: { fontFamily: 'Manrope-ExtraBold', fontSize: Fonts.sizes.sm },
