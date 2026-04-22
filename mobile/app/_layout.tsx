@@ -57,23 +57,22 @@ function InitialLayout() {
     };
   }, [token]);
 
-
   useEffect(() => {
     if (!isReady) return;
 
     const inTabsGroup = segments[0] === '(tabs)';
-    
+
     // Auth & Onboard Guard
     SecureStore.getItemAsync('onboarded')
       .catch(() => null)
       .then(onboarded => {
-         if (!onboarded) {
-            router.replace('/onboarding');
-         } else if (!token && inTabsGroup) {
-            router.replace('/login');
-         } else if (token && !inTabsGroup) {
-            router.replace('/(tabs)');
-         }
+        if (!onboarded) {
+          router.replace('/onboarding');
+        } else if (!token && inTabsGroup) {
+          router.replace('/login');
+        } else if (token && !inTabsGroup) {
+          router.replace('/(tabs)');
+        }
       });
 
   }, [token, isReady, segments]);
@@ -85,6 +84,16 @@ function InitialLayout() {
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="qr" options={{ headerShown: false }} />
+      <Stack.Screen name="topup" options={{ headerShown: false }} />
+      <Stack.Screen name="transfer" options={{ headerShown: false }} />
+      <Stack.Screen name="payment" options={{ headerShown: false }} />
+      <Stack.Screen name="history" options={{ headerShown: false }} />
+      <Stack.Screen name="notifications" options={{ headerShown: false }} />
+      <Stack.Screen name="card-details" options={{ headerShown: false }} />
+      <Stack.Screen name="collection" options={{ headerShown: false }} />
+      <Stack.Screen name="trade" options={{ headerShown: false }} />
+      <Stack.Screen name="qr" options={{ headerShown: false }} />
     </Stack>
   );
 }
