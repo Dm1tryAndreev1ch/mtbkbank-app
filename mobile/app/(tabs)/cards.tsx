@@ -955,14 +955,23 @@ export default function CardsScreen() {
                 <View style={styles.actionButtonsCol}>
                   {equippedCardIds.has(selectedCard.id) ? (
                     <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.error + '22' }]}
-                      onPress={() => { setDetailModalVisible(false); setTimeout(() => handleRemoveCard(selectedCard), 300); }}
+                      onPress={() => {
+                        const cardToRemove = selectedCard;
+                        setDetailModalVisible(false);
+                        handleRemoveCard(cardToRemove);
+                      }}
                     >
                       <MaterialIcons name="remove-circle-outline" size={20} color={colors.error} />
                       <Text style={[styles.actionBtnText, { color: colors.error }]}>Убрать из колоды</Text>
                     </TouchableOpacity>
                   ) : activeDeck && (activeDeck.deckCards?.length ?? 0) < 5 ? (
                     <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary + '22' }]}
-                      onPress={() => { const nextSlot = activeDeck.deckCards?.length ?? 0; setDetailModalVisible(false); setTimeout(() => handleEquipCard(selectedCard, nextSlot), 300); }}
+                      onPress={() => {
+                        const cardToEquip = selectedCard;
+                        const nextSlot = activeDeck.deckCards?.length ?? 0;
+                        setDetailModalVisible(false);
+                        handleEquipCard(cardToEquip, nextSlot);
+                      }}
                     >
                       <MaterialIcons name="add-circle-outline" size={20} color={colors.primary} />
                       <Text style={[styles.actionBtnText, { color: colors.primary }]}>Добавить в колоду</Text>
