@@ -15,7 +15,7 @@ import BiometricGuard from '../components/BiometricGuard';
 SplashScreen.preventAutoHideAsync();
 
 function InitialLayout() {
-  const { token, loadToken, theme, loadAccounts, loadTransactions, loadNotifications } = useStore();
+  const { token, loadToken, loadAccounts, loadTransactions, loadNotifications } = useStore();
   const [isReady, setIsReady] = useState(false);
   const segments = useSegments();
 
@@ -27,34 +27,20 @@ function InitialLayout() {
     init();
   }, [loadToken]);
 
-  // WebSocket Connection
   useEffect(() => {
     if (!token) return;
 
-    const socket = io('http://localhost:3000', {
-      auth: { token },
-    });
+    const socket = io('http://localhost:3000', { auth: { token } });
 
-    socket.on('connect', () => {
-      console.log('Mobile App connected to WebSocket');
-    });
-
-    socket.on('balance_updated', () => {
-      loadAccounts();
-    });
-
-    socket.on('transaction_adjusted', () => {
-      loadTransactions();
-    });
-
+    socket.on('connect', () => console.log('Mobile App connected to WebSocket'));
+    socket.on('balance_updated', () => loadAccounts());
+    socket.on('transaction_adjusted', () => loadTransactions());
     socket.on('notification_broadcast', (payload) => {
       loadNotifications();
       Alert.alert(payload.title, payload.body);
     });
 
-    return () => {
-      socket.disconnect();
-    };
+    return () => { socket.disconnect(); };
   }, [token]);
 
   useEffect(() => {
@@ -62,7 +48,6 @@ function InitialLayout() {
 
     const inTabsGroup = segments[0] === '(tabs)';
 
-    // Auth & Onboard Guard
     SecureStore.getItemAsync('onboarded')
       .catch(() => null)
       .then(onboarded => {
@@ -74,26 +59,25 @@ function InitialLayout() {
           router.replace('/(tabs)');
         }
       });
-
   }, [token, isReady, segments]);
 
   if (!isReady) return null;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="qr" options={{ headerShown: false }} />
-      <Stack.Screen name="topup" options={{ headerShown: false }} />
-      <Stack.Screen name="transfer" options={{ headerShown: false }} />
-      <Stack.Screen name="payment" options={{ headerShown: false }} />
-      <Stack.Screen name="history" options={{ headerShown: false }} />
-      <Stack.Screen name="notifications" options={{ headerShown: false }} />
-      <Stack.Screen name="card-details" options={{ headerShown: false }} />
-      <Stack.Screen name="collection" options={{ headerShown: false }} />
-      <Stack.Screen name="trade" options={{ headerShown: false }} />
-      <Stack.Screen name="qr" options={{ headerShown: false }} />
+      <Stack.Screen name="onboarding" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="qr" />
+      <Stack.Screen name="topup" />
+      <Stack.Screen name="transfer" />
+      <Stack.Screen name="payment" />
+      <Stack.Screen name="history" />
+      <Stack.Screen name="notifications" />
+      <Stack.Screen name="card-details" />
+      <Stack.Screen name="collection" />
+      <Stack.Screen name="trade" />
+      <Stack.Screen name="account" />
     </Stack>
   );
 }
