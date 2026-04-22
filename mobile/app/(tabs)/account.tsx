@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, Alert, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useStore } from '../../stores/useStore';
 import * as api from '../../services/api';
 import { Fonts, Spacing, BorderRadius, Shadows } from '../../constants/theme';
@@ -19,36 +20,35 @@ export default function AccountScreen() {
   const colors = useThemeColor();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
-  // Animated MB logic
   const scale = useSharedValue(0.9);
   const opacity = useSharedValue(0);
 
   useEffect(() => {
-    loadUser();
-    fetchStats();
-    
-    // Animate balance in
     opacity.value = withTiming(1, { duration: 600 });
     scale.value = withSpring(1, { damping: 10, stiffness: 80 });
   }, []);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
+    setLoadingStats(true);
     try {
       const res = await api.getMyStats();
       setStats(res.data);
-    } catch (e) {
-      setStats({
-         totalCards: 18,
-         activeCashback: 5.4,
-         questsCompleted: 112
-      });
+    } catch {
+      setStats(null);
     } finally {
       setLoadingStats(false);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUser();
+      fetchStats();
+    }, [])
+  );
 
   const animatedStyle = useAnimatedStyle(() => ({
-     opacity: opacity.value, transform: [{ scale: scale.value }]
+    opacity: opacity.value, transform: [{ scale: scale.value }],
   }));
 
   const statusColors: Record<string, string> = {
@@ -77,7 +77,7 @@ export default function AccountScreen() {
       { text: 'Светлая', onPress: () => setTheme('light') },
       { text: 'Тёмная', onPress: () => setTheme('dark') },
       { text: 'Системная', onPress: () => setTheme('system') },
-      { text: 'Отмена', style: 'cancel' }
+      { text: 'Отмена', style: 'cancel' },
     ]);
   };
 
@@ -86,6 +86,27 @@ export default function AccountScreen() {
     if (theme === 'dark') return 'Тёмная';
     return 'Системная';
   };
+
+  const statItems = [
+    {
+      icon: 'style' as const,
+      color: colors.primary,
+      value: stats?.totalCards ?? 0,
+      label: 'Карточки',
+    },
+    {
+      icon: 'local-fire-department' as const,
+      color: '#eab308',
+      value: stats?.activeCashback != null ? `${stats.activeCashback}%` : '0%',
+      label: 'Кэшбэк',
+    },
+    {
+      icon: 'emoji-events' as const,
+      color: '#ec4899',
+      value: stats?.questsCompleted ?? 0,
+      label: 'Задания',
+    },
+  ];
 
   const settingsSections = [
     {
@@ -113,9 +134,10 @@ export default function AccountScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Header Bar */}
+
+        {/* Header */}
         <View style={styles.headerBar}>
-            <Text style={styles.pageTitle}>Профиль</Text>
+          <Text style={styles.pageTitle}>Профиль</Text>
           <TouchableOpacity style={styles.bellBtn} onPress={() => router.push('/notifications')}>
             <MaterialIcons name="notifications-none" size={24} color={colors.onSurfaceVariant} />
             {unreadCount > 0 && <View style={styles.bellDot} />}
@@ -145,9 +167,8 @@ export default function AccountScreen() {
             </View>
           </View>
 
-          {/* MB Points Header Animation */}
           <Animated.View style={[styles.mbRow, animatedStyle]}>
-            <View style={styles.mbInfo}>
+            <View>
               <Text style={styles.mbLabel}>MB Баллы</Text>
               <Text style={styles.mbValue}>{(user?.mbPoints || 0).toLocaleString('ru-RU')}</Text>
             </View>
@@ -158,26 +179,21 @@ export default function AccountScreen() {
           </Animated.View>
         </View>
 
-        {/* Stats Row */}
+        {/* Stats */}
         <View style={styles.section}>
-           <Text style={styles.sectionTitle}>Игровая статистика</Text>
-           <View style={styles.statsRow}>
-              <View style={styles.statCard}>
-                 <MaterialIcons name="style" size={24} color={colors.primary} />
-                 {loadingStats ? <ActivityIndicator color={colors.primary} style={styles.loader} /> : <Text style={styles.statScore}>{stats?.totalCards || 0}</Text>}
-                 <Text style={styles.statLabel}>Собрано</Text>
+          <Text style={styles.sectionTitle}>Игровая статистика</Text>
+          <View style={styles.statsRow}>
+            {statItems.map((s) => (
+              <View key={s.label} style={styles.statCard}>
+                <MaterialIcons name={s.icon} size={24} color={s.color} />
+                {loadingStats
+                  ? <ActivityIndicator color={s.color} style={styles.loader} />
+                  : <Text style={styles.statScore}>{s.value}</Text>
+                }
+                <Text style={styles.statLabel}>{s.label}</Text>
               </View>
-              <View style={styles.statCard}>
-                 <MaterialIcons name="local-fire-department" size={24} color="#eab308" />
-                 {loadingStats ? <ActivityIndicator color="#eab308" style={styles.loader} /> : <Text style={styles.statScore}>{stats?.activeCashback || 0}%</Text>}
-                 <Text style={styles.statLabel}>Общий Кэшбэк</Text>
-              </View>
-              <View style={styles.statCard}>
-                 <MaterialIcons name="emoji-events" size={24} color="#ec4899" />
-                 {loadingStats ? <ActivityIndicator color="#ec4899" style={styles.loader} /> : <Text style={styles.statScore}>{stats?.questsCompleted || 0}</Text>}
-                 <Text style={styles.statLabel}>Задания</Text>
-              </View>
-           </View>
+            ))}
+          </View>
         </View>
 
         {/* Settings */}
@@ -189,10 +205,7 @@ export default function AccountScreen() {
                 <TouchableOpacity
                   key={ii}
                   onPress={item.action}
-                  style={[
-                    styles.settingsItem,
-                    ii < section.items.length - 1 && styles.settingsItemBorder,
-                  ]}
+                  style={[styles.settingsItem, ii < section.items.length - 1 && styles.settingsItemBorder]}
                 >
                   <View style={styles.settingsLeft}>
                     <View style={styles.settingsIcon}>
@@ -201,9 +214,7 @@ export default function AccountScreen() {
                     <Text style={styles.settingsLabel}>{item.label}</Text>
                   </View>
                   <View style={styles.settingsRight}>
-                    {item.detail ? (
-                      <Text style={styles.settingsDetail}>{item.detail}</Text>
-                    ) : null}
+                    {item.detail ? <Text style={styles.settingsDetail}>{item.detail}</Text> : null}
                     <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
                   </View>
                 </TouchableOpacity>
@@ -212,7 +223,6 @@ export default function AccountScreen() {
           </View>
         ))}
 
-        {/* Logout */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <MaterialIcons name="logout" size={20} color={colors.error} />
           <Text style={styles.logoutText}>Выйти из аккаунта</Text>
@@ -227,108 +237,44 @@ export default function AccountScreen() {
 const getStyles = (Colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scrollContent: { paddingBottom: 120 },
-  headerBar: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: Spacing.xl, paddingTop: Spacing.xl, paddingBottom: Spacing.sm
-  },
+  headerBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.xl, paddingTop: Spacing.xl, paddingBottom: Spacing.sm },
   pageTitle: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface },
   bellBtn: { position: 'relative', padding: 8 },
-  bellDot: {
-    position: 'absolute', top: 8, right: 8, width: 8, height: 8,
-    borderRadius: 4, backgroundColor: Colors.error,
-  },
-  profileCard: {
-    margin: Spacing.base, backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: BorderRadius.lg, padding: Spacing.xl,
-    borderWidth: 1, borderColor: Colors.transparentBorder, ...Shadows.md,
-  },
-  profileHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.xl, marginBottom: Spacing.xl,
-  },
+  bellDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.error },
+  profileCard: { margin: Spacing.base, backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.xl, borderWidth: 1, borderColor: Colors.transparentBorder, ...Shadows.md },
+  profileHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xl, marginBottom: Spacing.xl },
   avatarContainer: { position: 'relative' },
   avatar: { width: 80, height: 80, borderRadius: 40 },
-  avatarPlaceholder: {
-    backgroundColor: Colors.surfaceContainerHigh, alignItems: 'center', justifyContent: 'center',
-  },
-  statusDot: {
-    position: 'absolute', bottom: 2, right: 2, width: 20, height: 20, borderRadius: 10,
-    borderWidth: 3, borderColor: Colors.surfaceContainerLowest,
-  },
+  avatarPlaceholder: { backgroundColor: Colors.surfaceContainerHigh, alignItems: 'center', justifyContent: 'center' },
+  statusDot: { position: 'absolute', bottom: 2, right: 2, width: 20, height: 20, borderRadius: 10, borderWidth: 3, borderColor: Colors.surfaceContainerLowest },
   profileInfo: { flex: 1 },
-  profileName: {
-    fontSize: Fonts.sizes['xl'], fontFamily: 'Manrope-ExtraBold',
-    color: Colors.onSurface, letterSpacing: -0.5,
-  },
+  profileName: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface, letterSpacing: -0.5 },
   statusRow: { flexDirection: 'row', marginTop: Spacing.sm },
-  statusBadge: {
-    paddingHorizontal: 12, paddingVertical: 4, borderRadius: BorderRadius.full,
-  },
-  statusText: {
-    fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-ExtraBold', color: Colors.onPrimary,
-    textTransform: 'uppercase', letterSpacing: 1,
-  },
-  mbRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLow, borderRadius: BorderRadius.base,
-    padding: Spacing.base,
-  },
-  mbInfo: {},
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: BorderRadius.full },
+  statusText: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-ExtraBold', color: Colors.onPrimary, textTransform: 'uppercase', letterSpacing: 1 },
+  mbRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.surfaceContainerLow, borderRadius: BorderRadius.base, padding: Spacing.base },
   mbLabel: { fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Medium' },
-  mbValue: {
-    fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: Colors.primary,
-  },
-  mbButton: {
-    backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10,
-    borderRadius: BorderRadius.full, flexDirection: 'row', alignItems: 'center'
-  },
-  mbButtonText: {
-    fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onPrimary,
-  },
-
+  mbValue: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: Colors.primary },
+  mbButton: { backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: BorderRadius.full, flexDirection: 'row', alignItems: 'center' },
+  mbButtonText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onPrimary },
   section: { paddingHorizontal: Spacing.base, marginTop: Spacing.lg },
   sectionTitle: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-Bold', color: Colors.onSurface, marginBottom: Spacing.md, paddingHorizontal: Spacing.sm },
   statsRow: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.sm },
-  statCard: {
-     flex: 1, backgroundColor: Colors.surfaceContainerLowest, padding: Spacing.base, borderRadius: BorderRadius.base,
-     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.transparentBorder, ...Shadows.sm
-  },
+  statCard: { flex: 1, backgroundColor: Colors.surfaceContainerLowest, padding: Spacing.base, borderRadius: BorderRadius.base, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.transparentBorder, ...Shadows.sm },
   loader: { marginVertical: 8 },
   statScore: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface, marginVertical: 4 },
   statLabel: { fontSize: 10, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, textTransform: 'uppercase' },
-
   settingsSection: { paddingHorizontal: Spacing.base, marginTop: Spacing.xl },
-  settingsSectionTitle: {
-    fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-ExtraBold', color: Colors.primary,
-    letterSpacing: 2, marginBottom: Spacing.sm, textTransform: 'uppercase',
-  },
-  settingsCard: {
-    backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base,
-    borderWidth: 1, borderColor: Colors.transparentBorder, overflow: 'hidden',
-  },
-  settingsItem: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: Spacing.lg,
-  },
-  settingsItemBorder: {
-    borderBottomWidth: 1, borderBottomColor: Colors.transparentBorder,
-  },
+  settingsSectionTitle: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-ExtraBold', color: Colors.primary, letterSpacing: 2, marginBottom: Spacing.sm, textTransform: 'uppercase' },
+  settingsCard: { backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base, borderWidth: 1, borderColor: Colors.transparentBorder, overflow: 'hidden' },
+  settingsItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.lg },
+  settingsItemBorder: { borderBottomWidth: 1, borderBottomColor: Colors.transparentBorder },
   settingsLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base },
-  settingsIcon: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(79,142,247,0.1)',
-    alignItems: 'center', justifyContent: 'center',
-  },
+  settingsIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(79,142,247,0.1)', alignItems: 'center', justifyContent: 'center' },
   settingsLabel: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: Colors.onSurface },
   settingsRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   settingsDetail: { fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Medium' },
-  logoutButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
-    marginHorizontal: Spacing.base, marginTop: Spacing['2xl'],
-    padding: Spacing.base, borderRadius: BorderRadius.base,
-    backgroundColor: 'rgba(186,26,26,0.15)', borderWidth: 1, borderColor: 'rgba(186,26,26,0.25)'
-  },
+  logoutButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, marginHorizontal: Spacing.base, marginTop: Spacing['2xl'], padding: Spacing.base, borderRadius: BorderRadius.base, backgroundColor: 'rgba(186,26,26,0.15)', borderWidth: 1, borderColor: 'rgba(186,26,26,0.25)' },
   logoutText: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: Colors.error },
-  version: {
-    textAlign: 'center', marginTop: Spacing.base, marginBottom: Spacing.xl,
-    color: Colors.outlineVariant, fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium'
-  },
+  version: { textAlign: 'center', marginTop: Spacing.base, marginBottom: Spacing.xl, color: Colors.outlineVariant, fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium' },
 });
