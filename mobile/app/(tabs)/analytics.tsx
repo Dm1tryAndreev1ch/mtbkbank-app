@@ -10,12 +10,12 @@ import { useStore } from '../../stores/useStore';
 import * as api from '../../services/api';
 import { PieChart } from 'react-native-chart-kit';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, FadeIn } from 'react-native-reanimated';
-import { Fonts, Spacing, BorderRadius, Shadows, formatMoney, toMaterialIconName } from '../../constants/theme';
+import { Fonts, Spacing, BorderRadius, Shadows, toMaterialIconName } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
 
 const screenWidth = Dimensions.get('window').width;
 
-const SkeletonPulse = ({ style, colors }: { style: any, colors: any }) => {
+const SkeletonPulse = ({ style, colors }: { style: any; colors: any }) => {
   const opacity = useSharedValue(0.3);
   useEffect(() => {
     opacity.value = withRepeat(withTiming(0.7, { duration: 800 }), -1, true);
@@ -25,10 +25,12 @@ const SkeletonPulse = ({ style, colors }: { style: any, colors: any }) => {
 };
 
 const PERIODS = [
-  { id: 'week', label: 'Неделя' },
-  { id: 'month', label: 'Месяц' },
-  { id: 'year', label: 'Год' },
+  { id: 'week', label: '\u041d\u0435\u0434\u0435\u043b\u044f' },
+  { id: 'month', label: '\u041c\u0435\u0441\u044f\u0446' },
+  { id: 'year', label: '\u0413\u043e\u0434' },
 ];
+
+const CATEGORY_COLORS = ['#4F8EF7', '#9333EA', '#0ea5e9', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#14b8a6'];
 
 export default function AnalyticsScreen() {
   const { user, subscriptions, limits, loadSubscriptions, loadLimits, unreadCount } = useStore();
@@ -41,24 +43,22 @@ export default function AnalyticsScreen() {
 
   const fetchAnalytics = useCallback((p: string) => {
     setLoading(true);
-    api.getAnalytics(p).then(({ data }) => {
-      setAnalytics(data);
-      setLoading(false);
-    }).catch(() => {
-      setAnalytics({
-        totalSpent: 45200,
-        breakdown: [
-          { category: 'Супермаркеты', amount: 15000 },
-          { category: 'Переводы', amount: 12000 },
-          { category: 'Рестораны', amount: 8200 },
-          { category: 'Развлечения', amount: 10000 },
-        ]
+    api.getAnalytics(p)
+      .then(({ data }) => { setAnalytics(data); setLoading(false); })
+      .catch(() => {
+        setAnalytics({
+          totalSpent: 45200,
+          breakdown: [
+            { category: '\u0421\u0443\u043f\u0435\u0440\u043c\u0430\u0440\u043a\u0435\u0442\u044b', amount: 15000 },
+            { category: '\u041f\u0435\u0440\u0435\u0432\u043e\u0434\u044b', amount: 12000 },
+            { category: '\u0420\u0435\u0441\u0442\u043e\u0440\u0430\u043d\u044b', amount: 8200 },
+            { category: '\u0420\u0430\u0437\u0432\u043b\u0435\u0447\u0435\u043d\u0438\u044f', amount: 10000 },
+          ],
+        });
+        setLoading(false);
       });
-      setLoading(false);
-    });
   }, []);
 
-  // Обновляем при каждом входе на экран
   useFocusEffect(
     useCallback(() => {
       fetchAnalytics(period);
@@ -67,25 +67,23 @@ export default function AnalyticsScreen() {
     }, [period])
   );
 
-  // Обновляем при смене периода
-  useEffect(() => {
-    fetchAnalytics(period);
-  }, [period]);
+  useEffect(() => { fetchAnalytics(period); }, [period]);
 
-  const categoryColors = [colors.primary, colors.primaryContainer, colors.secondaryContainer, colors.tertiaryFixed, '#9333EA', '#f59e0b', '#ef4444', '#0ea5e9'];
+  const breakdown: any[] = analytics?.breakdown || [];
 
-  const chartData = analytics?.breakdown?.map((cat: any, index: number) => ({
-    name: '', // пустое имя — легенда рисуется своя, не через PieChart
+  const chartData = breakdown.map((cat, index) => ({
+    name: ' ',
     population: cat.amount,
-    color: categoryColors[index % categoryColors.length],
+    color: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
     legendFontColor: colors.onSurfaceVariant,
     legendFontSize: 12,
-  })) || [];
+  }));
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Header Bar */}
+
+        {/* Header */}
         <View style={styles.headerBar}>
           <TouchableOpacity style={styles.bellBtn} onPress={() => router.push('/notifications')}>
             <MaterialIcons name="notifications-none" size={24} color={colors.onSurfaceVariant} />
@@ -98,48 +96,43 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* Period Selector */}
-        <View style={styles.periodSelectorGrid}>
+        <View style={styles.periodRow}>
           {PERIODS.map((p) => (
             <TouchableOpacity
               key={p.id}
               style={[styles.periodTab, period === p.id && styles.periodTabActive]}
               onPress={() => setPeriod(p.id)}
             >
-              <Text
-                style={[styles.periodTabText, period === p.id && styles.periodTabTextActive]}
-                allowFontScaling={false}
-                numberOfLines={1}
-              >
+              <Text style={[styles.periodTabText, period === p.id && styles.periodTabTextActive]} allowFontScaling={false}>
                 {p.label}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Chart Section */}
-        <View style={styles.donutSection}>
-          <Text style={styles.totalSpentLabel} allowFontScaling={false}>Всего потрачено</Text>
-          {loading ? (
-            <SkeletonPulse style={{ width: 140, height: 40, borderRadius: 8, marginTop: 8 }} colors={colors} />
-          ) : (
-            <Text style={styles.donutAmount} allowFontScaling={false}>
-              ₽ {analytics ? Math.round(analytics.totalSpent).toLocaleString('ru-RU') : '0'}
-            </Text>
-          )}
+        {/* Chart Card */}
+        <View style={styles.chartCard}>
+          {/* Total */}
+          <Text style={styles.totalLabel} allowFontScaling={false}>\u0412\u0441\u0435\u0433\u043e \u043f\u043e\u0442\u0440\u0430\u0447\u0435\u043d\u043e</Text>
+          {loading
+            ? <SkeletonPulse style={{ width: 160, height: 38, borderRadius: 8, marginTop: 6, marginBottom: 4 }} colors={colors} />
+            : <Text style={styles.totalAmount} allowFontScaling={false}>\u20bd {analytics ? Math.round(analytics.totalSpent).toLocaleString('ru-RU') : '0'}</Text>
+          }
 
+          {/* Pie */}
           {loading ? (
-            <SkeletonPulse style={{ width: screenWidth - 64, height: 220, borderRadius: 120, marginVertical: 20 }} colors={colors} />
+            <SkeletonPulse style={{ width: 200, height: 200, borderRadius: 100, marginVertical: 16, alignSelf: 'center' }} colors={colors} />
           ) : chartData.length > 0 ? (
-            <Animated.View entering={FadeIn} style={styles.chartContainer}>
+            <Animated.View entering={FadeIn} style={styles.pieWrap}>
               <PieChart
                 data={chartData}
-                width={screenWidth - 32}
-                height={220}
+                width={screenWidth - 48}
+                height={200}
                 chartConfig={{
-                  backgroundColor: colors.surface,
-                  backgroundGradientFrom: colors.surface,
-                  backgroundGradientTo: colors.surface,
-                  color: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
+                  color: (opacity = 1) => `rgba(100,100,100,${opacity})`,
+                  backgroundGradientFrom: colors.surfaceContainerLowest,
+                  backgroundGradientTo: colors.surfaceContainerLowest,
+                  backgroundColor: colors.surfaceContainerLowest,
                 }}
                 accessor="population"
                 backgroundColor="transparent"
@@ -150,278 +143,184 @@ export default function AnalyticsScreen() {
               />
             </Animated.View>
           ) : (
-            <Text style={styles.emptyChartText}>Нет данных за этот период</Text>
+            <Text style={styles.emptyChart}>\u041d\u0435\u0442 \u0434\u0430\u043d\u043d\u044b\u0445 \u0437\u0430 \u044d\u0442\u043e\u0442 \u043f\u0435\u0440\u0438\u043e\u0434</Text>
           )}
-        </View>
 
-        {/* Category Legend Detail Grid */}
-        <View style={styles.legendGrid}>
-          {loading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <SkeletonPulse key={i} style={[styles.legendItem, { height: 64, borderWidth: 0 }]} colors={colors} />
-            ))
-          ) : (
-            (analytics?.breakdown || []).map((cat: any, i: number) => {
-              const percentage = analytics.totalSpent > 0 ? (cat.amount / analytics.totalSpent) * 100 : 0;
-              return (
-                <View key={cat.category} style={styles.legendItem}>
-                  <View style={styles.legendHeader}>
-                    <View style={[styles.legendDot, { backgroundColor: categoryColors[i % categoryColors.length] }]} />
-                    <Text
-                      style={styles.legendCategory}
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                      allowFontScaling={false}
-                    >
-                      {cat.category}
-                    </Text>
-                  </View>
-                  <View style={styles.legendStats}>
-                    <Text style={styles.legendAmount} allowFontScaling={false} numberOfLines={1}>
-                      ₽ {Math.round(cat.amount).toLocaleString('ru-RU')}
-                    </Text>
-                    <Text style={styles.legendPercent} allowFontScaling={false}>
-                      {percentage.toFixed(1)}%
-                    </Text>
-                  </View>
-                </View>
-              );
-            })
+          {/* Legend inside the card */}
+          {!loading && breakdown.length > 0 && (
+            <>
+              <View style={styles.legendDivider} />
+              <Text style={styles.legendTitle} allowFontScaling={false}>\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438</Text>
+              <View style={styles.legendGrid}>
+                {breakdown.map((cat, i) => {
+                  const pct = analytics.totalSpent > 0 ? (cat.amount / analytics.totalSpent) * 100 : 0;
+                  return (
+                    <View key={cat.category} style={styles.legendItem}>
+                      <View style={styles.legendHeader}>
+                        <View style={[styles.legendDot, { backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }]} />
+                        <Text style={styles.legendCat} numberOfLines={1} allowFontScaling={false}>{cat.category}</Text>
+                      </View>
+                      <Text style={styles.legendAmt} numberOfLines={1} allowFontScaling={false}>\u20bd {Math.round(cat.amount).toLocaleString('ru-RU')}</Text>
+                      <Text style={styles.legendPct} allowFontScaling={false}>{pct.toFixed(1)}%</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          )}
+          {loading && (
+            <View style={styles.legendGrid}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <SkeletonPulse key={i} style={{ width: '47%', height: 72, borderRadius: BorderRadius.base }} colors={colors} />
+              ))}
+            </View>
           )}
         </View>
 
         {/* Subscriptions */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle} allowFontScaling={false}>Подписки</Text>
+            <Text style={styles.sectionTitle} allowFontScaling={false}>\u041f\u043e\u0434\u043f\u0438\u0441\u043a\u0438</Text>
             <Text style={styles.sectionBadge} allowFontScaling={false}>
-              {subscriptions.filter((s: any) => s.isActive).length} активных
+              {subscriptions.filter((s: any) => s.isActive).length} \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445
             </Text>
           </View>
           <View style={styles.subsList}>
-            {subscriptions.length === 0 ? (
-              <Text style={styles.emptyText}>У вас нет подписок</Text>
-            ) : subscriptions.map((sub: any) => (
-              <View key={sub.id} style={styles.subItem}>
-                <View style={styles.subLeft}>
-                  <View style={styles.subIcon}>
-                    <MaterialIcons name={toMaterialIconName(sub.icon) as any} size={24} color={colors.primary} />
+            {subscriptions.length === 0
+              ? <Text style={styles.emptyText}>\u0423 \u0432\u0430\u0441 \u043d\u0435\u0442 \u043f\u043e\u0434\u043f\u0438\u0441\u043e\u043a</Text>
+              : subscriptions.map((sub: any) => (
+                <View key={sub.id} style={styles.subItem}>
+                  <View style={styles.subLeft}>
+                    <View style={styles.subIcon}>
+                      <MaterialIcons name={toMaterialIconName(sub.icon) as any} size={24} color={colors.primary} />
+                    </View>
+                    <View style={styles.subTextWrap}>
+                      <Text style={styles.subName} numberOfLines={1} allowFontScaling={false}>{sub.name}</Text>
+                      <Text style={styles.subDetail} numberOfLines={1} allowFontScaling={false}>
+                        \u0421\u043f\u0438\u0441\u0430\u043d\u0438\u0435 {new Date(sub.nextPayment).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} \u2022 \u20bd {sub.amount}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.subTextWrap}>
-                    <Text style={styles.subName} numberOfLines={1} allowFontScaling={false}>{sub.name}</Text>
-                    <Text style={styles.subDetail} numberOfLines={1} allowFontScaling={false}>
-                      Списание {new Date(sub.nextPayment).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} • ₽ {sub.amount}
-                    </Text>
-                  </View>
+                  <Switch
+                    value={sub.isActive}
+                    trackColor={{ false: colors.surfaceContainerHigh, true: colors.primary }}
+                    thumbColor={colors.surfaceContainerLowest}
+                    onValueChange={async (val) => { await api.toggleSubscription(sub.id, val); loadSubscriptions(); }}
+                  />
                 </View>
-                <Switch
-                  value={sub.isActive}
-                  trackColor={{ false: colors.surfaceContainerHigh, true: colors.primary }}
-                  thumbColor={colors.surfaceContainerLowest}
-                  onValueChange={async (val) => {
-                    await api.toggleSubscription(sub.id, val);
-                    loadSubscriptions();
-                  }}
-                />
-              </View>
-            ))}
+              ))
+            }
           </View>
         </View>
 
-        {/* Spending Limits */}
+        {/* Limits */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle} allowFontScaling={false}>Лимиты трат</Text>
+            <Text style={styles.sectionTitle} allowFontScaling={false}>\u041b\u0438\u043c\u0438\u0442\u044b \u0442\u0440\u0430\u0442</Text>
             <TouchableOpacity onPress={() => router.push('/account')}>
               <MaterialIcons name="settings" size={20} color={colors.onSurfaceVariant} />
             </TouchableOpacity>
           </View>
           <View style={styles.limitsCard}>
-            {limits.length === 0 ? (
-              <Text style={styles.emptyText}>Лимиты не установлены</Text>
-            ) : limits.map((limit: any) => {
-              const progress = limit.limitAmount > 0 ? Math.min(limit.spentAmount / limit.limitAmount, 1) : 0;
-              const isWarning = progress > 0.8;
-              return (
-                <View key={limit.id} style={styles.limitItem}>
-                  <View style={styles.limitHeader}>
-                    <Text style={styles.limitCategory} numberOfLines={1} allowFontScaling={false}>
-                      {limit.category}
-                    </Text>
-                    <Text
-                      style={[styles.limitAmounts, isWarning && { color: colors.error }]}
-                      allowFontScaling={false}
-                      numberOfLines={1}
-                    >
-                      ₽ {Math.round(limit.spentAmount).toLocaleString('ru-RU')} / ₽ {Math.round(limit.limitAmount).toLocaleString('ru-RU')}
-                    </Text>
+            {limits.length === 0
+              ? <Text style={styles.emptyText}>\u041b\u0438\u043c\u0438\u0442\u044b \u043d\u0435 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u044b</Text>
+              : limits.map((limit: any) => {
+                const progress = limit.limitAmount > 0 ? Math.min(limit.spentAmount / limit.limitAmount, 1) : 0;
+                const warn = progress > 0.8;
+                return (
+                  <View key={limit.id} style={styles.limitItem}>
+                    <View style={styles.limitHeader}>
+                      <Text style={styles.limitCat} numberOfLines={1} allowFontScaling={false}>{limit.category}</Text>
+                      <Text style={[styles.limitAmts, warn && { color: colors.error }]} allowFontScaling={false} numberOfLines={1}>
+                        \u20bd {Math.round(limit.spentAmount).toLocaleString('ru-RU')} / \u20bd {Math.round(limit.limitAmount).toLocaleString('ru-RU')}
+                      </Text>
+                    </View>
+                    <View style={styles.limitBarBg}>
+                      <View style={[styles.limitBarFill, { width: `${progress * 100}%` }, warn && { backgroundColor: colors.error }]} />
+                    </View>
                   </View>
-                  <View style={styles.limitBarBg}>
-                    <View style={[
-                      styles.limitBarFill,
-                      { width: `${progress * 100}%` },
-                      isWarning && { backgroundColor: colors.error },
-                    ]} />
-                  </View>
-                </View>
-              );
-            })}
+                );
+              })
+            }
           </View>
         </View>
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const getStyles = (Colors: any) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const CARD_GAP = Spacing.sm;
+const CARD_H_PAD = Spacing.base;
+
+const getStyles = (C: any) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.background },
   scrollContent: { paddingBottom: 120, paddingTop: Spacing.base },
-  headerBar: {
-    flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center',
-    paddingHorizontal: Spacing.base, gap: Spacing.sm, marginBottom: Spacing.base,
-  },
+
+  headerBar: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: Spacing.base, gap: Spacing.sm, marginBottom: Spacing.base },
   bellBtn: { position: 'relative', padding: 8 },
-  bellDot: {
-    position: 'absolute', top: 8, right: 8, width: 8, height: 8,
-    borderRadius: 4, backgroundColor: Colors.error,
-  },
-  mbBadge: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
-    flexDirection: 'row', alignItems: 'center', gap: 6, ...Shadows.primary,
-  },
-  mbLabel: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: '#ffffff', letterSpacing: 1 },
-  mbText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#ffffff' },
+  bellDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: C.error },
+  mbBadge: { backgroundColor: C.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 6, ...Shadows.primary },
+  mbLabel: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: '#fff', letterSpacing: 1 },
+  mbText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#fff' },
 
-  periodSelectorGrid: {
-    flexDirection: 'row',
+  periodRow: { flexDirection: 'row', marginHorizontal: Spacing.base, backgroundColor: C.surfaceContainerHigh, padding: 4, borderRadius: BorderRadius.md, marginBottom: Spacing.base },
+  periodTab: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: BorderRadius.sm },
+  periodTabActive: { backgroundColor: C.surfaceContainerLowest, ...Shadows.sm },
+  periodTabText: { fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant, fontSize: Fonts.sizes.sm },
+  periodTabTextActive: { fontFamily: 'Manrope-Bold', color: C.onSurface },
+
+  chartCard: {
     marginHorizontal: Spacing.base,
-    backgroundColor: Colors.surfaceContainerHigh,
-    padding: 4,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.base,
+    backgroundColor: C.surfaceContainerLowest,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.base,
+    paddingHorizontal: CARD_H_PAD,
+    borderWidth: 1,
+    borderColor: C.transparentBorder,
+    ...Shadows.sm,
   },
-  periodTab: {
-    flex: 1, paddingVertical: 8, paddingHorizontal: 4,
-    alignItems: 'center', borderRadius: BorderRadius.sm, overflow: 'hidden',
-  },
-  periodTabActive: { backgroundColor: Colors.surfaceContainerLowest, ...Shadows.sm },
-  periodTabText: {
-    fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant,
-    fontSize: Fonts.sizes.sm, includeFontPadding: false,
-  },
-  periodTabTextActive: { fontFamily: 'Manrope-Bold', color: Colors.onSurface },
+  totalLabel: { fontSize: Fonts.sizes.sm, color: C.onSurfaceVariant, fontFamily: 'Manrope-Medium', marginTop: Spacing.sm, textAlign: 'center' },
+  totalAmount: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: C.onSurface, textAlign: 'center', marginTop: 4, marginBottom: 4 },
+  pieWrap: { alignItems: 'center', justifyContent: 'center' },
+  emptyChart: { color: C.onSurfaceVariant, fontFamily: 'Manrope-Medium', textAlign: 'center', paddingVertical: 40 },
 
-  donutSection: {
-    alignItems: 'center', paddingVertical: Spacing.base,
-    backgroundColor: Colors.surfaceContainerLowest,
-    marginHorizontal: Spacing.base, borderRadius: BorderRadius.lg,
-    ...Shadows.sm, borderWidth: 1, borderColor: Colors.transparentBorder,
-  },
-  chartContainer: { alignItems: 'center', justifyContent: 'center' },
-  totalSpentLabel: {
-    fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant,
-    fontFamily: 'Manrope-Medium', marginTop: Spacing.base,
-  },
-  donutAmount: {
-    fontSize: Fonts.sizes['4xl'], fontFamily: 'Manrope-ExtraBold',
-    color: Colors.onSurface, marginTop: 4,
-  },
-  emptyChartText: {
-    color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Medium',
-    marginTop: 40, marginBottom: 40,
-  },
-
-  legendGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm,
-    paddingHorizontal: Spacing.base, marginTop: Spacing.base,
-  },
+  legendDivider: { height: 1, backgroundColor: C.transparentBorder, marginVertical: Spacing.base },
+  legendTitle: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant, letterSpacing: 1.5, marginBottom: Spacing.sm },
+  legendGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: CARD_GAP },
   legendItem: {
-    flex: 1, minWidth: '45%', maxWidth: '50%', gap: Spacing.sm,
-    backgroundColor: Colors.surfaceContainerLowest,
-    padding: Spacing.base, borderRadius: BorderRadius.base,
-    borderWidth: 1, borderColor: Colors.transparentBorder, overflow: 'hidden',
+    width: `${(100 - (CARD_GAP / ((screenWidth - 48 - CARD_H_PAD * 2)) * 100)) / 2}%`,
+    backgroundColor: C.surfaceContainerHigh,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.base,
+    gap: 2,
   },
-  legendHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, overflow: 'hidden' },
+  legendHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
-  legendCategory: {
-    fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant,
-    fontFamily: 'Manrope-Medium', flex: 1, includeFontPadding: false,
-  },
-  legendStats: {
-    flexDirection: 'row', alignItems: 'flex-end',
-    justifyContent: 'space-between', marginTop: 2, gap: 4,
-  },
-  legendAmount: {
-    fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Bold',
-    color: Colors.onSurface, flexShrink: 1, includeFontPadding: false,
-  },
-  legendPercent: {
-    fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold',
-    color: Colors.primary, flexShrink: 0, includeFontPadding: false,
-  },
+  legendCat: { fontSize: Fonts.sizes.xs, color: C.onSurfaceVariant, fontFamily: 'Manrope-Medium', flex: 1 },
+  legendAmt: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurface },
+  legendPct: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: C.primary },
 
   section: { paddingHorizontal: Spacing.base, marginTop: Spacing.xl },
-  sectionHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
-    marginBottom: Spacing.base,
-  },
-  sectionTitle: {
-    fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold',
-    letterSpacing: -0.3, color: Colors.onSurface,
-  },
-  sectionBadge: {
-    fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold',
-    color: Colors.primary, textTransform: 'uppercase', letterSpacing: 0.5,
-  },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: Spacing.base },
+  sectionTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', letterSpacing: -0.3, color: C.onSurface },
+  sectionBadge: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.primary, textTransform: 'uppercase', letterSpacing: 0.5 },
+
   subsList: { gap: Spacing.sm },
-  subItem: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLowest, padding: Spacing.base,
-    borderRadius: BorderRadius.base, borderWidth: 1, borderColor: Colors.transparentBorder,
-    gap: Spacing.sm,
-  },
+  subItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: C.surfaceContainerLowest, padding: Spacing.base, borderRadius: BorderRadius.base, borderWidth: 1, borderColor: C.transparentBorder, gap: Spacing.sm },
   subLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base, flex: 1, overflow: 'hidden' },
   subTextWrap: { flex: 1, overflow: 'hidden' },
-  subIcon: {
-    width: 48, height: 48, borderRadius: 12, backgroundColor: Colors.transparentBorder,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  subName: {
-    fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold',
-    color: Colors.onSurface, includeFontPadding: false,
-  },
-  subDetail: {
-    fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant,
-    fontFamily: 'Manrope-Medium', includeFontPadding: false,
-  },
+  subIcon: { width: 48, height: 48, borderRadius: 12, backgroundColor: C.transparentBorder, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  subName: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: C.onSurface },
+  subDetail: { fontSize: Fonts.sizes.sm, color: C.onSurfaceVariant, fontFamily: 'Manrope-Medium' },
 
-  limitsCard: {
-    backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.lg,
-    padding: Spacing.xl, gap: Spacing.xl, borderWidth: 1,
-    borderColor: Colors.transparentBorder, ...Shadows.sm,
-  },
+  limitsCard: { backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.xl, gap: Spacing.xl, borderWidth: 1, borderColor: C.transparentBorder, ...Shadows.sm },
   limitItem: { gap: Spacing.sm },
-  limitHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', gap: Spacing.sm,
-  },
-  limitCategory: {
-    fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Bold',
-    color: Colors.onSurface, flex: 1, includeFontPadding: false,
-  },
-  limitAmounts: {
-    fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium',
-    color: Colors.onSurfaceVariant, flexShrink: 0, includeFontPadding: false,
-  },
-  limitBarBg: {
-    width: '100%', height: 8, backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 4, overflow: 'hidden',
-  },
-  limitBarFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 4 },
+  limitHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: Spacing.sm },
+  limitCat: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Bold', color: C.onSurface, flex: 1 },
+  limitAmts: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant, flexShrink: 0 },
+  limitBarBg: { width: '100%', height: 8, backgroundColor: C.surfaceContainerHigh, borderRadius: 4, overflow: 'hidden' },
+  limitBarFill: { height: '100%', backgroundColor: C.primary, borderRadius: 4 },
 
-  emptyText: {
-    color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Medium',
-    textAlign: 'center', padding: Spacing.xl,
-  },
+  emptyText: { color: C.onSurfaceVariant, fontFamily: 'Manrope-Medium', textAlign: 'center', padding: Spacing.xl },
 });
