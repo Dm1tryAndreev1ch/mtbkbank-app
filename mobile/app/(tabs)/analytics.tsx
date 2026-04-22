@@ -9,7 +9,7 @@ import { useStore } from '../../stores/useStore';
 import * as api from '../../services/api';
 import { PieChart } from 'react-native-chart-kit';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, FadeIn } from 'react-native-reanimated';
-import { Fonts, Spacing, BorderRadius, Shadows, formatMoney } from '../../constants/theme';
+import { Fonts, Spacing, BorderRadius, Shadows, formatMoney, toMaterialIconName } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
 
 const screenWidth = Dimensions.get('window').width;
@@ -90,8 +90,8 @@ export default function AnalyticsScreen() {
         {/* Period Selector */}
         <View style={styles.periodSelectorGrid}>
           {PERIODS.map((p) => (
-            <TouchableOpacity 
-              key={p.id} 
+            <TouchableOpacity
+              key={p.id}
               style={[styles.periodTab, period === p.id && styles.periodTabActive]}
               onPress={() => setPeriod(p.id)}
             >
@@ -106,7 +106,7 @@ export default function AnalyticsScreen() {
         <View style={styles.donutSection}>
           <Text style={styles.totalSpentLabel}>Всего потрачено</Text>
           {loading ? (
-             <SkeletonPulse style={{ width: 140, height: 40, borderRadius: 8, marginTop: 8 }} colors={colors} />
+            <SkeletonPulse style={{ width: 140, height: 40, borderRadius: 8, marginTop: 8 }} colors={colors} />
           ) : (
             <Text style={styles.donutAmount}>
               ₽ {analytics ? Math.round(analytics.totalSpent).toLocaleString('ru-RU') : '0'}
@@ -142,24 +142,24 @@ export default function AnalyticsScreen() {
         {/* Category Legend Detail Grid */}
         <View style={styles.legendGrid}>
           {loading ? (
-             Array.from({ length: 4 }).map((_, i) => (
+            Array.from({ length: 4 }).map((_, i) => (
               <SkeletonPulse key={i} style={[styles.legendItem, { height: 64, borderWidth: 0 }]} colors={colors} />
-             ))
+            ))
           ) : (
             (analytics?.breakdown || []).slice(0, 4).map((cat: any, i: number) => {
               const percentage = analytics.totalSpent > 0 ? (cat.amount / analytics.totalSpent) * 100 : 0;
               return (
                 <View key={cat.category} style={styles.legendItem}>
                   <View style={styles.legendHeader}>
-                     <View style={[styles.legendDot, { backgroundColor: categoryColors[i % categoryColors.length] }]} />
-                     <Text style={styles.legendCategory} numberOfLines={1}>{cat.category}</Text>
+                    <View style={[styles.legendDot, { backgroundColor: categoryColors[i % categoryColors.length] }]} />
+                    <Text style={styles.legendCategory} numberOfLines={1}>{cat.category}</Text>
                   </View>
                   <View style={styles.legendStats}>
                     <Text style={styles.legendAmount}>₽ {Math.round(cat.amount).toLocaleString('ru-RU')}</Text>
                     <Text style={styles.legendPercent}>{percentage.toFixed(1)}%</Text>
                   </View>
                 </View>
-              )
+              );
             })
           )}
         </View>
@@ -179,7 +179,7 @@ export default function AnalyticsScreen() {
               <View key={sub.id} style={styles.subItem}>
                 <View style={styles.subLeft}>
                   <View style={styles.subIcon}>
-                    <MaterialIcons name={(sub.icon as any) || 'subscriptions'} size={24} color={colors.primary} />
+                    <MaterialIcons name={toMaterialIconName(sub.icon) as any} size={24} color={colors.primary} />
                   </View>
                   <View>
                     <Text style={styles.subName}>{sub.name}</Text>
@@ -212,7 +212,7 @@ export default function AnalyticsScreen() {
           </View>
           <View style={styles.limitsCard}>
             {limits.length === 0 ? (
-               <Text style={styles.emptyText}>Лимиты не установлены</Text>
+              <Text style={styles.emptyText}>Лимиты не установлены</Text>
             ) : limits.map((limit: any, i: number) => {
               const progress = limit.limitAmount > 0 ? Math.min(limit.spentAmount / limit.limitAmount, 1) : 0;
               const isWarning = progress > 0.8;
@@ -260,7 +260,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
   },
   mbLabel: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: '#ffffff', letterSpacing: 1 },
   mbText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#ffffff' },
-  
+
   periodSelectorGrid: {
     flexDirection: 'row',
     marginHorizontal: Spacing.base,
@@ -291,7 +291,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
 
   donutSection: { alignItems: 'center', paddingVertical: Spacing.base, backgroundColor: Colors.surfaceContainerLowest, marginHorizontal: Spacing.base, borderRadius: BorderRadius.lg, ...Shadows.sm, borderWidth: 1, borderColor: Colors.transparentBorder },
   chartContainer: { alignItems: 'center', justifyContent: 'center' },
-  
+
   totalSpentLabel: { fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Medium', marginTop: Spacing.base },
   donutAmount: {
     fontSize: Fonts.sizes['4xl'], fontFamily: 'Manrope-ExtraBold',
