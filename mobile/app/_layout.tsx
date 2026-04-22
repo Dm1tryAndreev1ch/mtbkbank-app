@@ -1,10 +1,15 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import {
-  useFonts, Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold,
+  useFonts,
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+  Manrope_800ExtraBold,
 } from '@expo-google-fonts/manrope';
-import { Stack, router, useSegments } from 'expo-router';
+import { Stack, router, useSegments, useRootNavigationState } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useColorScheme, Alert } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { io } from 'socket.io-client';
@@ -14,74 +19,53 @@ import BiometricGuard from '../components/BiometricGuard';
 
 SplashScreen.preventAutoHideAsync();
 
-function InitialLayout() {
+function AuthGuard() {
   const { token, loadToken, loadAccounts, loadTransactions, loadNotifications } = useStore();
   const [isReady, setIsReady] = useState(false);
   const segments = useSegments();
+  // Нужно дождаться пока навигатор монтируется
+  const navigationState = useRootNavigationState();
+  const socketRef = useRef<any>(null);
 
   useEffect(() => {
-    const init = async () => {
-      await loadToken();
-      setIsReady(true);
-    };
-    init();
-  }, [loadToken]);
+    loadToken().then(() => setIsReady(true));
+  }, []);
 
+  // WebSocket
   useEffect(() => {
     if (!token) return;
-
-    const socket = io('http://localhost:3000', { auth: { token } });
-
-    socket.on('connect', () => console.log('Mobile App connected to WebSocket'));
-    socket.on('balance_updated', () => loadAccounts());
-    socket.on('transaction_adjusted', () => loadTransactions());
-    socket.on('notification_broadcast', (payload) => {
+    socketRef.current = io('http://localhost:3000', { auth: { token } });
+    socketRef.current.on('balance_updated', () => loadAccounts());
+    socketRef.current.on('transaction_adjusted', () => loadTransactions());
+    socketRef.current.on('notification_broadcast', (p: any) => {
       loadNotifications();
-      Alert.alert(payload.title, payload.body);
+      Alert.alert(p.title, p.body);
     });
-
-    return () => { socket.disconnect(); };
+    return () => socketRef.current?.disconnect();
   }, [token]);
 
+  // Auth redirect - запускаем только когда навигатор готов И данные загружены
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || !navigationState?.key) return;
 
+    const inAuthScreen = segments[0] === 'onboarding' || segments[0] === 'login';
     const inTabsGroup = segments[0] === '(tabs)';
 
     SecureStore.getItemAsync('onboarded')
       .catch(() => null)
       .then(onboarded => {
         if (!onboarded) {
-          router.replace('/onboarding');
-        } else if (!token && inTabsGroup) {
-          router.replace('/login');
-        } else if (token && !inTabsGroup) {
-          router.replace('/(tabs)');
+          if (segments[0] !== 'onboarding') router.replace('/onboarding');
+        } else if (!token) {
+          if (!inAuthScreen) router.replace('/login');
+        } else {
+          // Токен есть - направляем в (tabs) только если мы на экране auth
+          if (inAuthScreen) router.replace('/(tabs)');
         }
       });
-  }, [token, isReady, segments]);
+  }, [isReady, navigationState?.key, token, segments[0]]);
 
-  if (!isReady) return null;
-
-  // Expo Router автоматически обнаруживает все файлы в app/.
-  // Явная регистрация Stack.Screen нужна только для кастомных опций (presentation, animation и т.д.).
-  return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="qr" options={{ headerShown: false, presentation: 'modal' }} />
-      <Stack.Screen name="topup" options={{ headerShown: false, presentation: 'modal' }} />
-      <Stack.Screen name="transfer" options={{ headerShown: false, presentation: 'modal' }} />
-      <Stack.Screen name="payment" options={{ headerShown: false, presentation: 'modal' }} />
-      <Stack.Screen name="history" options={{ headerShown: false }} />
-      <Stack.Screen name="notifications" options={{ headerShown: false }} />
-      <Stack.Screen name="card-details" options={{ headerShown: false }} />
-      <Stack.Screen name="collection" options={{ headerShown: false }} />
-      <Stack.Screen name="trade" options={{ headerShown: false }} />
-      <Stack.Screen name="transaction" options={{ headerShown: false }} />
-    </Stack>
-  );
+  return null;
 }
 
 export default function RootLayout() {
@@ -106,7 +90,14 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}>
       <BiometricGuard>
-        <InitialLayout />
+        {/* Аутентификация в отдельном компоненте чтобы не блокировать рендер Stack */}
+        <AuthGuard />
+        {/*
+          Expo Router v3: Stack без явных Stack.Screen.
+          Все файлы в app/ обнаруживаются автоматически.
+          Явная регистрация нужна только для кастомных опций (animation, presentation).
+        */}
+        <Stack screenOptions={{ headerShown: false }} />
       </BiometricGuard>
     </ThemeProvider>
   );
