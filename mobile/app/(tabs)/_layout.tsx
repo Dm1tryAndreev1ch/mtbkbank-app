@@ -30,16 +30,14 @@ export default function TabLayout() {
         tabBarLabelStyle: {
           fontSize: 10,
           fontFamily: 'Manrope-Bold',
-          letterSpacing: 0.3,
-          textTransform: 'uppercase',
-          marginTop: 2,
+          letterSpacing: 0,
           includeFontPadding: false,
         },
         tabBarItemStyle: {
           flex: 1,
           alignItems: 'center',
           justifyContent: 'center',
-          paddingHorizontal: 2,
+          paddingHorizontal: 0,
           overflow: 'visible',
         },
         tabBarAllowFontScaling: false,
@@ -95,7 +93,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Карты скрыты из таббара — доступны через MB-бейдж */}
       <Tabs.Screen
         name="cards"
         options={{
