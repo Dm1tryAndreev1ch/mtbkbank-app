@@ -160,3 +160,11 @@ export const formatMoney = (amount: number, currency = '₽') => {
 export const formatNumber = (n: number) => {
   return n.toLocaleString('ru-RU');
 };
+
+/**
+ * Normalizes MaterialIcons icon names from API responses.
+ * Converts snake_case (e.g. "shopping_bag") to kebab-case (e.g. "shopping-bag")
+ * as required by @expo/vector-icons MaterialIcons.
+ */
+export const toMaterialIconName = (icon?: string): string =>
+  icon?.replace(/_/g, '-') ?? 'category';
