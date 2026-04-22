@@ -21,6 +21,11 @@ export default function CardsScreen() {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [pickerModalVisible, setPickerModalVisible] = useState(false);
 
+  // Sacrifice flow state
+  const [sacrificeStep, setSacrificeStep] = useState<'idle' | 'pick_sacrifice' | 'pick_target'>('idle');
+  const [sacrificeSource, setSacrificeSource] = useState<any>(null); // карта-донор
+  const [isSacrificing, setIsSacrificing] = useState(false);
+
   const [selectedCard, setSelectedCard] = useState<any>(null);
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
   const [isEquipping, setIsEquipping] = useState(false);
@@ -65,7 +70,6 @@ export default function CardsScreen() {
     return slots;
   };
 
-  // slotIndex передаётся напрямую — не читается из state, чтобы избежать stale closure
   const handleEquipCard = async (card: any, slotIndex: number) => {
     if (!activeDeck) return;
     setPickerModalVisible(false);
@@ -125,10 +129,74 @@ export default function CardsScreen() {
     setDetailModalVisible(true);
   };
 
-  const handleMockAction = (actionName: string) => {
+  // ─── Sacrifice Flow ───────────────────────────────────────────────────────
+
+  /**
+   * Шаг 1: пользователь нажал "Пожертвовать для HP" в детальном модале.
+   * Запоминаем эту карту как ЖЕРТВУ и открываем пикер для выбора ЦЕЛИ.
+   */
+  const handleStartSacrifice = (sacrificeCard: any) => {
     setDetailModalVisible(false);
-    Alert.alert('В разработке', `Функция "${actionName}" будет доступна позже`);
+    setSacrificeSource(sacrificeCard);
+    setSacrificeStep('pick_target');
   };
+
+  /**
+   * Шаг 2: пользователь выбрал целевую карту (та, которая получит HP).
+   * Запускаем API-вызов.
+   */
+  const handleConfirmSacrifice = async (targetCard: any) => {
+    if (!sacrificeSource) return;
+
+    const sacrificeName = sacrificeSource.collectionCard.name;
+    const targetName = targetCard.collectionCard.name;
+
+    Alert.alert(
+      '⚡ Жертвоприношение',
+      `Карта «${sacrificeName}» будет уничтожена, а «${targetName}» восстановит здоровье. Продолжить?`,
+      [
+        { text: 'Отмена', style: 'cancel', onPress: () => setSacrificeStep('idle') },
+        {
+          text: 'Пожертвовать', style: 'destructive', onPress: async () => {
+            setSacrificeStep('idle');
+            setIsSacrificing(true);
+            try {
+              const res = await apiClient.sacrificeCard(sacrificeSource.id, targetCard.id);
+              await loadCards();
+              await loadDecks();
+              Alert.alert(
+                '✅ Успешно!',
+                `«${targetName}» восстановила ${res.data.healAmount} HP → теперь ${res.data.newHealth}%`
+              );
+            } catch (e: any) {
+              const msg = e?.response?.data?.error || 'Не удалось провести жертвоприношение';
+              Alert.alert('Ошибка', msg);
+            } finally {
+              setIsSacrificing(false);
+              setSacrificeSource(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const cancelSacrifice = () => {
+    setSacrificeStep('idle');
+    setSacrificeSource(null);
+  };
+
+  // Карты, доступные как ЦЕЛЬ (все кроме жертвы, у которых HP < max)
+  const sacrificeTargetCards = useMemo(() => {
+    if (!sacrificeSource) return [];
+    return cards.filter(
+      (c: any) =>
+        c.id !== sacrificeSource.id &&
+        c.health < c.collectionCard.maxHealth
+    );
+  }, [cards, sacrificeSource]);
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   const filteredCards = filter
     ? cards.filter((c: any) => c.collectionCard.rarity === filter)
@@ -167,14 +235,16 @@ export default function CardsScreen() {
               </View>
             </View>
 
-            {isEquipping && (
+            {(isEquipping || isSacrificing) && (
               <View style={styles.deckLoadingOverlay}>
                 <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={styles.deckLoadingText}>Обновление колоды...</Text>
+                <Text style={styles.deckLoadingText}>
+                  {isSacrificing ? 'Жертвоприношение...' : 'Обновление колоды...'}
+                </Text>
               </View>
             )}
 
-            <View style={[styles.deckGrid, isEquipping && { opacity: 0.4 }]}>
+            <View style={[styles.deckGrid, (isEquipping || isSacrificing) && { opacity: 0.4 }]}>
               {[0, 1, 2, 3, 4].map((slot) => {
                 const deckCard = activeDeck.deckCards?.find((dc: any) => dc.slotIndex === slot)
                   ?? activeDeck.deckCards?.[slot];
@@ -186,7 +256,7 @@ export default function CardsScreen() {
                     <TouchableOpacity
                       key={slot}
                       activeOpacity={0.8}
-                      disabled={isEquipping}
+                      disabled={isEquipping || isSacrificing}
                       onPress={() => handleSlotTap(card, slot)}
                       style={[styles.deckSlot, styles.deckSlotFilled, { borderColor: rarityColor }]}
                     >
@@ -217,7 +287,7 @@ export default function CardsScreen() {
                   <TouchableOpacity
                     key={slot}
                     activeOpacity={0.7}
-                    disabled={isEquipping}
+                    disabled={isEquipping || isSacrificing}
                     onPress={() => handleSlotTap(null, slot)}
                     style={[styles.deckSlot, styles.deckSlotEmpty]}
                   >
@@ -368,7 +438,7 @@ export default function CardsScreen() {
         </View>
       </ScrollView>
 
-      {/* Picker Modal */}
+      {/* Picker Modal — добавить в колоду */}
       <Modal visible={pickerModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -398,6 +468,72 @@ export default function CardsScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.pickerItemName}>{c.name}</Text>
                       <Text style={styles.pickerItemDetails}>Cashback: {c.cashbackPercent}% • HP: {card.health}%</Text>
+                    </View>
+                    <Text style={[styles.pickerRarity, { color: rarityColor }]}>{getRarityName(c.rarity)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Sacrifice Target Picker Modal */}
+      <Modal visible={sacrificeStep === 'pick_target'} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>⚡ Жертвоприношение</Text>
+                <Text style={styles.modalSubtitle}>
+                  Жертва: {sacrificeSource?.collectionCard?.name}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={cancelSacrifice}>
+                <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.sacrificeHint}>
+              Выберите карту, которая получит здоровье:
+            </Text>
+            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+              {sacrificeTargetCards.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: Spacing.xl }}>
+                  <MaterialIcons name="favorite" size={36} color={colors.outlineVariant} />
+                  <Text style={[styles.emptyStateText, { marginTop: Spacing.sm, textAlign: 'center' }]}>
+                    Нет карт с недостающим HP
+                  </Text>
+                  <Text style={[styles.emptySubtext, { textAlign: 'center', marginTop: 4 }]}>
+                    Все ваши карты в полном здоровье
+                  </Text>
+                </View>
+              ) : sacrificeTargetCards.map((card: any) => {
+                const c = card.collectionCard;
+                const rarityColor = getRarityCol(c.rarity);
+                const iconName = toMaterialIconName(c.brandIcon);
+                const missing = c.maxHealth - card.health;
+                return (
+                  <TouchableOpacity
+                    key={card.id}
+                    style={[styles.pickerItem, { borderColor: rarityColor }]}
+                    onPress={() => handleConfirmSacrifice(card)}
+                  >
+                    <MaterialIcons name={iconName as any} size={32} color={rarityColor} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.pickerItemName}>{c.name}</Text>
+                      <Text style={styles.pickerItemDetails}>
+                        HP: {card.health}% • Недостаёт: {missing}
+                      </Text>
+                      {/* Health bar */}
+                      <View style={[styles.healthBarContainer, { marginTop: 6, width: '100%' }]}>
+                        <View style={[
+                          styles.healthBarFill,
+                          {
+                            width: `${card.health}%`,
+                            backgroundColor: card.health > 50 ? '#22c55e' : card.health > 25 ? '#eab308' : colors.error,
+                          },
+                        ]} />
+                      </View>
                     </View>
                     <Text style={[styles.pickerRarity, { color: rarityColor }]}>{getRarityName(c.rarity)}</Text>
                   </TouchableOpacity>
@@ -457,7 +593,6 @@ export default function CardsScreen() {
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: colors.primary + '22' }]}
                       onPress={() => {
-                        // Вычисляем slotIndex прямо здесь — не читаем из state
                         const nextSlot = activeDeck.deckCards?.length ?? 0;
                         setDetailModalVisible(false);
                         setTimeout(() => handleEquipCard(selectedCard, nextSlot), 300);
@@ -468,12 +603,22 @@ export default function CardsScreen() {
                     </TouchableOpacity>
                   ) : null}
 
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary }]} onPress={() => handleMockAction('Жертвоприношение (Sacrifice)')}>
+                  {/* Жертвоприношение — карта будет уничтожена, HP уйдёт другой */}
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => handleStartSacrifice(selectedCard)}
+                  >
                     <MaterialIcons name="auto-awesome" size={20} color={colors.onPrimary} />
                     <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>Пожертвовать для HP</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.surfaceContainerHigh }]} onPress={() => handleMockAction('Торговля (Trade)')}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: colors.surfaceContainerHigh }]}
+                    onPress={() => {
+                      setDetailModalVisible(false);
+                      router.push('/trade');
+                    }}
+                  >
                     <MaterialIcons name="swap-horiz" size={20} color={colors.onSurface} />
                     <Text style={[styles.actionBtnText, { color: colors.onSurface }]}>Обменять / Подарить</Text>
                   </TouchableOpacity>
@@ -696,8 +841,13 @@ const getStyles = (Colors: any) => StyleSheet.create({
     backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,
     padding: Spacing.xl, ...Shadows.lg, paddingBottom: 60,
   },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xl },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.base },
   modalTitle: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface },
+  modalSubtitle: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, marginTop: 2 },
+  sacrificeHint: {
+    fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant,
+    marginBottom: Spacing.base,
+  },
   pickerItem: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md,
     backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base,
