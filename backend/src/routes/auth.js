@@ -2,10 +2,20 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
+// FIX: rate limiting на логин — защита от brute-force атак на PIN
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 минут
+  max: 10,                   // максимум 10 попыток за окно
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много попыток входа. Повторите через 15 минут.' },
+});
+
 // POST /api/auth/login — PIN auth
-router.post('/login', [
+router.post('/login', loginLimiter, [
   body('phone').isString().notEmpty().withMessage('Телефон обязателен'),
   body('pin').isString().isLength({ min: 4, max: 6 }).withMessage('ПИН-код должен быть 4-6 символов')
 ], async (req, res) => {
@@ -30,7 +40,7 @@ router.post('/login', [
     const accessToken = jwt.sign(
       { userId: user.id, isAdmin: user.isAdmin },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '15m' } // FIX: сокращён TTL с 1h до 15m для повышения безопасности
     );
 
     const refreshToken = jwt.sign(
@@ -40,7 +50,7 @@ router.post('/login', [
     );
 
     res.json({
-      token: accessToken, // for backwards compatibility on frontend
+      token: accessToken,
       accessToken,
       refreshToken,
       user: {
@@ -94,7 +104,7 @@ router.post('/refresh', async (req, res) => {
       const newAccessToken = jwt.sign(
         { userId: user.id, isAdmin: user.isAdmin },
         process.env.JWT_SECRET,
-        { expiresIn: '1h' }
+        { expiresIn: '15m' } // FIX: сокращён TTL
       );
 
       res.json({ accessToken: newAccessToken });

@@ -33,13 +33,11 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Укажите карту и получателя' });
     }
 
-    // Verify card belongs to user
     const card = await req.prisma.userCard.findFirst({
       where: { id: offeredCardId, userId: req.userId },
     });
     if (!card) return res.status(404).json({ error: 'Карта не найдена' });
 
-    // Verify user has enough mbPoints
     if (mbPointsOffer > 0) {
       const user = await req.prisma.user.findUnique({ where: { id: req.userId } });
       if (user.mbPoints < mbPointsOffer) {
@@ -57,7 +55,6 @@ router.post('/', async (req, res) => {
       },
     });
 
-    // Notify recipient
     await req.prisma.notification.create({
       data: {
         userId: toUserId,
@@ -74,6 +71,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/trades/:id/accept
+// FIX: все операции обёрнуты в $transaction — атомарность гарантирована
 router.put('/:id/accept', async (req, res) => {
   try {
     const trade = await req.prisma.cardTrade.findFirst({
@@ -81,7 +79,7 @@ router.put('/:id/accept', async (req, res) => {
     });
     if (!trade) return res.status(404).json({ error: 'Обмен не найден' });
 
-    // Verify offered card still belongs to fromUserId securely preventing exploits
+    // Pre-checks вне транзакции (только чтение)
     const offeredCard = await req.prisma.userCard.findFirst({
       where: { id: trade.offeredCardId, userId: trade.fromUserId },
     });
@@ -90,7 +88,6 @@ router.put('/:id/accept', async (req, res) => {
       return res.status(400).json({ error: 'Карта отправителя больше не доступна' });
     }
 
-    // Verify requested card still belongs to acceptor
     if (trade.requestedCardId) {
       const requestedCard = await req.prisma.userCard.findFirst({
         where: { id: trade.requestedCardId, userId: req.userId },
@@ -101,7 +98,6 @@ router.put('/:id/accept', async (req, res) => {
       }
     }
 
-    // Verify MB point constraints haven't shifted
     if (trade.mbPointsOffer > 0) {
       const fromUser = await req.prisma.user.findUnique({ where: { id: trade.fromUserId } });
       if (fromUser.mbPoints < trade.mbPointsOffer) {
@@ -110,37 +106,40 @@ router.put('/:id/accept', async (req, res) => {
       }
     }
 
-    // Transfer offered card
-    await req.prisma.deckCard.deleteMany({ where: { userCardId: trade.offeredCardId } });
-    await req.prisma.userCard.update({
-      where: { id: trade.offeredCardId },
-      data: { userId: req.userId, source: 'TRADE' },
-    });
-
-    // Transfer requested card if it exists
-    if (trade.requestedCardId) {
-      await req.prisma.deckCard.deleteMany({ where: { userCardId: trade.requestedCardId } });
-      await req.prisma.userCard.update({
-        where: { id: trade.requestedCardId },
-        data: { userId: trade.fromUserId, source: 'TRADE' },
+    // Атомарное выполнение всех изменений
+    await req.prisma.$transaction(async (tx) => {
+      // Transfer offered card
+      await tx.deckCard.deleteMany({ where: { userCardId: trade.offeredCardId } });
+      await tx.userCard.update({
+        where: { id: trade.offeredCardId },
+        data: { userId: req.userId, source: 'TRADE' },
       });
-    }
 
-    // Transfer MB points if included
-    if (trade.mbPointsOffer > 0) {
-      await req.prisma.user.update({
-        where: { id: trade.fromUserId },
-        data: { mbPoints: { decrement: trade.mbPointsOffer } },
-      });
-      await req.prisma.user.update({
-        where: { id: req.userId },
-        data: { mbPoints: { increment: trade.mbPointsOffer } },
-      });
-    }
+      // Transfer requested card if exists
+      if (trade.requestedCardId) {
+        await tx.deckCard.deleteMany({ where: { userCardId: trade.requestedCardId } });
+        await tx.userCard.update({
+          where: { id: trade.requestedCardId },
+          data: { userId: trade.fromUserId, source: 'TRADE' },
+        });
+      }
 
-    await req.prisma.cardTrade.update({
-      where: { id: trade.id },
-      data: { status: 'ACCEPTED' },
+      // Transfer MB points if included
+      if (trade.mbPointsOffer > 0) {
+        await tx.user.update({
+          where: { id: trade.fromUserId },
+          data: { mbPoints: { decrement: trade.mbPointsOffer } },
+        });
+        await tx.user.update({
+          where: { id: req.userId },
+          data: { mbPoints: { increment: trade.mbPointsOffer } },
+        });
+      }
+
+      await tx.cardTrade.update({
+        where: { id: trade.id },
+        data: { status: 'ACCEPTED' },
+      });
     });
 
     res.json({ success: true });
@@ -170,6 +169,7 @@ router.put('/:id/reject', async (req, res) => {
 });
 
 // POST /api/trades/send — send card as gift
+// FIX: обёрнуто в $transaction — атомарность гарантирована
 router.post('/send', async (req, res) => {
   try {
     const { cardId, toUserId } = req.body;
@@ -183,27 +183,23 @@ router.post('/send', async (req, res) => {
     });
     if (!card) return res.status(404).json({ error: 'Карта не найдена' });
 
-    // Remove from decks
-    await req.prisma.deckCard.deleteMany({ where: { userCardId: cardId } });
-
-    // Transfer ownership
-    await req.prisma.userCard.update({
-      where: { id: cardId },
-      data: { userId: toUserId, source: 'GIFT' },
+    await req.prisma.$transaction(async (tx) => {
+      await tx.deckCard.deleteMany({ where: { userCardId: cardId } });
+      await tx.userCard.update({
+        where: { id: cardId },
+        data: { userId: toUserId, source: 'GIFT' },
+      });
+      await tx.cardTrade.create({
+        data: {
+          fromUserId: req.userId,
+          toUserId,
+          offeredCardId: cardId,
+          status: 'ACCEPTED',
+          isGift: true,
+        },
+      });
     });
 
-    // Create trade record
-    await req.prisma.cardTrade.create({
-      data: {
-        fromUserId: req.userId,
-        toUserId,
-        offeredCardId: cardId,
-        status: 'ACCEPTED',
-        isGift: true,
-      },
-    });
-
-    // Notify recipient
     await req.prisma.notification.create({
       data: {
         userId: toUserId,

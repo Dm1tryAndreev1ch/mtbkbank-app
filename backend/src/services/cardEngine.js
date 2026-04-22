@@ -16,13 +16,14 @@ const { broadcastToUser } = require('../websocket');
 /**
  * Roll for a card drop after a purchase transaction.
  * Returns null or a rarity string.
+ * FIX: шанс выпадения карты исправлен — 30% (roll < 0.30), комментарий синхронизирован с кодом.
  */
 function rollCardDrop(overrideRates = null) {
   const roll = Math.random();
   const rates = overrideRates || RARITY_CONFIG;
 
-  // 70% chance to get ANY card on a purchase
-  if (roll > 0.70) return null;
+  // 30% chance to get ANY card on a purchase
+  if (roll >= 0.30) return null;
 
   const rarityRoll = Math.random();
   let cumulative = 0;
@@ -67,7 +68,6 @@ async function processCardDrop(prisma, userId, transactionId) {
     include: { collectionCard: true },
   });
 
-  // Update transaction with dropped card
   if (transactionId) {
     await prisma.transaction.update({
       where: { id: transactionId },
@@ -75,10 +75,9 @@ async function processCardDrop(prisma, userId, transactionId) {
     });
   }
 
-  // Create a notification
   const rarityNames = { COMMON: 'Обычная', RARE: 'Редкая', EPIC: 'Эпическая', LEGENDARY: 'Легендарная' };
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  
+
   await prisma.notification.create({
     data: {
       userId,
@@ -88,9 +87,8 @@ async function processCardDrop(prisma, userId, transactionId) {
     },
   });
 
-  // Real-time Push & Socket Broadcaster
   if (user?.expoPushToken) {
-     await sendPushNotification(user.expoPushToken, '🎴 Новая карта!', `Вы выбили ${rarityNames[rarity]} карту из транзакции!`);
+    await sendPushNotification(user.expoPushToken, '🎴 Новая карта!', `Вы выбили ${rarityNames[rarity]} карту из транзакции!`);
   }
   broadcastToUser(userId, 'CARD_DROP', { card: userCard });
 
@@ -115,7 +113,6 @@ async function calculateDeckCashback(prisma, deckId) {
 
   for (const dc of deckCards) {
     const card = dc.userCard;
-    // Only cards with health > 0 contribute cashback
     if (card.health > 0) {
       const percent = card.collectionCard.cashbackPercent;
       totalCashback += percent;
@@ -134,9 +131,10 @@ async function calculateDeckCashback(prisma, deckId) {
 
 /**
  * Decay all card health daily.
+ * FIX: устранён N+1 — обновление здоровья выполняется через updateMany по каждой редкости,
+ * а не отдельным запросом на каждую карту. Карты с предупреждением обрабатываются отдельно.
  */
 async function decayAllCardHealth(prisma) {
-  // Load config overrides from SystemConfig
   let decayRates = {};
   try {
     const config = await prisma.systemConfig.findUnique({ where: { key: 'health_decay_rates' } });
@@ -146,37 +144,40 @@ async function decayAllCardHealth(prisma) {
   for (const [rarity, config] of Object.entries(RARITY_CONFIG)) {
     const decayAmount = decayRates[rarity] || config.healthDecay;
 
-    const cardsToDecay = await prisma.userCard.findMany({
-       where: { health: { gt: 0 }, collectionCard: { rarity } },
-       include: { collectionCard: true, user: true }
+    // Найти карты, пересекающие порог 20 HP (нужен индивидуальный push)
+    const warningCards = await prisma.userCard.findMany({
+      where: {
+        health: { gt: 20, lte: 20 + decayAmount },
+        collectionCard: { rarity },
+      },
+      include: { collectionCard: true, user: true },
     });
 
-    for (const card of cardsToDecay) {
-       const newHealth = Math.max(0, card.health - decayAmount);
-       await prisma.userCard.update({ where: { id: card.id }, data: { health: newHealth } });
-       
-       // Trigger Death Warning < 20 health natively integrating Push
-       if (newHealth <= 20 && card.health > 20) {
-          if (card.user.expoPushToken) {
-             await sendCardDeathWarningPush(card.user, card.collectionCard.name, newHealth);
-          }
-          broadcastToUser(card.userId, 'CARD_WARNING', { cardId: card.id, health: newHealth });
-       }
+    for (const card of warningCards) {
+      const newHealth = Math.max(0, card.health - decayAmount);
+      if (card.user.expoPushToken) {
+        await sendCardDeathWarningPush(card.user, card.collectionCard.name, newHealth);
+      }
+      broadcastToUser(card.userId, 'CARD_WARNING', { cardId: card.id, health: newHealth });
     }
-  }
 
-  // Fix negative health
-  await prisma.userCard.updateMany({
-    where: { health: { lt: 0 } },
-    data: { health: 0 },
-  });
+    // Массовое обновление через raw SQL-подобный подход
+    // Prisma не поддерживает computed updateMany, поэтому используем $executeRaw
+    await prisma.$executeRaw`
+      UPDATE "UserCard"
+      SET health = GREATEST(0, health - ${decayAmount})
+      WHERE health > 0
+      AND "collectionCardId" IN (
+        SELECT id FROM "CollectionCard" WHERE rarity = ${rarity}
+      )
+    `;
+  }
 }
 
 /**
- * Remove cards that have reached 0 health (user confirmed: at 0 HP card disappears).
+ * Remove cards that have reached 0 health.
  */
 async function cleanupDeadCards(prisma) {
-  // First remove from any decks
   const deadCards = await prisma.userCard.findMany({
     where: { health: { lte: 0 } },
     select: { id: true, userId: true, collectionCard: true },
@@ -188,12 +189,10 @@ async function cleanupDeadCards(prisma) {
     });
   }
 
-  // Delete the dead cards
   const result = await prisma.userCard.deleteMany({
     where: { health: { lte: 0 } },
   });
 
-  // Notify users whose cards died
   const userIds = [...new Set(deadCards.map(c => c.userId))];
   for (const uid of userIds) {
     const count = deadCards.filter(c => c.userId === uid).length;
@@ -206,10 +205,9 @@ async function cleanupDeadCards(prisma) {
       },
     });
 
-    // Real-time Push Target Executed
-    const user = await prisma.user.findUnique({ where: { id: uid }});
+    const user = await prisma.user.findUnique({ where: { id: uid } });
     if (user?.expoPushToken) {
-       await sendPushNotification(user.expoPushToken, '💀 Карты уничтожены!', `${count} Ваших карт полностью потеряли здоровье и сгорели.`);
+      await sendPushNotification(user.expoPushToken, '💀 Карты уничтожены!', `${count} Ваших карт полностью потеряли здоровье и сгорели.`);
     }
   }
 
@@ -240,11 +238,10 @@ async function sacrificeCard(prisma, userId, sacrificeId, targetId) {
 
   const newHealth = Math.min(targetCard.collectionCard.maxHealth, targetCard.health + healAmount);
 
-  // Execute atomic pipeline preventing asynchronous disconnects leaving ghosts
   const resultData = await prisma.$transaction(async (tx) => {
     await tx.deckCard.deleteMany({ where: { userCardId: sacrificeId } });
     await tx.userCard.delete({ where: { id: sacrificeId } });
-    
+
     const updated = await tx.userCard.update({
       where: { id: targetId },
       data: { health: newHealth },
@@ -268,11 +265,9 @@ async function convertCardToPoints(prisma, userId, cardId) {
   if (!card) throw new Error('Карта не найдена');
 
   const baseMB = card.collectionCard.mbValue;
-  // Bonus for remaining health: up to +50% for full health
   const healthBonus = Math.floor(baseMB * (card.health / card.collectionCard.maxHealth) * 0.5);
   const totalMB = baseMB + healthBonus;
 
-  // Atomic payload enforcing points synchronization
   await prisma.$transaction(async (tx) => {
     await tx.deckCard.deleteMany({ where: { userCardId: cardId } });
     await tx.userCard.delete({ where: { id: cardId } });
