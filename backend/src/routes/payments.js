@@ -1,6 +1,7 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const { processCardDrop } = require('../services/cardEngine');
+const { invalidatePattern } = require('../cache');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -103,6 +104,9 @@ router.post('/', async (req, res) => {
 
     // Try card drop
     const droppedCard = await processCardDrop(req.prisma, req.userId, transaction.id);
+
+    // Bust analytics cache so next request gets fresh data
+    await invalidatePattern(`analytics:${req.userId}:*`);
 
     res.json({
       account: updatedAccount,

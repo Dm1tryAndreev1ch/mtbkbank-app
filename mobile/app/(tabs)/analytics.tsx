@@ -150,7 +150,7 @@ export default function AnalyticsScreen() {
               <SkeletonPulse key={i} style={[styles.legendItem, { height: 64, borderWidth: 0 }]} colors={colors} />
             ))
           ) : (
-            (analytics?.breakdown || []).slice(0, 4).map((cat: any, i: number) => {
+            (analytics?.breakdown || []).map((cat: any, i: number) => {
               const percentage = analytics.totalSpent > 0 ? (cat.amount / analytics.totalSpent) * 100 : 0;
               return (
                 <View key={cat.category} style={styles.legendItem}>

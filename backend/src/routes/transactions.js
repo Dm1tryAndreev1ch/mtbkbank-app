@@ -1,7 +1,7 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const { processCardDrop } = require('../services/cardEngine');
-const { getCached, setCached } = require('../cache');
+const { getCached, setCached, invalidatePattern } = require('../cache');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -57,7 +57,7 @@ router.get('/analytics', async (req, res) => {
     const transactions = await req.prisma.transaction.findMany({
       where: {
         userId: req.userId,
-        type: 'PURCHASE',
+        type: { in: ['PURCHASE', 'TRANSFER_OUT', 'PAYMENT'] },
         createdAt: { gte: startDate },
       },
     });
@@ -80,8 +80,8 @@ router.get('/analytics', async (req, res) => {
     })).sort((a, b) => b.amount - a.amount);
 
     const payload = { totalSpent, breakdown, period };
-    // Cache for 5 minutes
-    await setCached(cacheKey, payload, 300);
+    // Cache for 60 seconds
+    await setCached(cacheKey, payload, 60);
 
     res.json(payload);
   } catch (err) {
@@ -158,6 +158,9 @@ router.post('/transfer', async (req, res) => {
         },
       });
     }
+
+    // Bust analytics cache so next request gets fresh data
+    await invalidatePattern(`analytics:${req.userId}:*`);
 
     res.json({ success: true, transaction: result.trans });
   } catch (err) {
