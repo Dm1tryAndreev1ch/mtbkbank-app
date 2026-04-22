@@ -1,7 +1,5 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
-import {
-  View, Text, AppState, StyleSheet, TouchableOpacity, AppStateStatus,
-} from 'react-native';
+import React, { useEffect, useState, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { useStore } from '../stores/useStore';
@@ -14,6 +12,14 @@ import Animated, {
 import { Fonts, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { useThemeColor } from '../hooks/useThemeColor';
 
+/**
+ * Простая и предсказуемая версия биометрического гуарда:
+ * - один запрос биометрии при старте, если есть токен
+ * - при успехе: isUnlocked = true и больше не спрашиваем
+ * - при неудаче: остаёмся на экране, есть кнопка "Повторить"
+ *
+ * НЕТ логики AppState, чтобы избежать циклов при переходах inactive/active.
+ */
 export default function BiometricGuard({ children }: { children: React.ReactNode }) {
   const { token } = useStore();
   const [tokenChecked, setTokenChecked] = useState(false);
@@ -21,8 +27,6 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
   const [isChecking, setIsChecking] = useState(false);
   const [failed, setFailed] = useState(false);
   const [biometricType, setBiometricType] = useState<string>('');
-  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  const authPhaseRef = useRef(false);
   const colors = useThemeColor();
   const s = useMemo(() => mk(colors), [colors]);
 
@@ -43,13 +47,11 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
     if (isChecking) return;
     setIsChecking(true);
     setFailed(false);
-    authPhaseRef.current = true;
 
     try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
       if (!hasHardware || !isEnrolled) {
-        authPhaseRef.current = false;
         setIsUnlocked(true);
         return;
       }
@@ -66,27 +68,26 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
         disableDeviceFallback: false,
       });
 
-      authPhaseRef.current = false;
-
       if (result.success) {
         lockScale.value = withSequence(
           withTiming(1.2, { duration: 150 }),
           withTiming(0.9, { duration: 100 }),
           withTiming(1.0, { duration: 100 }),
         );
-        setTimeout(() => setIsUnlocked(true), 300);
+        setTimeout(() => setIsUnlocked(true), 250);
       } else {
         setFailed(true);
         triggerShake();
       }
     } catch {
-      authPhaseRef.current = false;
+      // В случае ошибки не блокируем пользователя навсегда
       setIsUnlocked(true);
     } finally {
       setIsChecking(false);
     }
   };
 
+  // Стартовая проверка: есть ли токен в хранилище
   useEffect(() => {
     SecureStore.getItemAsync('token')
       .then(t => {
@@ -96,25 +97,9 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
       .catch(() => setTokenChecked(true));
   }, []);
 
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
-      const prev = appStateRef.current;
-      if (prev.match(/inactive|background/) && next === 'active') {
-        if (!authPhaseRef.current && token) {
-          setIsUnlocked(false);
-          setFailed(false);
-          authenticate();
-        }
-      }
-      if (next === 'background' && !authPhaseRef.current) {
-        setIsUnlocked(false);
-      }
-      appStateRef.current = next;
-    });
-    return () => sub.remove();
-  }, [token]);
-
+  // Пока не знаем есть ли токен — ничего не блокируем
   if (!tokenChecked) return <>{children}</>;
+  // Нет токена или уже разблокировано — не показываем биометрию
   if (!token || isUnlocked) return <>{children}</>;
 
   const iconName = biometricType === 'face' ? 'face'
@@ -176,22 +161,41 @@ const mk = (C: any) => StyleSheet.create({
     gap: Spacing.base,
   },
   iconWrap: {
-    width: 96, height: 96, borderRadius: 48,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: C.surfaceContainerHigh,
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: Spacing.sm,
   },
-  title: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: C.onSurface, letterSpacing: -0.5 },
-  subtitle: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant, textAlign: 'center' },
+  title: {
+    fontSize: Fonts.sizes['2xl'],
+    fontFamily: 'Manrope-ExtraBold',
+    color: C.onSurface,
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: Fonts.sizes.base,
+    fontFamily: 'Manrope-Medium',
+    color: C.onSurfaceVariant,
+    textAlign: 'center',
+  },
   btn: {
     backgroundColor: C.primary,
     borderRadius: BorderRadius.base,
     paddingVertical: Spacing.base,
     paddingHorizontal: Spacing.xl,
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     marginTop: Spacing.sm,
     ...Shadows.primary,
   },
   btnDisabled: { opacity: 0.6 },
-  btnText: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-ExtraBold', color: C.onPrimary },
+  btnText: {
+    fontSize: Fonts.sizes.base,
+    fontFamily: 'Manrope-ExtraBold',
+    color: C.onPrimary,
+  },
 });
