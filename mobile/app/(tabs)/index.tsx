@@ -8,7 +8,10 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useStore } from '../../stores/useStore';
 import { BlurView } from 'expo-blur';
-import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, FadeIn } from 'react-native-reanimated';
+import Animated, {
+  useSharedValue, useAnimatedStyle, withRepeat, withTiming,
+  withSequence, FadeIn, Easing,
+} from 'react-native-reanimated';
 import { Fonts, Spacing, BorderRadius, Shadows, formatMoney, toMaterialIconName } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
 
@@ -19,6 +22,35 @@ const SkeletonPulse = ({ style, colors }: { style: any, colors: any }) => {
   }, []);
   const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return <Animated.View style={[style, animatedStyle, { backgroundColor: colors.transparentBorder }]} />;
+};
+
+/** Пульсирующий MB-бейдж */
+const MbBadge = ({ mbPoints, onPress, styles }: { mbPoints: number; onPress: () => void; styles: any }) => {
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.06, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1.0, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      false,
+    );
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+      <Animated.View style={[styles.mbBadge, animatedStyle]}>
+        <Text style={styles.mbText}>MB</Text>
+        <Text style={styles.mbPoints}>{mbPoints.toLocaleString('ru-RU')}</Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
 };
 
 export default function HomeScreen() {
@@ -89,10 +121,11 @@ export default function HomeScreen() {
               <MaterialIcons name="notifications-none" size={24} color={colors.onSurface} />
               {unreadCount > 0 && <View style={styles.bellDot} />}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.mbBadge} onPress={() => router.push('/(tabs)/cards')}>
-              <Text style={styles.mbText}>MB</Text>
-              <Text style={styles.mbPoints}>{(user?.mbPoints || 0).toLocaleString('ru-RU')}</Text>
-            </TouchableOpacity>
+            <MbBadge
+              mbPoints={user?.mbPoints || 0}
+              onPress={() => router.push('/(tabs)/cards')}
+              styles={styles}
+            />
           </View>
         </View>
 
