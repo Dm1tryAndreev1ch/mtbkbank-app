@@ -20,20 +20,30 @@ import BiometricGuard from '../components/BiometricGuard';
 SplashScreen.preventAutoHideAsync();
 
 function AuthGuard() {
-  const { token, loadToken, loadAccounts, loadTransactions, loadNotifications } = useStore();
-  const [isReady, setIsReady] = useState(false);
+  const { token, loadToken } = useStore();
+  // Три состояния: null = не загружено, true/false = результат
+  const [tokenReady, setTokenReady] = useState<boolean | null>(null);
+  const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const segments = useSegments();
-  // Нужно дождаться пока навигатор монтируется
   const navigationState = useRootNavigationState();
   const socketRef = useRef<any>(null);
+  const hasRedirected = useRef(false);
 
+  // 1. Загрузить токен и флаг onboarded параллельно
   useEffect(() => {
-    loadToken().then(() => setIsReady(true));
+    Promise.all([
+      loadToken(),
+      SecureStore.getItemAsync('onboarded').catch(() => null),
+    ]).then(([hasToken, ob]) => {
+      setTokenReady(hasToken);
+      setOnboarded(!!ob);
+    });
   }, []);
 
-  // WebSocket
+  // 2. WebSocket после получения токена
   useEffect(() => {
     if (!token) return;
+    const { loadAccounts, loadTransactions, loadNotifications } = useStore.getState();
     socketRef.current = io('http://localhost:3000', { auth: { token } });
     socketRef.current.on('balance_updated', () => loadAccounts());
     socketRef.current.on('transaction_adjusted', () => loadTransactions());
@@ -44,26 +54,32 @@ function AuthGuard() {
     return () => socketRef.current?.disconnect();
   }, [token]);
 
-  // Auth redirect - запускаем только когда навигатор готов И данные загружены
+  // 3. Редирект только когда:
+  //    - навигатор готов
+  //    - tokenReady и onboarded загружены
+  //    - редирект ещё не был сделан
   useEffect(() => {
-    if (!isReady || !navigationState?.key) return;
+    if (!navigationState?.key) return;
+    if (tokenReady === null || onboarded === null) return;
+    if (hasRedirected.current) return;
 
-    const inAuthScreen = segments[0] === 'onboarding' || segments[0] === 'login';
-    const inTabsGroup = segments[0] === '(tabs)';
+    hasRedirected.current = true;
 
-    SecureStore.getItemAsync('onboarded')
-      .catch(() => null)
-      .then(onboarded => {
-        if (!onboarded) {
-          if (segments[0] !== 'onboarding') router.replace('/onboarding');
-        } else if (!token) {
-          if (!inAuthScreen) router.replace('/login');
-        } else {
-          // Токен есть - направляем в (tabs) только если мы на экране auth
-          if (inAuthScreen) router.replace('/(tabs)');
-        }
-      });
-  }, [isReady, navigationState?.key, token, segments[0]]);
+    if (!onboarded) {
+      router.replace('/onboarding');
+    } else if (!token) {
+      router.replace('/login');
+    } else {
+      router.replace('/(tabs)');
+    }
+  }, [navigationState?.key, tokenReady, onboarded]);
+
+  // Сброс редирект-гарда при логауте
+  useEffect(() => {
+    if (tokenReady !== null && !token && segments[0] !== '(tabs)') {
+      hasRedirected.current = false;
+    }
+  }, [token]);
 
   return null;
 }
@@ -90,13 +106,7 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}>
       <BiometricGuard>
-        {/* Аутентификация в отдельном компоненте чтобы не блокировать рендер Stack */}
         <AuthGuard />
-        {/*
-          Expo Router v3: Stack без явных Stack.Screen.
-          Все файлы в app/ обнаруживаются автоматически.
-          Явная регистрация нужна только для кастомных опций (animation, presentation).
-        */}
         <Stack screenOptions={{ headerShown: false }} />
       </BiometricGuard>
     </ThemeProvider>
