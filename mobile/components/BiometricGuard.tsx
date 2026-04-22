@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity, Platform,
+} from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { useStore } from '../stores/useStore';
@@ -14,11 +16,9 @@ import { useThemeColor } from '../hooks/useThemeColor';
 
 /**
  * Простая и предсказуемая версия биометрического гуарда:
- * - один запрос биометрии при старте, если есть токен
- * - при успехе: isUnlocked = true и больше не спрашиваем
- * - при неудаче: остаёмся на экране, есть кнопка "Повторить"
- *
- * НЕТ логики AppState, чтобы избежать циклов при переходах inactive/active.
+ * - на web биометрия отключена (сразу пропускаем)
+ * - на native: один запрос биометрии при старте, если есть токен
+ * - при успехе: isUnlocked = true и больше не спрашиваем до перезапуска приложения
  */
 export default function BiometricGuard({ children }: { children: React.ReactNode }) {
   const { token } = useStore();
@@ -80,12 +80,16 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
         triggerShake();
       }
     } catch {
-      // В случае ошибки не блокируем пользователя навсегда
       setIsUnlocked(true);
     } finally {
       setIsChecking(false);
     }
   };
+
+  // Web: биометрию не используем вообще
+  if (Platform.OS === 'web') {
+    return <>{children}</>;
+  }
 
   // Стартовая проверка: есть ли токен в хранилище
   useEffect(() => {
@@ -97,9 +101,7 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
       .catch(() => setTokenChecked(true));
   }, []);
 
-  // Пока не знаем есть ли токен — ничего не блокируем
   if (!tokenChecked) return <>{children}</>;
-  // Нет токена или уже разблокировано — не показываем биометрию
   if (!token || isUnlocked) return <>{children}</>;
 
   const iconName = biometricType === 'face' ? 'face'
