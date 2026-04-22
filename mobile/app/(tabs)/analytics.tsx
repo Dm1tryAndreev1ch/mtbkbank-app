@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useStore } from '../../stores/useStore';
 import * as api from '../../services/api';
 import { PieChart } from 'react-native-chart-kit';
@@ -38,14 +39,9 @@ export default function AnalyticsScreen() {
   const colors = useThemeColor();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
-  useEffect(() => {
-    loadSubscriptions();
-    loadLimits();
-  }, []);
-
-  useEffect(() => {
+  const fetchAnalytics = useCallback((p: string) => {
     setLoading(true);
-    api.getAnalytics(period).then(({ data }) => {
+    api.getAnalytics(p).then(({ data }) => {
       setAnalytics(data);
       setLoading(false);
     }).catch(() => {
@@ -60,12 +56,26 @@ export default function AnalyticsScreen() {
       });
       setLoading(false);
     });
+  }, []);
+
+  // Обновляем при каждом входе на экран
+  useFocusEffect(
+    useCallback(() => {
+      fetchAnalytics(period);
+      loadSubscriptions();
+      loadLimits();
+    }, [period])
+  );
+
+  // Обновляем при смене периода
+  useEffect(() => {
+    fetchAnalytics(period);
   }, [period]);
 
-  const categoryColors = [colors.primary, colors.primaryContainer, colors.secondaryContainer, colors.tertiaryFixed, '#9333EA'];
+  const categoryColors = [colors.primary, colors.primaryContainer, colors.secondaryContainer, colors.tertiaryFixed, '#9333EA', '#f59e0b', '#ef4444', '#0ea5e9'];
 
   const chartData = analytics?.breakdown?.map((cat: any, index: number) => ({
-    name: cat.category,
+    name: '', // пустое имя — легенда рисуется своя, не через PieChart
     population: cat.amount,
     color: categoryColors[index % categoryColors.length],
     legendFontColor: colors.onSurfaceVariant,
@@ -131,11 +141,12 @@ export default function AnalyticsScreen() {
                   backgroundGradientTo: colors.surface,
                   color: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
                 }}
-                accessor={"population"}
-                backgroundColor={"transparent"}
-                paddingLeft={"15"}
-                center={[10, 0]}
+                accessor="population"
+                backgroundColor="transparent"
+                paddingLeft="0"
+                center={[0, 0]}
                 absolute
+                hasLegend={false}
               />
             </Animated.View>
           ) : (
@@ -150,7 +161,7 @@ export default function AnalyticsScreen() {
               <SkeletonPulse key={i} style={[styles.legendItem, { height: 64, borderWidth: 0 }]} colors={colors} />
             ))
           ) : (
-            (analytics?.breakdown || []).slice(0, 4).map((cat: any, i: number) => {
+            (analytics?.breakdown || []).map((cat: any, i: number) => {
               const percentage = analytics.totalSpent > 0 ? (cat.amount / analytics.totalSpent) * 100 : 0;
               return (
                 <View key={cat.category} style={styles.legendItem}>
@@ -291,27 +302,15 @@ const getStyles = (Colors: any) => StyleSheet.create({
     marginBottom: Spacing.base,
   },
   periodTab: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    alignItems: 'center',
-    borderRadius: BorderRadius.sm,
-    overflow: 'hidden',
+    flex: 1, paddingVertical: 8, paddingHorizontal: 4,
+    alignItems: 'center', borderRadius: BorderRadius.sm, overflow: 'hidden',
   },
-  periodTabActive: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    ...Shadows.sm,
-  },
+  periodTabActive: { backgroundColor: Colors.surfaceContainerLowest, ...Shadows.sm },
   periodTabText: {
-    fontFamily: 'Manrope-Medium',
-    color: Colors.onSurfaceVariant,
-    fontSize: Fonts.sizes.sm,
-    includeFontPadding: false,
+    fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant,
+    fontSize: Fonts.sizes.sm, includeFontPadding: false,
   },
-  periodTabTextActive: {
-    fontFamily: 'Manrope-Bold',
-    color: Colors.onSurface,
-  },
+  periodTabTextActive: { fontFamily: 'Manrope-Bold', color: Colors.onSurface },
 
   donutSection: {
     alignItems: 'center', paddingVertical: Spacing.base,
@@ -338,16 +337,10 @@ const getStyles = (Colors: any) => StyleSheet.create({
     paddingHorizontal: Spacing.base, marginTop: Spacing.base,
   },
   legendItem: {
-    flex: 1,
-    minWidth: '45%',
-    maxWidth: '50%',
-    gap: Spacing.sm,
+    flex: 1, minWidth: '45%', maxWidth: '50%', gap: Spacing.sm,
     backgroundColor: Colors.surfaceContainerLowest,
-    padding: Spacing.base,
-    borderRadius: BorderRadius.base,
-    borderWidth: 1,
-    borderColor: Colors.transparentBorder,
-    overflow: 'hidden',
+    padding: Spacing.base, borderRadius: BorderRadius.base,
+    borderWidth: 1, borderColor: Colors.transparentBorder, overflow: 'hidden',
   },
   legendHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, overflow: 'hidden' },
   legendDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
