@@ -52,24 +52,15 @@ interface AppState {
   setCardDesign: (design: string) => Promise<void>;
 }
 
-// Custom storage adapter using SecureStore
 const secureStorage = {
   getItem: async (name: string): Promise<string | null> => {
-    try {
-      return await SecureStore.getItemAsync(name);
-    } catch {
-      return null;
-    }
+    try { return await SecureStore.getItemAsync(name); } catch { return null; }
   },
   setItem: async (name: string, value: string): Promise<void> => {
-    try {
-      await SecureStore.setItemAsync(name, value);
-    } catch {}
+    try { await SecureStore.setItemAsync(name, value); } catch {}
   },
   removeItem: async (name: string): Promise<void> => {
-    try {
-      await SecureStore.deleteItemAsync(name);
-    } catch {}
+    try { await SecureStore.deleteItemAsync(name); } catch {}
   },
 };
 
@@ -101,10 +92,16 @@ export const useStore = create<AppState>()(
         try {
           set({ isLoading: true });
           const { data } = await api.login(phone, pin);
-          try { await SecureStore.setItemAsync('token', data.token); } catch {}
-          set({ token: data.token, user: data.user, isLoading: false });
+          // api.ts сохраняет токен в SecureStore сам.
+          // data.токен может быть accessToken или token в зависимости от сервера
+          const token = data.accessToken || data.token;
+          if (!token) {
+            set({ isLoading: false });
+            return false;
+          }
+          set({ token, user: data.user, isLoading: false });
           return true;
-        } catch (err) {
+        } catch {
           set({ isLoading: false });
           return false;
         }
@@ -112,6 +109,7 @@ export const useStore = create<AppState>()(
 
       logout: async () => {
         try { await SecureStore.deleteItemAsync('token'); } catch {}
+        try { await SecureStore.deleteItemAsync('refreshToken'); } catch {}
         set({
           user: null, token: null, accounts: [], transactions: [],
           cards: [], decks: [], quests: [], subscriptions: [],
@@ -128,7 +126,7 @@ export const useStore = create<AppState>()(
         } catch {}
 
         if (design) set({ cardDesign: design });
-        
+
         if (token) {
           set({ token });
           try {
@@ -145,66 +143,42 @@ export const useStore = create<AppState>()(
       },
 
       loadUser: async () => {
-        try {
-          const { data } = await api.getMe();
-          set({ user: data });
-        } catch (err) {}
+        try { const { data } = await api.getMe(); set({ user: data }); } catch {}
       },
 
       loadAccounts: async () => {
-        try {
-          const { data } = await api.getAccounts();
-          set({ accounts: data });
-        } catch (err) {}
+        try { const { data } = await api.getAccounts(); set({ accounts: data }); } catch {}
       },
 
       loadTransactions: async (params) => {
-        try {
-          const { data } = await api.getTransactions(params);
-          set({ transactions: data.transactions });
-        } catch (err) {}
+        try { const { data } = await api.getTransactions(params); set({ transactions: data.transactions }); } catch {}
       },
 
       loadCards: async (params) => {
-        try {
-          const { data } = await api.getInventory(params);
-          set({ cards: data });
-        } catch (err) {}
+        try { const { data } = await api.getInventory(params); set({ cards: data }); } catch {}
       },
 
       loadDecks: async () => {
-        try {
-          const { data } = await api.getDecks();
-          set({ decks: data });
-        } catch (err) {}
+        try { const { data } = await api.getDecks(); set({ decks: data }); } catch {}
       },
 
       loadQuests: async () => {
-        try {
-          const { data } = await api.getDailyQuests();
-          set({ quests: data });
-        } catch (err) {}
+        try { const { data } = await api.getDailyQuests(); set({ quests: data }); } catch {}
       },
 
       loadSubscriptions: async () => {
-        try {
-          const { data } = await api.getSubscriptions();
-          set({ subscriptions: data });
-        } catch (err) {}
+        try { const { data } = await api.getSubscriptions(); set({ subscriptions: data }); } catch {}
       },
 
       loadLimits: async () => {
-        try {
-          const { data } = await api.getLimits();
-          set({ limits: data });
-        } catch (err) {}
+        try { const { data } = await api.getLimits(); set({ limits: data }); } catch {}
       },
 
       loadNotifications: async () => {
         try {
           const { data } = await api.getNotifications();
           set({ notifications: data.notifications, unreadCount: data.unreadCount });
-        } catch (err) {}
+        } catch {}
       },
 
       loadAll: async () => {
@@ -224,7 +198,6 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'mtbank-storage',
-      // We partition storage handling gracefully natively. We do not persist the token directly into Redux persistence anymore.
       storage: createJSONStorage(() => secureStorage),
       partialize: (state) => ({ theme: state.theme, cardDesign: state.cardDesign }),
     }
