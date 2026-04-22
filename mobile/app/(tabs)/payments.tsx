@@ -8,7 +8,7 @@ import { router } from 'expo-router';
 import { useStore } from '../../stores/useStore';
 import * as api from '../../services/api';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, FadeIn } from 'react-native-reanimated';
-import { Fonts, Spacing, BorderRadius, Shadows, formatMoney } from '../../constants/theme';
+import { Fonts, Spacing, BorderRadius, Shadows, formatMoney, toMaterialIconName } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import CardDropReveal from '../../components/CardDropReveal';
 
@@ -35,14 +35,12 @@ export default function PaymentsScreen() {
   const [scheduled, setScheduled] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Modal State
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<any>(null);
   const [payAmount, setPayAmount] = useState('');
   const [merchantName, setMerchantName] = useState('');
   const [isPaying, setIsPaying] = useState(false);
 
-  // Drop State
   const [droppedCard, setDroppedCard] = useState<any>(null);
 
   const colors = useThemeColor();
@@ -63,14 +61,14 @@ export default function PaymentsScreen() {
 
       setCategories(catRes.data.length ? catRes.data : [
         { id: 1, icon: 'home', name: 'ЖКУ и дом', description: 'Электричество, вода, газ', color: '#b7c8e1' },
-         { id: 2, icon: 'wifi', name: 'Связь и интернет', description: 'Оплата провайдера', color: '#508ff8' },
+        { id: 2, icon: 'wifi', name: 'Связь и интернет', description: 'Оплата провайдера', color: '#508ff8' },
         { id: 3, icon: 'directions-car', name: 'Транспорт', description: 'Штрафы, парковка', color: '#c3c5dc' },
       ]);
       setScheduled(schedRes.data.length ? schedRes.data : [
-         { id: 1, name: 'Свет (Энергосбыт)', amount: 1540, nextDate: '202X-05-10T00:00:00.000Z' }
+        { id: 1, name: 'Свет (Энергосбыт)', amount: 1540, nextDate: '202X-05-10T00:00:00.000Z' }
       ]);
     } catch (e) {
-       console.error(e);
+      console.error(e);
     } finally {
       setLoading(false);
     }
@@ -97,18 +95,18 @@ export default function PaymentsScreen() {
     setIsPaying(true);
     try {
       const res = await api.makePayment({
-         accountId: mainAccount.id,
-         amount: Number(payAmount),
-         categoryId: selectedCategory?.id,
-         merchant: merchantName
+        accountId: mainAccount.id,
+        amount: Number(payAmount),
+        categoryId: selectedCategory?.id,
+        merchant: merchantName
       });
 
       setModalVisible(false);
 
       if (res.data?.cardDrop) {
-         setDroppedCard(res.data.cardDrop);
+        setDroppedCard(res.data.cardDrop);
       } else {
-         Alert.alert('Успешно', 'Платеж успешно проведен');
+        Alert.alert('Успешно', 'Платеж успешно проведен');
       }
       loadAccounts();
     } catch (e) {
@@ -116,19 +114,18 @@ export default function PaymentsScreen() {
         setModalVisible(false);
         const rand = Math.random();
         if (rand > 0.3) {
-            // Drop a mock Legendary card for testing purposes
-            setDroppedCard({
-               collectionCard: {
-                  name: 'Черная Метка',
-                  brandName: 'Visa Infinite',
-                  rarity: 'LEGENDARY',
-                  brandIcon: 'diamond',
-                  cashbackPercent: 10
-               },
-               health: 100
-            });
+          setDroppedCard({
+            collectionCard: {
+              name: 'Черная Метка',
+              brandName: 'Visa Infinite',
+              rarity: 'LEGENDARY',
+              brandIcon: 'diamond',
+              cashbackPercent: 10
+            },
+            health: 100
+          });
         } else {
-            Alert.alert('Успешно', 'Оплата прошла без дропа карты (Mock).');
+          Alert.alert('Успешно', 'Оплата прошла без дропа карты (Mock).');
         }
       }, 1000);
     } finally {
@@ -184,7 +181,7 @@ export default function PaymentsScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contactsScroll}>
-             <TouchableOpacity style={styles.contactItem}>
+            <TouchableOpacity style={styles.contactItem}>
               <View style={styles.addNewAvatar}>
                 <MaterialIcons name="add" size={24} color={colors.primary} />
               </View>
@@ -210,7 +207,7 @@ export default function PaymentsScreen() {
               <TouchableOpacity key={cat.id || i} style={styles.categoryRow} activeOpacity={0.7} onPress={() => openPaymentModal(cat)}>
                 <View style={styles.categoryLeft}>
                   <View style={[styles.categoryIcon, { backgroundColor: cat.color ? `${cat.color}20` : 'rgba(79,142,247,0.1)' }]}>
-                     <MaterialIcons name={cat.icon || 'category'} size={24} color={cat.color || colors.primary} />
+                    <MaterialIcons name={toMaterialIconName(cat.icon) as any} size={24} color={cat.color || colors.primary} />
                   </View>
                   <View style={styles.categoryText}>
                     <Text style={styles.categoryLabel}>{cat.name}</Text>
@@ -223,78 +220,78 @@ export default function PaymentsScreen() {
           </View>
         </View>
 
-         {/* Scheduled Payments */}
-         <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Плановые платежи</Text>
-            <View style={styles.scheduledList}>
-               {loading ? renderSkeletonList() : scheduled.length > 0 ? scheduled.map((s, i) => (
-                   <View key={i} style={styles.scheduledRow}>
-                       <MaterialIcons name="event" size={24} color={colors.onSurfaceVariant} />
-                       <View style={styles.scheduledDetail}>
-                         <Text style={styles.scheduledName}>{s.name}</Text>
-                         <Text style={styles.scheduledDate}>Списание: {new Date(s.nextDate).toLocaleDateString('ru-RU')}</Text>
-                       </View>
-                       <Text style={styles.scheduledAmount}>{formatMoney(s.amount)}</Text>
-                   </View>
-               )) : (
-                 <Text style={styles.emptyText}>Нет плановых платежей</Text>
-               )}
-            </View>
-         </View>
+        {/* Scheduled Payments */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Плановые платежи</Text>
+          <View style={styles.scheduledList}>
+            {loading ? renderSkeletonList() : scheduled.length > 0 ? scheduled.map((s, i) => (
+              <View key={i} style={styles.scheduledRow}>
+                <MaterialIcons name="event" size={24} color={colors.onSurfaceVariant} />
+                <View style={styles.scheduledDetail}>
+                  <Text style={styles.scheduledName}>{s.name}</Text>
+                  <Text style={styles.scheduledDate}>Списание: {new Date(s.nextDate).toLocaleDateString('ru-RU')}</Text>
+                </View>
+                <Text style={styles.scheduledAmount}>{formatMoney(s.amount)}</Text>
+              </View>
+            )) : (
+              <Text style={styles.emptyText}>Нет плановых платежей</Text>
+            )}
+          </View>
+        </View>
 
       </ScrollView>
 
       {/* Payment Modal Overlay */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-           <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                 <Text style={styles.modalTitle}>Новый платеж</Text>
-                 <TouchableOpacity onPress={() => setModalVisible(false)} disabled={isPaying}>
-                   <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
-                 </TouchableOpacity>
-              </View>
-              
-              <Text style={styles.modalFieldLabel}>Сервис / Получатель</Text>
-              <TextInput 
-                 style={styles.modalInput}
-                 value={merchantName}
-                 onChangeText={setMerchantName}
-                 placeholder="Название сервиса"
-                 placeholderTextColor={colors.outlineVariant}
-              />
-
-              <Text style={styles.modalFieldLabel}>Сумма списания (₽)</Text>
-              <TextInput 
-                 style={[styles.modalInput, { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold' }]}
-                 value={payAmount}
-                 onChangeText={setPayAmount}
-                 keyboardType="numeric"
-                 placeholder="0.00"
-                 placeholderTextColor={colors.outlineVariant}
-              />
-
-              <TouchableOpacity 
-                 style={[styles.modalSubmitBtn, isPaying && { opacity: 0.7 }]} 
-                 activeOpacity={0.8}
-                 onPress={handleMakePayment}
-                 disabled={isPaying}
-              >
-                 {isPaying ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSubmitText}>Оплатить</Text>}
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Новый платеж</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)} disabled={isPaying}>
+                <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
               </TouchableOpacity>
-           </View>
+            </View>
+
+            <Text style={styles.modalFieldLabel}>Сервис / Получатель</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={merchantName}
+              onChangeText={setMerchantName}
+              placeholder="Название сервиса"
+              placeholderTextColor={colors.outlineVariant}
+            />
+
+            <Text style={styles.modalFieldLabel}>Сумма списания (₽)</Text>
+            <TextInput
+              style={[styles.modalInput, { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold' }]}
+              value={payAmount}
+              onChangeText={setPayAmount}
+              keyboardType="numeric"
+              placeholder="0.00"
+              placeholderTextColor={colors.outlineVariant}
+            />
+
+            <TouchableOpacity
+              style={[styles.modalSubmitBtn, isPaying && { opacity: 0.7 }]}
+              activeOpacity={0.8}
+              onPress={handleMakePayment}
+              disabled={isPaying}
+            >
+              {isPaying ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSubmitText}>Оплатить</Text>}
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 
       {/* 3D Global Gamification Drop Flow */}
       {droppedCard && (
-        <CardDropReveal 
-           card={droppedCard} 
-           onDismiss={() => setDroppedCard(null)} 
-           onEquip={() => {
-              setDroppedCard(null);
-              router.push('/(tabs)/cards');
-           }}
+        <CardDropReveal
+          card={droppedCard}
+          onDismiss={() => setDroppedCard(null)}
+          onEquip={() => {
+            setDroppedCard(null);
+            router.push('/(tabs)/cards');
+          }}
         />
       )}
 
@@ -306,7 +303,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scrollContent: { paddingBottom: 120 },
 
-  // Header
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: Spacing.xl, paddingTop: Spacing.base, paddingBottom: Spacing.sm,
@@ -326,7 +322,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
     borderRadius: 4, backgroundColor: Colors.error,
   },
 
-  // Search
   searchSection: { paddingHorizontal: Spacing.xl, marginBottom: Spacing.xl },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
@@ -339,7 +334,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
     paddingVertical: Spacing.md, fontFamily: 'Manrope-Medium'
   },
 
-  // Section
   section: { paddingHorizontal: Spacing.xl, marginBottom: Spacing['2xl'] },
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
@@ -354,7 +348,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // Contacts
   contactsScroll: { paddingRight: Spacing.xl, gap: Spacing.base },
   contactItem: { alignItems: 'center', gap: Spacing.sm, width: 72 },
   addNewAvatar: {
@@ -374,7 +367,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
     letterSpacing: 0.3, textAlign: 'center',
   },
 
-  // Categories
   categoriesList: { gap: Spacing.base, marginTop: Spacing.base },
   categorySkeleton: { height: 80, borderRadius: BorderRadius.lg, marginBottom: 8 },
   categoryRow: {
@@ -398,41 +390,39 @@ const getStyles = (Colors: any) => StyleSheet.create({
 
   scheduledList: { gap: Spacing.base, marginTop: Spacing.base },
   scheduledRow: {
-     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-     backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base, padding: Spacing.base,
-      borderWidth: 1, borderColor: Colors.transparentBorder, ...Shadows.sm
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base, padding: Spacing.base,
+    borderWidth: 1, borderColor: Colors.transparentBorder, ...Shadows.sm
   },
   scheduledDetail: { flex: 1, paddingHorizontal: Spacing.base },
   scheduledName: { fontFamily: 'Manrope-Bold', color: Colors.onSurface, fontSize: Fonts.sizes.base },
   scheduledDate: { fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, fontSize: Fonts.sizes.xs, marginTop: 4 },
   scheduledAmount: { fontFamily: 'Manrope-ExtraBold', color: Colors.primary, fontSize: Fonts.sizes.md },
-  
+
   emptyText: { fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, textAlign: 'center', marginVertical: Spacing.xl },
 
-  // Modal classes
   modalOverlay: {
-     flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end'
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end'
   },
   modalContent: {
-     backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,
-     padding: Spacing.xl, ...Shadows.lg, paddingBottom: 60
+    backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,
+    padding: Spacing.xl, ...Shadows.lg, paddingBottom: 60
   },
   modalHeader: {
-      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xl
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xl
   },
   modalTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface },
   modalFieldLabel: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, marginBottom: 8 },
   modalInput: {
-      backgroundColor: Colors.surfaceContainerLowest, color: Colors.onSurface, 
-      fontFamily: 'Manrope-Medium', padding: Spacing.base, borderRadius: BorderRadius.md,
-      marginBottom: Spacing.xl, borderWidth: 1, borderColor: Colors.transparentBorder
+    backgroundColor: Colors.surfaceContainerLowest, color: Colors.onSurface,
+    fontFamily: 'Manrope-Medium', padding: Spacing.base, borderRadius: BorderRadius.md,
+    marginBottom: Spacing.xl, borderWidth: 1, borderColor: Colors.transparentBorder
   },
   modalSubmitBtn: {
-      backgroundColor: Colors.primary, borderRadius: BorderRadius.base,
-      paddingVertical: Spacing.base, alignItems: 'center', marginTop: Spacing.sm
+    backgroundColor: Colors.primary, borderRadius: BorderRadius.base,
+    paddingVertical: Spacing.base, alignItems: 'center', marginTop: Spacing.sm
   },
   modalSubmitText: {
-      color: Colors.onPrimary, fontFamily: 'Manrope-ExtraBold', fontSize: Fonts.sizes.md
+    color: Colors.onPrimary, fontFamily: 'Manrope-ExtraBold', fontSize: Fonts.sizes.md
   }
-
 });
