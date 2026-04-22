@@ -47,7 +47,25 @@ function broadcastToUser(userId, eventName, payload) {
   }
 }
 
+function broadcastToAll(eventName, payload) {
+  if (!io) return;
+  io.emit(eventName, payload);
+}
+
+function broadcastToMany(userIds, eventName, payload) {
+  if (!io) return;
+  for (const userId of userIds) {
+    const socketId = connectedUsers.get(userId);
+    if (socketId) {
+      io.to(socketId).emit(eventName, payload);
+    }
+  }
+}
+
 module.exports = {
   setupWebSockets,
-  broadcastToUser
+  broadcastToUser,
+  broadcastToAll,
+  broadcastToMany,
 };
+

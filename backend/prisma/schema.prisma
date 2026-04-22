@@ -43,6 +43,7 @@ enum TransactionType {
   TOPUP
   PAYMENT
   SUBSCRIPTION
+  ADMIN_ADJUSTMENT
 }
 
 enum QuestType {

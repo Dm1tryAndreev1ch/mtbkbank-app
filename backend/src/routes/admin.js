@@ -152,39 +152,90 @@ router.post('/grant-card', async (req, res) => {
   }
 });
 
+// ==================== USER ACCOUNTS (for admin) ====================
+
+// GET /api/admin/users/:id/accounts
+router.get('/users/:id/accounts', async (req, res) => {
+  try {
+    const accounts = await req.prisma.bankAccount.findMany({
+      where: { userId: req.params.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(accounts);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка загрузки счетов' });
+  }
+});
+
 // ==================== SIMULATE TRANSACTION ====================
 
 // POST /api/admin/simulate-transaction
 router.post('/simulate-transaction', async (req, res) => {
   try {
-    const { userId, accountId, amount, category, merchant, merchantIcon } = req.body;
+    const { userId, amount, category, merchant, merchantIcon, type = 'PURCHASE' } = req.body;
+    let { accountId } = req.body;
+
+    // Auto-select main account if accountId not provided
+    if (!accountId) {
+      const mainAccount = await req.prisma.bankAccount.findFirst({
+        where: { userId, type: 'main' },
+      });
+      if (!mainAccount) {
+        const anyAccount = await req.prisma.bankAccount.findFirst({ where: { userId } });
+        if (!anyAccount) return res.status(404).json({ error: 'У пользователя нет счетов' });
+        accountId = anyAccount.id;
+      } else {
+        accountId = mainAccount.id;
+      }
+    }
 
     const account = await req.prisma.bankAccount.findFirst({
       where: { id: accountId, userId },
     });
     if (!account) return res.status(404).json({ error: 'Счёт не найден' });
 
+    // Determine balance operation based on transaction type
+    const isCredit = type === 'TRANSFER_IN' || type === 'TOPUP';
+    const balanceOp = isCredit ? { increment: amount } : { decrement: amount };
+    const txType = type || 'PURCHASE';
+
+    const merchantIcons = {
+      PURCHASE: 'shopping_bag',
+      TRANSFER_IN: 'account_balance_wallet',
+      TOPUP: 'add_card',
+    };
+
+    const descriptions = {
+      PURCHASE: `Имитация покупки: ${merchant || 'Тестовый магазин'}`,
+      TRANSFER_IN: `Имитация входящего перевода: ${merchant || 'Перевод'}`,
+      TOPUP: `Имитация пополнения: ${merchant || 'Пополнение'}`,
+    };
+
     const [updatedAccount, transaction] = await req.prisma.$transaction([
       req.prisma.bankAccount.update({
         where: { id: accountId },
-        data: { balance: { decrement: amount } },
+        data: { balance: balanceOp },
       }),
       req.prisma.transaction.create({
         data: {
           userId,
-          fromAccountId: accountId,
+          fromAccountId: isCredit ? undefined : accountId,
+          toAccountId: isCredit ? accountId : undefined,
           amount,
-          type: 'PURCHASE',
-          category: category || 'Покупки',
-          merchant: merchant || 'Тестовый магазин',
-          merchantIcon: merchantIcon || 'shopping_bag',
-          description: `Имитация покупки: ${merchant || 'Тестовый магазин'}`,
+          type: txType,
+          category: category || (isCredit ? 'Перевод' : 'Покупки'),
+          merchant: merchant || (isCredit ? 'Входящий перевод' : 'Тестовый магазин'),
+          merchantIcon: merchantIcon || merchantIcons[txType] || 'shopping_bag',
+          description: descriptions[txType] || `Имитация: ${merchant}`,
         },
       }),
     ]);
 
-    // Process card drop
-    const droppedCard = await processCardDrop(req.prisma, userId, transaction.id);
+    // Process card drop (only for purchases)
+    let droppedCard = null;
+    if (txType === 'PURCHASE') {
+      droppedCard = await processCardDrop(req.prisma, userId, transaction.id);
+    }
 
     res.json({
       account: updatedAccount,
@@ -298,6 +349,393 @@ router.get('/dashboard', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// ==================== EXTENDED DASHBOARD ====================
+
+// GET /api/admin/dashboard/extended
+router.get('/dashboard/extended', async (req, res) => {
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // Transaction volume per day (last 30 days)
+    const allTransactions = await req.prisma.transaction.findMany({
+      where: { createdAt: { gte: thirtyDaysAgo } },
+      select: { amount: true, type: true, createdAt: true, category: true, merchant: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const dailyVolume = {};
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().slice(0, 10);
+      dailyVolume[key] = { date: key, count: 0, volume: 0 };
+    }
+    for (const t of allTransactions) {
+      const key = new Date(t.createdAt).toISOString().slice(0, 10);
+      if (dailyVolume[key]) {
+        dailyVolume[key].count++;
+        dailyVolume[key].volume += Math.abs(t.amount);
+      }
+    }
+
+    // Top merchants
+    const merchantMap = {};
+    for (const t of allTransactions) {
+      const m = t.merchant || 'Неизвестно';
+      if (!merchantMap[m]) merchantMap[m] = { merchant: m, count: 0, volume: 0 };
+      merchantMap[m].count++;
+      merchantMap[m].volume += Math.abs(t.amount);
+    }
+    const topMerchants = Object.values(merchantMap)
+      .sort((a, b) => b.volume - a.volume)
+      .slice(0, 5);
+
+    // Type distribution
+    const typeDistribution = {};
+    for (const t of allTransactions) {
+      if (!typeDistribution[t.type]) typeDistribution[t.type] = { type: t.type, count: 0, volume: 0 };
+      typeDistribution[t.type].count++;
+      typeDistribution[t.type].volume += Math.abs(t.amount);
+    }
+
+    // Recent 10 transactions
+    const recentTransactions = await req.prisma.transaction.findMany({
+      take: 10,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, name: true, phone: true } },
+      },
+    });
+
+    // New users this week
+    const newUsersThisWeek = await req.prisma.user.count({
+      where: { createdAt: { gte: sevenDaysAgo } },
+    });
+
+    // Total balance across all accounts
+    const totalBalance = await req.prisma.bankAccount.aggregate({ _sum: { balance: true } });
+
+    res.json({
+      dailyVolume: Object.values(dailyVolume),
+      topMerchants,
+      typeDistribution: Object.values(typeDistribution),
+      recentTransactions,
+      newUsersThisWeek,
+      totalBalance: totalBalance._sum.balance || 0,
+    });
+  } catch (err) {
+    console.error('Extended dashboard error:', err);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// ==================== TRANSACTIONS (ALL USERS) ====================
+
+// GET /api/admin/transactions
+router.get('/transactions', async (req, res) => {
+  try {
+    const { limit = 50, offset = 0, type, category, userId, search, dateFrom, dateTo, amountMin, amountMax } = req.query;
+
+    const where = {};
+    if (type) where.type = type;
+    if (category) where.category = category;
+    if (userId) where.userId = userId;
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) where.createdAt.gte = new Date(dateFrom);
+      if (dateTo) where.createdAt.lte = new Date(dateTo);
+    }
+    if (amountMin || amountMax) {
+      where.amount = {};
+      if (amountMin) where.amount.gte = parseFloat(amountMin);
+      if (amountMax) where.amount.lte = parseFloat(amountMax);
+    }
+    if (search) {
+      where.OR = [
+        { merchant: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [transactions, total] = await Promise.all([
+      req.prisma.transaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: parseInt(limit),
+        skip: parseInt(offset),
+        include: {
+          user: { select: { id: true, name: true, phone: true } },
+          fromAccount: { select: { id: true, name: true, balance: true } },
+          toAccount: { select: { id: true, name: true, balance: true } },
+        },
+      }),
+      req.prisma.transaction.count({ where }),
+    ]);
+
+    res.json({ transactions, total, limit: parseInt(limit), offset: parseInt(offset) });
+  } catch (err) {
+    console.error('Admin transactions error:', err);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// GET /api/admin/transactions/:id
+router.get('/transactions/:id', async (req, res) => {
+  try {
+    const transaction = await req.prisma.transaction.findUnique({
+      where: { id: req.params.id },
+      include: {
+        user: { select: { id: true, name: true, phone: true, status: true } },
+        fromAccount: true,
+        toAccount: true,
+      },
+    });
+    if (!transaction) return res.status(404).json({ error: 'Транзакция не найдена' });
+    res.json(transaction);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// POST /api/admin/transactions/adjust
+router.post('/transactions/adjust', async (req, res) => {
+  try {
+    const { userId, accountId, amount, reason, type = 'refund' } = req.body;
+    if (!userId || !amount || !reason) {
+      return res.status(400).json({ error: 'Укажите userId, amount и reason' });
+    }
+
+    let targetAccountId = accountId;
+    if (!targetAccountId) {
+      const mainAccount = await req.prisma.bankAccount.findFirst({
+        where: { userId, type: 'main' },
+      });
+      if (!mainAccount) return res.status(404).json({ error: 'У пользователя нет счетов' });
+      targetAccountId = mainAccount.id;
+    }
+
+    const isRefund = type === 'refund';
+    const adjustAmount = Math.abs(amount);
+
+    const [updatedAccount, transaction] = await req.prisma.$transaction([
+      req.prisma.bankAccount.update({
+        where: { id: targetAccountId },
+        data: { balance: isRefund ? { increment: adjustAmount } : { decrement: adjustAmount } },
+      }),
+      req.prisma.transaction.create({
+        data: {
+          userId,
+          toAccountId: isRefund ? targetAccountId : undefined,
+          fromAccountId: isRefund ? undefined : targetAccountId,
+          amount: adjustAmount,
+          type: 'ADMIN_ADJUSTMENT',
+          category: isRefund ? 'Возврат' : 'Корректировка',
+          merchant: `Администратор: ${reason}`,
+          merchantIcon: 'admin_panel_settings',
+          description: `${isRefund ? 'Возврат' : 'Списание'}: ${reason}`,
+        },
+      }),
+    ]);
+
+    // Notify user via WebSocket
+    const { broadcastToUser } = require('../websocket');
+    broadcastToUser(userId, 'balance_updated', {
+      accountId: targetAccountId,
+      newBalance: updatedAccount.balance,
+      adjustment: { amount: adjustAmount, type, reason },
+    });
+    broadcastToUser(userId, 'transaction_adjusted', { transaction });
+
+    res.json({ account: updatedAccount, transaction });
+  } catch (err) {
+    console.error('Adjust transaction error:', err);
+    res.status(500).json({ error: 'Ошибка корректировки' });
+  }
+});
+
+// GET /api/admin/transactions/analytics
+router.get('/transactions/analytics', async (req, res) => {
+  try {
+    const { period = 'month' } = req.query;
+    const now = new Date();
+    let startDate;
+
+    if (period === 'week') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (period === 'month') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else {
+      startDate = new Date(now.getFullYear(), 0, 1);
+    }
+
+    const transactions = await req.prisma.transaction.findMany({
+      where: { createdAt: { gte: startDate } },
+    });
+
+    const categories = {};
+    let totalVolume = 0;
+    let totalCount = transactions.length;
+    const typeBreakdown = {};
+
+    for (const t of transactions) {
+      const cat = t.category || 'Другое';
+      if (!categories[cat]) categories[cat] = { count: 0, volume: 0 };
+      categories[cat].count++;
+      categories[cat].volume += Math.abs(t.amount);
+      totalVolume += Math.abs(t.amount);
+
+      if (!typeBreakdown[t.type]) typeBreakdown[t.type] = { count: 0, volume: 0 };
+      typeBreakdown[t.type].count++;
+      typeBreakdown[t.type].volume += Math.abs(t.amount);
+    }
+
+    res.json({ totalVolume, totalCount, categories, typeBreakdown, period });
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// ==================== ACCOUNTS (ALL USERS) ====================
+
+// GET /api/admin/accounts
+router.get('/accounts', async (req, res) => {
+  try {
+    const accounts = await req.prisma.bankAccount.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, name: true, phone: true, status: true } },
+        _count: { select: { bankCards: true } },
+      },
+    });
+    res.json(accounts);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// PUT /api/admin/accounts/:id/balance
+router.put('/accounts/:id/balance', async (req, res) => {
+  try {
+    const { amount, reason } = req.body;
+    if (amount === undefined || !reason) {
+      return res.status(400).json({ error: 'Укажите amount и reason' });
+    }
+
+    const account = await req.prisma.bankAccount.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!account) return res.status(404).json({ error: 'Счёт не найден' });
+
+    const adjustAmount = parseFloat(amount);
+    const isPositive = adjustAmount >= 0;
+
+    const [updatedAccount, transaction] = await req.prisma.$transaction([
+      req.prisma.bankAccount.update({
+        where: { id: req.params.id },
+        data: { balance: isPositive ? { increment: Math.abs(adjustAmount) } : { decrement: Math.abs(adjustAmount) } },
+      }),
+      req.prisma.transaction.create({
+        data: {
+          userId: account.userId,
+          toAccountId: isPositive ? req.params.id : undefined,
+          fromAccountId: isPositive ? undefined : req.params.id,
+          amount: Math.abs(adjustAmount),
+          type: 'ADMIN_ADJUSTMENT',
+          category: 'Корректировка баланса',
+          merchant: `Администратор: ${reason}`,
+          merchantIcon: 'admin_panel_settings',
+          description: `Корректировка баланса: ${reason}`,
+        },
+      }),
+    ]);
+
+    // Notify user via WebSocket
+    const { broadcastToUser } = require('../websocket');
+    broadcastToUser(account.userId, 'balance_updated', {
+      accountId: req.params.id,
+      newBalance: updatedAccount.balance,
+    });
+
+    res.json({ account: updatedAccount, transaction });
+  } catch (err) {
+    console.error('Balance adjust error:', err);
+    res.status(500).json({ error: 'Ошибка корректировки баланса' });
+  }
+});
+
+// POST /api/admin/accounts/:userId
+router.post('/accounts/:userId', async (req, res) => {
+  try {
+    const { name, type = 'main', balance = 0, currency = 'RUB' } = req.body;
+    if (!name) return res.status(400).json({ error: 'Укажите название счёта' });
+
+    const user = await req.prisma.user.findUnique({ where: { id: req.params.userId } });
+    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+
+    const account = await req.prisma.bankAccount.create({
+      data: {
+        userId: req.params.userId,
+        name,
+        type,
+        balance: parseFloat(balance),
+        currency,
+      },
+    });
+
+    res.json(account);
+  } catch (err) {
+    console.error('Create account error:', err);
+    res.status(500).json({ error: 'Ошибка создания счёта' });
+  }
+});
+
+// ==================== BROADCAST NOTIFICATIONS ====================
+
+// POST /api/admin/notifications/broadcast
+router.post('/notifications/broadcast', async (req, res) => {
+  try {
+    const { title, body, icon = 'campaign', targetStatus, targetUserId } = req.body;
+    if (!title || !body) {
+      return res.status(400).json({ error: 'Укажите title и body' });
+    }
+
+    let userWhere = {};
+    if (targetUserId) {
+      userWhere = { id: targetUserId };
+    } else if (targetStatus) {
+      userWhere = { status: targetStatus };
+    }
+
+    const users = await req.prisma.user.findMany({
+      where: userWhere,
+      select: { id: true },
+    });
+
+    // Create notifications for all target users
+    const notifications = await req.prisma.notification.createMany({
+      data: users.map(u => ({
+        userId: u.id,
+        title,
+        body,
+        icon,
+      })),
+    });
+
+    // Notify via WebSocket
+    const { broadcastToUser } = require('../websocket');
+    for (const u of users) {
+      broadcastToUser(u.id, 'notification_broadcast', { title, body, icon });
+    }
+
+    res.json({ success: true, sentTo: users.length, notifications: notifications.count });
+  } catch (err) {
+    console.error('Broadcast error:', err);
+    res.status(500).json({ error: 'Ошибка рассылки' });
   }
 });
 

@@ -72,9 +72,15 @@ function LoginPage({ onLogin }) {
 // ===== DASHBOARD =====
 function DashboardPage() {
   const [stats, setStats] = useState(null);
-  useEffect(() => { apiFetch(`${API}/dashboard`).then(setStats).catch(() => {}); }, []);
+  const [extended, setExtended] = useState(null);
+
+  useEffect(() => {
+    apiFetch(`${API}/dashboard`).then(setStats).catch(() => {});
+    apiFetch(`${API}/dashboard/extended`).then(setExtended).catch(() => {});
+  }, []);
 
   if (!stats) return <p>Загрузка...</p>;
+
   return (
     <>
       <div className="page-header">
@@ -86,23 +92,45 @@ function DashboardPage() {
         <div className="stat-card"><div className="stat-label">Карт в обороте</div><div className="stat-value">{stats.totalCards}</div></div>
         <div className="stat-card"><div className="stat-label">MB баллов</div><div className="stat-value" style={{ color: 'var(--primary)' }}>{stats.totalMBInCirculation?.toLocaleString()}</div></div>
         <div className="stat-card"><div className="stat-label">Транзакций</div><div className="stat-value">{stats.totalTransactions}</div></div>
-        <div className="stat-card"><div className="stat-label">Активные колоды</div><div className="stat-value">{stats.activeDecks}</div></div>
+        {extended && <div className="stat-card"><div className="stat-label">Общий баланс</div><div className="stat-value" style={{ color: 'var(--success)' }}>₽ {extended.totalBalance?.toLocaleString('ru-RU')}</div></div>}
       </div>
-      <div className="table-container">
-        <div className="table-header"><span className="table-title">Распределение по редкости</span></div>
-        <table>
-          <thead><tr><th>Редкость</th><th>Количество</th><th>Доля</th></tr></thead>
-          <tbody>
-            {Object.entries(stats.rarityDistribution || {}).map(([rarity, count]) => (
-              <tr key={rarity}>
-                <td><span className={`badge badge-${rarity.toLowerCase()}`}>{rarity}</span></td>
-                <td>{count}</td>
-                <td>{stats.totalCards > 0 ? Math.round((count / stats.totalCards) * 100) : 0}%</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      
+      {extended && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, marginBottom: 32 }}>
+          <div className="table-container">
+            <div className="table-header"><span className="table-title">Последние операции</span></div>
+            <table>
+              <thead><tr><th>Пользователь</th><th>Тип</th><th>Сумма</th></tr></thead>
+              <tbody>
+                {extended.recentTransactions.slice(0, 5).map(t => (
+                  <tr key={t.id}>
+                    <td><div style={{fontWeight: 700}}>{t.user?.name}</div><div style={{fontSize: 12, color: 'var(--on-surface-variant)'}}>{t.merchant}</div></td>
+                    <td><span className={`badge badge-standard`}>{t.type}</span></td>
+                    <td style={{ fontWeight: 700, color: t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? 'var(--success)' : 'inherit' }}>
+                      {t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? '+' : '-'} {t.amount} ₽
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="table-container">
+            <div className="table-header"><span className="table-title">Распределение по редкости карт</span></div>
+            <table>
+              <thead><tr><th>Редкость</th><th>Количество</th><th>Доля</th></tr></thead>
+              <tbody>
+                {Object.entries(stats.rarityDistribution || {}).map(([rarity, count]) => (
+                  <tr key={rarity}>
+                    <td><span className={`badge badge-${rarity.toLowerCase()}`}>{rarity}</span></td>
+                    <td>{count}</td>
+                    <td>{stats.totalCards > 0 ? Math.round((count / stats.totalCards) * 100) : 0}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -289,55 +317,92 @@ function CardsPage() {
 // ===== SIMULATE TRANSACTION =====
 function SimulatePage() {
   const [users, setUsers] = useState([]);
-  const [form, setForm] = useState({ userId: '', accountId: '', amount: 500, category: 'Покупки', merchant: 'Тестовый магазин' });
+  const [form, setForm] = useState({ userId: '', accountId: '', amount: 500, type: 'PURCHASE', category: 'Покупки', merchant: 'Тестовый магазин' });
   const [accounts, setAccounts] = useState([]);
   const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => { apiFetch(`${API}/users`).then(setUsers).catch(() => {}); }, []);
 
   const loadAccounts = async (userId) => {
+    setForm(f => ({ ...f, userId, accountId: '' }));
+    setAccounts([]);
+    if (!userId) return;
     try {
-      // Use admin token but fetch user accounts directly — we'll use the admin simulate endpoint
-      setForm(f => ({ ...f, userId }));
-    } catch {}
+      const data = await apiFetch(`${API}/users/${userId}/accounts`);
+      setAccounts(data);
+      if (data.length > 0) {
+        setForm(f => ({ ...f, accountId: data[0].id }));
+      }
+    } catch {
+      // If the admin endpoint doesn't exist, try to get accounts from the simulate endpoint directly
+      // We'll auto-select later on the backend
+      setAccounts([]);
+    }
   };
 
   const handleSimulate = async (e) => {
     e.preventDefault();
+    if (!form.userId) { alert('Выберите пользователя'); return; }
+    setLoading(true);
+    setResult(null);
     try {
+      const body = {
+        userId: form.userId,
+        amount: parseFloat(form.amount),
+        category: form.category,
+        merchant: form.merchant,
+        type: form.type,
+      };
+      if (form.accountId) body.accountId = form.accountId;
       const data = await apiFetch(`${API}/simulate-transaction`, {
         method: 'POST',
-        body: { ...form, amount: parseFloat(form.amount) },
+        body,
       });
       setResult(data);
     } catch (err) { alert(err.message); }
+    finally { setLoading(false); }
   };
 
   return (
     <>
       <div className="page-header">
         <h1 className="page-title">Симуляция транзакций</h1>
-        <p className="page-subtitle">Создайте тестовую транзакцию для проверки дропа карт</p>
+        <p className="page-subtitle">Создайте тестовую транзакцию для проверки дропа карт и переводов</p>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
         <div className="table-container" style={{ padding: 32 }}>
           <h3 style={{ marginBottom: 24, fontWeight: 700 }}>Параметры транзакции</h3>
           <form onSubmit={handleSimulate}>
             <div className="form-group"><label className="form-label">Пользователь</label>
-              <select className="form-select" value={form.userId} onChange={e => setForm({...form, userId: e.target.value})} required>
+              <select className="form-select" value={form.userId} onChange={e => { loadAccounts(e.target.value); }} required>
                 <option value="">Выберите...</option>
                 {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.phone})</option>)}
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Сумма ₽</label><input className="form-input" type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required /></div>
-            <div className="form-group"><label className="form-label">Категория</label>
-              <select className="form-select" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
-                <option>Покупки</option><option>Кафе и Рестораны</option><option>Транспорт</option><option>Развлечения</option><option>Сервисы</option>
+            {accounts.length > 0 && (
+              <div className="form-group"><label className="form-label">Счёт</label>
+                <select className="form-select" value={form.accountId} onChange={e => setForm({...form, accountId: e.target.value})}>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} — {a.balance?.toLocaleString('ru-RU')} {a.currency || '₽'}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="form-group"><label className="form-label">Тип операции</label>
+              <select className="form-select" value={form.type} onChange={e => setForm({...form, type: e.target.value})}>
+                <option value="PURCHASE">Покупка (списание)</option>
+                <option value="TRANSFER_IN">Входящий перевод (зачисление)</option>
+                <option value="TOPUP">Пополнение</option>
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Мерчант</label><input className="form-input" value={form.merchant} onChange={e => setForm({...form, merchant: e.target.value})} /></div>
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-              <span className="material-icons-outlined" style={{ fontSize: 18 }}>play_arrow</span> Выполнить транзакцию
+            <div className="form-group"><label className="form-label">Сумма ₽</label><input className="form-input" type="number" min="1" step="0.01" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required /></div>
+            <div className="form-group"><label className="form-label">Категория</label>
+              <select className="form-select" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                <option>Покупки</option><option>Кафе и Рестораны</option><option>Транспорт</option><option>Развлечения</option><option>Сервисы</option><option>Перевод</option><option>Пополнение</option>
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Мерчант / Описание</label><input className="form-input" value={form.merchant} onChange={e => setForm({...form, merchant: e.target.value})} /></div>
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', opacity: loading ? 0.7 : 1 }} disabled={loading}>
+              {loading ? '⏳ Выполняется...' : (<><span className="material-icons-outlined" style={{ fontSize: 18 }}>play_arrow</span> Выполнить транзакцию</>)}
             </button>
           </form>
         </div>
@@ -348,8 +413,9 @@ function SimulatePage() {
             <div>
               <div style={{ background: 'rgba(34,197,94,0.08)', padding: 16, borderRadius: 12, marginBottom: 16 }}>
                 <p style={{ fontWeight: 700, color: 'var(--success)' }}>✓ Транзакция создана</p>
-                <p style={{ fontSize: 13, marginTop: 4 }}>Сумма: ₽ {result.transaction?.amount}</p>
-                <p style={{ fontSize: 13 }}>Новый баланс: ₽ {result.account?.balance?.toLocaleString()}</p>
+                <p style={{ fontSize: 13, marginTop: 4 }}>Тип: {result.transaction?.type || form.type}</p>
+                <p style={{ fontSize: 13 }}>Сумма: ₽ {result.transaction?.amount?.toLocaleString('ru-RU')}</p>
+                <p style={{ fontSize: 13 }}>Новый баланс: ₽ {result.account?.balance?.toLocaleString('ru-RU')}</p>
               </div>
               {result.droppedCard ? (
                 <div style={{ background: 'rgba(79,142,247,0.08)', padding: 16, borderRadius: 12 }}>
@@ -503,13 +569,230 @@ function QuestsPage() {
   );
 }
 
+// ===== TRANSACTIONS =====
+function TransactionsPage() {
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState({ type: '', search: '' });
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const qs = new URLSearchParams();
+      if (filter.type) qs.append('type', filter.type);
+      if (filter.search) qs.append('search', filter.search);
+      const data = await apiFetch(`${API}/transactions?${qs.toString()}`);
+      setTransactions(data.transactions || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [filter.type]);
+
+  const handleAdjust = async (t) => {
+    const reason = prompt('Причина корректировки (возврата):');
+    if (!reason) return;
+    try {
+      await apiFetch(`${API}/transactions/adjust`, {
+        method: 'POST',
+        body: { userId: t.userId, accountId: t.fromAccountId || t.toAccountId, amount: t.amount, reason, type: 'refund' }
+      });
+      alert('Корректировка выполнена');
+      load();
+    } catch (err) { alert(err.message); }
+  };
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Транзакции</h1>
+        <p className="page-subtitle">Все операции в системе</p>
+      </div>
+      
+      <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
+        <input 
+          className="form-input" 
+          placeholder="Поиск по мерчанту / категории" 
+          value={filter.search} 
+          onChange={e => setFilter({ ...filter, search: e.target.value })}
+          onKeyDown={e => e.key === 'Enter' && load()}
+          style={{ width: 300 }}
+        />
+        <select className="form-select" value={filter.type} onChange={e => setFilter({ ...filter, type: e.target.value })} style={{ width: 200 }}>
+          <option value="">Все типы</option>
+          <option value="PURCHASE">Покупки</option>
+          <option value="TRANSFER_IN">Входящие переводы</option>
+          <option value="TRANSFER_OUT">Исходящие переводы</option>
+          <option value="TOPUP">Пополнения</option>
+          <option value="ADMIN_ADJUSTMENT">Корректировки</option>
+        </select>
+        <button className="btn btn-primary" onClick={load}>Найти</button>
+      </div>
+
+      <div className="table-container">
+        <table>
+          <thead><tr><th>Дата</th><th>Пользователь</th><th>Тип</th><th>Мерчант / Описание</th><th>Сумма</th><th>Действия</th></tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan="6">Загрузка...</td></tr> : transactions.map(t => (
+              <tr key={t.id}>
+                <td style={{ fontSize: 12 }}>{new Date(t.createdAt).toLocaleString('ru-RU')}</td>
+                <td><div style={{fontWeight: 700}}>{t.user?.name}</div><div style={{fontSize: 12, color: 'var(--on-surface-variant)'}}>{t.user?.phone}</div></td>
+                <td><span className={`badge badge-standard`}>{t.type}</span></td>
+                <td><div style={{fontWeight: 700}}>{t.merchant}</div><div style={{fontSize: 12, color: 'var(--on-surface-variant)'}}>{t.description}</div></td>
+                <td style={{ fontWeight: 700, color: t.type === 'TRANSFER_IN' || t.type === 'TOPUP' || (t.type === 'ADMIN_ADJUSTMENT' && t.category === 'Возврат') ? 'var(--success)' : 'inherit' }}>
+                  {t.amount} ₽
+                </td>
+                <td>
+                  <button className="btn btn-sm" onClick={() => handleAdjust(t)}>Возврат</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ===== ACCOUNTS =====
+function AccountsPage() {
+  const [accounts, setAccounts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch(`${API}/accounts`);
+      setAccounts(data || []);
+    } catch (err) { console.error(err); } 
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleAdjustBalance = async (acc) => {
+    const amountStr = prompt(`Укажите сумму для корректировки баланса (отрицательная для списания).\nТекущий баланс: ${acc.balance} ₽`);
+    if (!amountStr) return;
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount)) return alert('Неверная сумма');
+    
+    const reason = prompt('Причина корректировки:');
+    if (!reason) return;
+
+    try {
+      await apiFetch(`${API}/accounts/${acc.id}/balance`, {
+        method: 'PUT',
+        body: { amount, reason }
+      });
+      alert('Баланс обновлен');
+      load();
+    } catch (err) { alert(err.message); }
+  };
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Банковские счета</h1>
+        <p className="page-subtitle">Управление счетами и балансами пользователей</p>
+      </div>
+      
+      <div className="table-container">
+        <table>
+          <thead><tr><th>Пользователь</th><th>Название счёта</th><th>Тип</th><th>Баланс</th><th>Действия</th></tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan="5">Загрузка...</td></tr> : accounts.map(a => (
+              <tr key={a.id}>
+                <td><div style={{fontWeight: 700}}>{a.user?.name}</div><div style={{fontSize: 12, color: 'var(--on-surface-variant)'}}>{a.user?.phone}</div></td>
+                <td>{a.name}</td>
+                <td><span className={`badge badge-standard`}>{a.type}</span></td>
+                <td style={{ fontWeight: 700, fontSize: 16 }}>{a.balance?.toLocaleString('ru-RU')} {a.currency}</td>
+                <td>
+                  <button className="btn btn-sm btn-primary" onClick={() => handleAdjustBalance(a)}>Корректировать</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ===== BROADCAST =====
+function BroadcastPage() {
+  const [form, setForm] = useState({ title: '', body: '', icon: 'campaign', targetStatus: '', targetUserId: '' });
+  const [sending, setSending] = useState(false);
+
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!confirm('Отправить уведомление?')) return;
+    setSending(true);
+    try {
+      const res = await apiFetch(`${API}/notifications/broadcast`, {
+        method: 'POST',
+        body: form
+      });
+      alert(`Успешно отправлено. Охвачено пользователей: ${res.sentTo}`);
+      setForm({ ...form, title: '', body: '' });
+    } catch (err) { alert(err.message); }
+    finally { setSending(false); }
+  };
+
+  return (
+    <>
+      <div className="page-header">
+        <h1 className="page-title">Массовая рассылка</h1>
+        <p className="page-subtitle">Отправка PUSH и In-App уведомлений пользователям</p>
+      </div>
+
+      <div className="table-container" style={{ padding: 32, maxWidth: 600 }}>
+        <form onSubmit={handleSend}>
+          <div className="form-group">
+            <label className="form-label">Заголовок</label>
+            <input className="form-input" required value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="Например: Важное обновление!" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Текст уведомления</label>
+            <textarea className="form-input" rows={4} required value={form.body} onChange={e => setForm({...form, body: e.target.value})} placeholder="Текст сообщения..." />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Иконка (Material Icons)</label>
+            <input className="form-input" value={form.icon} onChange={e => setForm({...form, icon: e.target.value})} />
+          </div>
+          
+          <div className="form-group" style={{ marginTop: 24 }}>
+            <label className="form-label">Аудитория (Оставьте пустым для отправки всем)</label>
+            <select className="form-select" value={form.targetStatus} onChange={e => setForm({...form, targetStatus: e.target.value, targetUserId: ''})}>
+              <option value="">Все пользователи</option>
+              <option value="STANDARD">Только STANDARD</option>
+              <option value="SILVER">Только SILVER</option>
+              <option value="GOLD">Только GOLD</option>
+              <option value="PLATINUM">Только PLATINUM</option>
+            </select>
+          </div>
+
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: 16 }} disabled={sending}>
+            {sending ? 'Отправка...' : 'Отправить уведомление'}
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}
+
 // ===== MAIN APP =====
 const NAV_ITEMS = [
   { key: 'dashboard', icon: 'dashboard', label: 'Дашборд' },
   { key: 'users', icon: 'people', label: 'Пользователи' },
+  { key: 'transactions', icon: 'receipt_long', label: 'Транзакции' },
+  { key: 'accounts', icon: 'account_balance', label: 'Счета' },
   { key: 'cards', icon: 'style', label: 'Шаблоны карт' },
   { key: 'simulate', icon: 'play_circle', label: 'Симуляция' },
   { key: 'quests', icon: 'emoji_events', label: 'Квесты' },
+  { key: 'broadcast', icon: 'campaign', label: 'Рассылка' },
   { key: 'config', icon: 'settings', label: 'Настройки' },
 ];
 
@@ -538,9 +821,12 @@ export default function App() {
     switch (page) {
       case 'dashboard': return <DashboardPage />;
       case 'users': return <UsersPage />;
+      case 'transactions': return <TransactionsPage />;
+      case 'accounts': return <AccountsPage />;
       case 'cards': return <CardsPage />;
       case 'simulate': return <SimulatePage />;
       case 'quests': return <QuestsPage />;
+      case 'broadcast': return <BroadcastPage />;
       case 'config': return <ConfigPage />;
       default: return <DashboardPage />;
     }

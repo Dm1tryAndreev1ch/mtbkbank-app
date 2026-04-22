@@ -5,8 +5,9 @@ import {
 import { Stack, router, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Alert } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { io } from 'socket.io-client';
 import { useStore } from '../stores/useStore';
 import { useThemeColor } from '../hooks/useThemeColor';
 import BiometricGuard from '../components/BiometricGuard';
@@ -14,7 +15,7 @@ import BiometricGuard from '../components/BiometricGuard';
 SplashScreen.preventAutoHideAsync();
 
 function InitialLayout() {
-  const { token, loadToken, theme } = useStore();
+  const { token, loadToken, theme, loadAccounts, loadTransactions, loadNotifications } = useStore();
   const [isReady, setIsReady] = useState(false);
   const segments = useSegments();
 
@@ -25,6 +26,37 @@ function InitialLayout() {
     };
     init();
   }, [loadToken]);
+
+  // WebSocket Connection
+  useEffect(() => {
+    if (!token) return;
+
+    const socket = io('http://localhost:3000', {
+      auth: { token },
+    });
+
+    socket.on('connect', () => {
+      console.log('Mobile App connected to WebSocket');
+    });
+
+    socket.on('balance_updated', () => {
+      loadAccounts();
+    });
+
+    socket.on('transaction_adjusted', () => {
+      loadTransactions();
+    });
+
+    socket.on('notification_broadcast', (payload) => {
+      loadNotifications();
+      Alert.alert(payload.title, payload.body);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [token]);
+
 
   useEffect(() => {
     if (!isReady) return;

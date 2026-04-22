@@ -1,8 +1,15 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-// Change this to your server IP when running on a real device
-const API_BASE = 'http://localhost:3000/api';
+let API_BASE = 'http://localhost:3000/api';
+if (Constants.expoConfig?.hostUri) {
+  const host = Constants.expoConfig.hostUri.split(':')[0];
+  API_BASE = `http://${host}:3000/api`;
+} else if (Platform.OS === 'android') {
+  API_BASE = 'http://10.0.2.2:3000/api';
+}
 
 const api = axios.create({
   baseURL: API_BASE,

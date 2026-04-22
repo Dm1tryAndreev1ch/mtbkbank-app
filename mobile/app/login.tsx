@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   SafeAreaView, KeyboardAvoidingView, Platform, ActivityIndicator,
+  TouchableWithoutFeedback, Keyboard
 } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../stores/useStore';
@@ -14,13 +15,13 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   const { login, isLoading, loadAll } = useStore();
 
-  const handleLogin = async () => {
-    if (!phone || pin.length !== 4) {
+  const submitLogin = async (p: string, code: string) => {
+    if (!p || code.length !== 4) {
       setError('Введите телефон и 4-значный ПИН');
       return;
     }
     setError('');
-    const success = await login(phone, pin);
+    const success = await login(p, code);
     if (success) {
       loadAll();
       router.replace('/(tabs)');
@@ -29,20 +30,23 @@ export default function LoginScreen() {
     }
   };
 
+  const handleLogin = () => submitLogin(phone, pin);
+
   const handlePinInput = (digit: string) => {
+    Keyboard.dismiss();
     if (pin.length < 4) {
       const newPin = pin + digit;
       setPin(newPin);
       if (newPin.length === 4) {
         setTimeout(() => {
-          setPhone(phone);
-          // Auto-submit on 4 digits
+          submitLogin(phone, newPin);
         }, 100);
       }
     }
   };
 
   const handlePinDelete = () => {
+    Keyboard.dismiss();
     setPin(pin.slice(0, -1));
   };
 
@@ -52,96 +56,101 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.content}
       >
-        {/* Logo area */}
-        <View style={styles.logoArea}>
-          <View style={styles.logoIcon}>
-            <MaterialIcons name="account-balance" size={40} color={Colors.onPrimary} />
-          </View>
-          <Text style={styles.logoText}>MT-Банк</Text>
-          <Text style={styles.logoSubtext}>HALVA VAULT</Text>
-        </View>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}>
+            {/* Logo area */}
+            <View style={styles.logoArea}>
+              <View style={styles.logoIcon}>
+                <MaterialIcons name="account-balance" size={40} color={Colors.onPrimary} />
+              </View>
+              <Text style={styles.logoText}>MT-Банк</Text>
+            </View>
 
-        {/* Phone input */}
-        <View style={styles.inputSection}>
-          <Text style={styles.inputLabel}>НОМЕР ТЕЛЕФОНА</Text>
-          <TextInput
-            style={styles.phoneInput}
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="+7 (900) 123-45-67"
-            keyboardType="phone-pad"
-            placeholderTextColor={Colors.outlineVariant}
-          />
-        </View>
-
-        {/* PIN dots */}
-        <View style={styles.pinSection}>
-          <Text style={styles.inputLabel}>ПИН-КОД</Text>
-          <View style={styles.pinDots}>
-            {[0, 1, 2, 3].map((i) => (
-              <View
-                key={i}
-                style={[
-                  styles.pinDot,
-                  pin.length > i && styles.pinDotFilled,
-                ]}
+            {/* Phone input */}
+            <View style={styles.inputSection}>
+              <Text style={styles.inputLabel}>НОМЕР ТЕЛЕФОНА</Text>
+              <TextInput
+                style={styles.phoneInput}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="+7 (900) 123-45-67"
+                keyboardType="phone-pad"
+                placeholderTextColor={Colors.outlineVariant}
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
               />
-            ))}
-          </View>
-        </View>
+            </View>
 
-        {/* Error */}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+            {/* PIN dots */}
+            <View style={styles.pinSection}>
+              <Text style={styles.inputLabel}>ПИН-КОД</Text>
+              <View style={styles.pinDots}>
+                {[0, 1, 2, 3].map((i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.pinDot,
+                      pin.length > i && styles.pinDotFilled,
+                    ]}
+                  />
+                ))}
+              </View>
+            </View>
 
-        {/* Numpad */}
-        <View style={styles.numpad}>
-          {[
-            ['1', '2', '3'],
-            ['4', '5', '6'],
-            ['7', '8', '9'],
-            ['', '0', 'del'],
-          ].map((row, ri) => (
-            <View key={ri} style={styles.numpadRow}>
-              {row.map((digit, di) => (
-                <TouchableOpacity
-                  key={di}
-                  style={[
-                    styles.numpadKey,
-                    digit === '' && styles.numpadKeyEmpty,
-                  ]}
-                  onPress={() => {
-                    if (digit === 'del') handlePinDelete();
-                    else if (digit !== '') handlePinInput(digit);
-                  }}
-                  disabled={digit === ''}
-                >
-                  {digit === 'del' ? (
-                    <MaterialIcons name="backspace" size={24} color={Colors.onSurfaceVariant} />
-                  ) : (
-                    <Text style={styles.numpadKeyText}>{digit}</Text>
-                  )}
-                </TouchableOpacity>
+            {/* Error */}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            {/* Numpad */}
+            <View style={styles.numpad}>
+              {[
+                ['1', '2', '3'],
+                ['4', '5', '6'],
+                ['7', '8', '9'],
+                ['', '0', 'del'],
+              ].map((row, ri) => (
+                <View key={ri} style={styles.numpadRow}>
+                  {row.map((digit, di) => (
+                    <TouchableOpacity
+                      key={di}
+                      style={[
+                        styles.numpadKey,
+                        digit === '' && styles.numpadKeyEmpty,
+                      ]}
+                      onPress={() => {
+                        if (digit === 'del') handlePinDelete();
+                        else if (digit !== '') handlePinInput(digit);
+                      }}
+                      disabled={digit === ''}
+                    >
+                      {digit === 'del' ? (
+                        <MaterialIcons name="backspace" size={24} color={Colors.onSurfaceVariant} />
+                      ) : (
+                        <Text style={styles.numpadKeyText}>{digit}</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
               ))}
             </View>
-          ))}
-        </View>
 
-        {/* Login button */}
-        <TouchableOpacity
-          style={[styles.loginButton, pin.length < 4 && styles.loginButtonDisabled]}
-          onPress={handleLogin}
-          disabled={pin.length < 4 || isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color={Colors.onPrimary} />
-          ) : (
-            <Text style={styles.loginButtonText}>Войти</Text>
-          )}
-        </TouchableOpacity>
+            {/* Login button */}
+            <TouchableOpacity
+              style={[styles.loginButton, pin.length < 4 && styles.loginButtonDisabled]}
+              onPress={handleLogin}
+              disabled={pin.length < 4 || isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={Colors.onPrimary} />
+              ) : (
+                <Text style={styles.loginButtonText}>Войти</Text>
+              )}
+            </TouchableOpacity>
 
-        <Text style={styles.hint}>
-          Тест: +79001234567 / ПИН: 1234
-        </Text>
+            <Text style={styles.hint}>
+              Тест: +79001234567 / ПИН: 1234
+            </Text>
+          </View>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
