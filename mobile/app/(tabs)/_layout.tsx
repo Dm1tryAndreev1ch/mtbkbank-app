@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { View, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Shadows } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
@@ -66,11 +66,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="cards"
+        name="products"
         options={{
-          title: 'Карты',
+          title: 'Продукты',
           tabBarIcon: ({ color }) => (
-            <MaterialIcons name="style" size={26} color={color} />
+            <MaterialIcons name="grid-view" size={26} color={color} />
           ),
         }}
       />
@@ -84,8 +84,9 @@ export default function TabLayout() {
         }}
       />
 
+      {/* Карты скрыты из таббара — доступны через MB-бейдж */}
       <Tabs.Screen
-        name="products"
+        name="cards"
         options={{
           href: null,
         }}
