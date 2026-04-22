@@ -65,8 +65,9 @@ export default function CardsScreen() {
     return slots;
   };
 
-  const handleEquipCard = async (card: any) => {
-    if (!activeDeck || selectedSlotIndex === null) return;
+  // slotIndex передаётся напрямую — не читается из state, чтобы избежать stale closure
+  const handleEquipCard = async (card: any, slotIndex: number) => {
+    if (!activeDeck) return;
     setPickerModalVisible(false);
     setIsEquipping(true);
     try {
@@ -391,7 +392,7 @@ export default function CardsScreen() {
                   <TouchableOpacity
                     key={card.id}
                     style={[styles.pickerItem, { borderColor: rarityColor }]}
-                    onPress={() => handleEquipCard(card)}
+                    onPress={() => handleEquipCard(card, selectedSlotIndex ?? (activeDeck?.deckCards?.length ?? 0))}
                   >
                     <MaterialIcons name={iconName as any} size={32} color={rarityColor} />
                     <View style={{ flex: 1 }}>
@@ -456,9 +457,10 @@ export default function CardsScreen() {
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: colors.primary + '22' }]}
                       onPress={() => {
+                        // Вычисляем slotIndex прямо здесь — не читаем из state
+                        const nextSlot = activeDeck.deckCards?.length ?? 0;
                         setDetailModalVisible(false);
-                        setSelectedSlotIndex((activeDeck.deckCards?.length ?? 0));
-                        setTimeout(() => handleEquipCard(selectedCard), 300);
+                        setTimeout(() => handleEquipCard(selectedCard, nextSlot), 300);
                       }}
                     >
                       <MaterialIcons name="add-circle-outline" size={20} color={colors.primary} />
@@ -606,7 +608,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
   progressFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 3 },
   progressText: { fontSize: Fonts.sizes.xs, color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Bold' },
 
-  // Actions row between quests and inventory
   actionsRow: {
     flexDirection: 'row',
     paddingHorizontal: Spacing.xl,
