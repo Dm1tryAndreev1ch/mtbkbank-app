@@ -46,7 +46,6 @@ export default function CardsScreen() {
 
   const activeDeck = decks.find((d: any) => d.isActive);
 
-  // IDs карт уже в активной колоде (для фильтрации picker)
   const equippedCardIds: Set<string> = useMemo(() => {
     if (!activeDeck) return new Set();
     return new Set(
@@ -54,7 +53,6 @@ export default function CardsScreen() {
     );
   }, [activeDeck]);
 
-  // Собрать актуальный массив cardIds из deckCards по slotIndex
   const getCurrentCardIds = (): string[] => {
     if (!activeDeck) return [];
     const slots: string[] = [];
@@ -67,14 +65,12 @@ export default function CardsScreen() {
     return slots;
   };
 
-  // Добавить карту в слот
   const handleEquipCard = async (card: any) => {
     if (!activeDeck || selectedSlotIndex === null) return;
     setPickerModalVisible(false);
     setIsEquipping(true);
     try {
       const currentIds = getCurrentCardIds();
-      // Вставляем новую карту — просто добавляем в конец (slotIndex = порядок в массиве)
       const newIds = currentIds.filter((id) => id !== card.id);
       newIds.push(card.id);
       await apiClient.updateDeck(activeDeck.id, { cardIds: newIds });
@@ -88,7 +84,6 @@ export default function CardsScreen() {
     }
   };
 
-  // Убрать карту из колоды
   const handleRemoveCard = async (card: any) => {
     if (!activeDeck) return;
     Alert.alert(
@@ -138,7 +133,6 @@ export default function CardsScreen() {
     ? cards.filter((c: any) => c.collectionCard.rarity === filter)
     : cards;
 
-  // Карты доступные для экипировки (не в колоде уже)
   const availableCards = cards.filter((c: any) => !equippedCardIds.has(c.id));
 
   return (
@@ -172,7 +166,6 @@ export default function CardsScreen() {
               </View>
             </View>
 
-            {/* Loading overlay */}
             {isEquipping && (
               <View style={styles.deckLoadingOverlay}>
                 <ActivityIndicator size="small" color={colors.primary} />
@@ -197,12 +190,9 @@ export default function CardsScreen() {
                       style={[styles.deckSlot, styles.deckSlotFilled, { borderColor: rarityColor }]}
                     >
                       <View style={[styles.deckSlotGlow, { backgroundColor: rarityColor }]} />
-
-                      {/* Remove hint */}
                       <View style={styles.removeHint}>
                         <MaterialIcons name="close" size={10} color={colors.onSurfaceVariant} />
                       </View>
-
                       <View style={styles.deckSlotBody}>
                         <MaterialIcons name={iconName as any} size={28} color={rarityColor} />
                         <Text style={styles.deckSlotName} numberOfLines={1}>{card.collectionCard.name}</Text>
@@ -210,7 +200,6 @@ export default function CardsScreen() {
                           {getRarityName(card.collectionCard.rarity)}
                         </Text>
                       </View>
-
                       <View style={styles.healthBarContainer}>
                         <View style={[
                           styles.healthBarFill,
@@ -287,18 +276,18 @@ export default function CardsScreen() {
         </View>
 
         {/* Advanced Actions Row */}
-        <View style={{ flexDirection: 'row', paddingHorizontal: Spacing.xl, marginBottom: Spacing.lg, gap: 12 }}>
+        <View style={styles.actionsRow}>
           <TouchableOpacity
             onPress={() => router.push('/collection')}
-            style={{ flex: 1, backgroundColor: colors.surfaceVariant, padding: Spacing.md, borderRadius: BorderRadius.lg, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+            style={styles.actionRowBtn}>
             <MaterialIcons name="auto-awesome-mosaic" size={20} color={colors.primary} />
-            <Text style={{ color: colors.primary, fontFamily: 'Manrope-Bold', marginLeft: 8 }}>Коллекция</Text>
+            <Text style={[styles.actionRowBtnText, { color: colors.primary }]}>Коллекция</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push('/trade')}
-            style={{ flex: 1, backgroundColor: colors.surfaceVariant, padding: Spacing.md, borderRadius: BorderRadius.lg, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+            style={styles.actionRowBtn}>
             <MaterialIcons name="swap-horiz" size={22} color={colors.primary} />
-            <Text style={{ color: colors.primary, fontFamily: 'Manrope-Bold', marginLeft: 8 }}>Трейды</Text>
+            <Text style={[styles.actionRowBtnText, { color: colors.primary }]}>Трейды</Text>
           </TouchableOpacity>
         </View>
 
@@ -452,7 +441,6 @@ export default function CardsScreen() {
                 </View>
 
                 <View style={styles.actionButtonsCol}>
-                  {/* Экипировать / Убрать прямо из детальной карточки */}
                   {equippedCardIds.has(selectedCard.id) ? (
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: colors.error + '22' }]}
@@ -618,6 +606,28 @@ const getStyles = (Colors: any) => StyleSheet.create({
   progressFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 3 },
   progressText: { fontSize: Fonts.sizes.xs, color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Bold' },
 
+  // Actions row between quests and inventory
+  actionsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.xl,
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.sm,
+    gap: 12,
+  },
+  actionRowBtn: {
+    flex: 1,
+    backgroundColor: Colors.surfaceVariant,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  actionRowBtnText: {
+    fontFamily: 'Manrope-Bold',
+    marginLeft: 8,
+  },
+
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   filterTab: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: BorderRadius.full,
@@ -636,9 +646,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
     borderRadius: BorderRadius.base, padding: Spacing.base, gap: 6,
     borderWidth: 2, overflow: 'hidden', ...Shadows.sm,
   },
-  cardItemInDeck: {
-    opacity: 0.75,
-  },
+  cardItemInDeck: { opacity: 0.75 },
   cardItemGlow: {
     position: 'absolute', top: 0, left: 0, right: 0, height: 4, opacity: 0.7,
   },
