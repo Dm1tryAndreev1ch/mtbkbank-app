@@ -9,7 +9,7 @@ import { router } from 'expo-router';
 import { useStore } from '../../stores/useStore';
 import { BlurView } from 'expo-blur';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, FadeIn } from 'react-native-reanimated';
-import { Fonts, Spacing, BorderRadius, Shadows, formatMoney } from '../../constants/theme';
+import { Fonts, Spacing, BorderRadius, Shadows, formatMoney, toMaterialIconName } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
 
 const SkeletonPulse = ({ style, colors }: { style: any, colors: any }) => {
@@ -177,9 +177,9 @@ export default function HomeScreen() {
                       t.type === 'TRANSFER_IN' && { backgroundColor: `${colors.primary}15` },
                     ]}>
                       <MaterialIcons
-                         name={(t.merchantIcon as any) || 'shopping-bag'}
-                         size={20}
-                         color={t.type === 'TRANSFER_IN' ? colors.primary : colors.onSurfaceVariant}
+                        name={toMaterialIconName(t.merchantIcon) as any}
+                        size={20}
+                        color={t.type === 'TRANSFER_IN' ? colors.primary : colors.onSurfaceVariant}
                       />
                     </View>
                     <View>
@@ -192,8 +192,8 @@ export default function HomeScreen() {
                     </View>
                   </View>
                   <Text style={[
-                     styles.transactionAmount,
-                     t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? { color: colors.primary } : {},
+                    styles.transactionAmount,
+                    t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? { color: colors.primary } : {},
                   ]}>
                     {t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? '+' : '-'} {formatMoney(t.amount)}
                   </Text>
@@ -237,12 +237,12 @@ const getStyles = (Colors: any) => StyleSheet.create({
   },
   mbText: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: '#ffffff', letterSpacing: 1 },
   mbPoints: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#ffffff' },
-  
+
   cardWrapper: {
     marginHorizontal: Spacing.base,
     borderRadius: BorderRadius.base,
     overflow: 'hidden',
-    backgroundColor: 'rgba(42,42,42,0.4)', // Base background
+    backgroundColor: 'rgba(42,42,42,0.4)',
     borderWidth: 1,
     borderColor: Colors.transparentBorder,
   },
@@ -293,7 +293,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
   brandCircle2: {
     width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.secondaryContainer, opacity: 0.9,
   },
-  
+
   section: { paddingHorizontal: Spacing.base, marginTop: Spacing['2xl'] },
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
@@ -304,7 +304,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
     letterSpacing: 2, textTransform: 'uppercase',
   },
   viewAll: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.primary },
-  
+
   actionsGrid: {
     flexDirection: 'row', justifyContent: 'space-around', marginTop: Spacing.base,
   },
@@ -316,7 +316,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
   actionLabel: {
     fontSize: 12, fontFamily: 'Manrope-Bold', color: Colors.onSurface,
   },
-  
+
   transactionList: { gap: Spacing.sm },
   transactionSkeleton: {
     height: 72,
