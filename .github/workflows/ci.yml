@@ -12,15 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18.x'
-      
+          node-version: '18.18.0'
+
       - name: Install Dependencies
         working-directory: ./backend
         run: npm ci
-        
+
       - name: Run Jest Engine Tests
         working-directory: ./backend
         run: npm test
@@ -30,41 +31,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18.x'
-          
+          node-version: '18.18.0'
+
       - name: Install Dependencies
         working-directory: ./mobile
         run: npm ci --legacy-peer-deps
-        
+
       - name: TypeScript Compiler Check
         working-directory: ./mobile
         run: npx tsc --noEmit
 
   expo-build-preview:
-  name: EAS Android Build
-  needs: [backend-test, mobile-lint]
-  if: github.ref == 'refs/heads/main'
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v3
+    name: EAS Android Build
+    needs: [backend-test, mobile-lint]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18.18.0'
+    steps:
+      - uses: actions/checkout@v3
 
-    - name: Install EAS CLI
-      run: npm install -g eas-cli
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.18.0'
 
-    - name: Install Dependencies
-      working-directory: ./mobile
-      run: npm ci --legacy-peer-deps
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
 
-    - name: Execute EAS Build
-      working-directory: ./mobile
-      run: eas build --platform android --profile preview --non-interactive
-      env:
-        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      - name: Install Dependencies
+        working-directory: ./mobile
+        run: npm ci --legacy-peer-deps
+
+      - name: Execute EAS Build
+        working-directory: ./mobile
+        run: eas build --platform android --profile preview --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
