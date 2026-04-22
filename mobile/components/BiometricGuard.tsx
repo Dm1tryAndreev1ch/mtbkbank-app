@@ -22,7 +22,6 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
   const [failed, setFailed] = useState(false);
   const [biometricType, setBiometricType] = useState<string>('');
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  // true пока системный диалог аутентификации ещё не закрыт или AppState ещё не вернулся
   const authPhaseRef = useRef(false);
   const colors = useThemeColor();
   const s = useMemo(() => mk(colors), [colors]);
@@ -44,8 +43,6 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
     if (isChecking) return;
     setIsChecking(true);
     setFailed(false);
-
-    // Отмечаем что мы в фазе аутентификации — любой inactive/background игнорируется
     authPhaseRef.current = true;
 
     try {
@@ -63,13 +60,12 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
       else setBiometricType('pin');
 
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Войдите в MTBKBank',
+        promptMessage: 'Войдите в MTBank',
         fallbackLabel: 'Использовать ПИН-код',
         cancelLabel: 'Отмена',
         disableDeviceFallback: false,
       });
 
-      // Сбрасываем фазу только после получения результата — AppState вернётся сам после
       authPhaseRef.current = false;
 
       if (result.success) {
@@ -103,21 +99,16 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       const prev = appStateRef.current;
-
       if (prev.match(/inactive|background/) && next === 'active') {
-        // Возвращаемся в active — если не из-за диалога аутентификации — перезапрашиваем
         if (!authPhaseRef.current && token) {
           setIsUnlocked(false);
           setFailed(false);
           authenticate();
         }
       }
-
-      // Сбрасываем только при полном сворачивании (без диалога)
       if (next === 'background' && !authPhaseRef.current) {
         setIsUnlocked(false);
       }
-
       appStateRef.current = next;
     });
     return () => sub.remove();
@@ -140,7 +131,7 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
           <Animated.View style={[s.iconWrap, lockStyle, shakeStyle]}>
             <MaterialIcons name={iconName as any} size={56} color={colors.primary} />
           </Animated.View>
-          <Text style={s.title}>MTBKBank</Text>
+          <Text style={s.title}>MTBank</Text>
           <Text style={s.subtitle}>
             {isChecking ? 'Проверка...'
               : failed ? 'Не удалось подтвердить личность'
