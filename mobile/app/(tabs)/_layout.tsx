@@ -65,7 +65,6 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/* Replaced Products tab with Cards tab conceptually */}
       <Tabs.Screen
         name="cards"
         options={{
@@ -73,7 +72,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="style" size={26} color={color} />
           ),
-          href: "/cards"
         }}
       />
       <Tabs.Screen
@@ -85,8 +83,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      
-      {/* Hide products if we don't need it visible anymore */}
+
       <Tabs.Screen
         name="products"
         options={{
