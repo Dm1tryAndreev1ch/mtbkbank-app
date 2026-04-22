@@ -63,21 +63,23 @@ function InitialLayout() {
 
   if (!isReady) return null;
 
+  // Expo Router автоматически обнаруживает все файлы в app/.
+  // Явная регистрация Stack.Screen нужна только для кастомных опций (presentation, animation и т.д.).
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="onboarding" />
-      <Stack.Screen name="login" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="qr" />
-      <Stack.Screen name="topup" />
-      <Stack.Screen name="transfer" />
-      <Stack.Screen name="payment" />
-      <Stack.Screen name="history" />
-      <Stack.Screen name="notifications" />
-      <Stack.Screen name="card-details" />
-      <Stack.Screen name="collection" />
-      <Stack.Screen name="trade" />
-      <Stack.Screen name="account" />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+      <Stack.Screen name="login" options={{ headerShown: false }} />
+      <Stack.Screen name="qr" options={{ headerShown: false, presentation: 'modal' }} />
+      <Stack.Screen name="topup" options={{ headerShown: false, presentation: 'modal' }} />
+      <Stack.Screen name="transfer" options={{ headerShown: false, presentation: 'modal' }} />
+      <Stack.Screen name="payment" options={{ headerShown: false, presentation: 'modal' }} />
+      <Stack.Screen name="history" options={{ headerShown: false }} />
+      <Stack.Screen name="notifications" options={{ headerShown: false }} />
+      <Stack.Screen name="card-details" options={{ headerShown: false }} />
+      <Stack.Screen name="collection" options={{ headerShown: false }} />
+      <Stack.Screen name="trade" options={{ headerShown: false }} />
+      <Stack.Screen name="transaction" options={{ headerShown: false }} />
     </Stack>
   );
 }
