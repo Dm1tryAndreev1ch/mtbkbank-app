@@ -19,22 +19,23 @@ const { broadcastToUser } = require('../websocket');
  * FIX: шанс выпадения карты исправлен — 30% (roll < 0.30), комментарий синхронизирован с кодом.
  */
 function rollCardDrop(overrideRates = null) {
-  const roll = Math.random();
   const rates = overrideRates || RARITY_CONFIG;
-
+  
+  // Single roll determines both drop and rarity
+  const roll = Math.random();
+  
   // 30% chance to get ANY card on a purchase
   if (roll >= 0.30) return null;
-
-  const rarityRoll = Math.random();
-  let cumulative = 0;
-
-  for (const [rarity, config] of Object.entries(rates)) {
-    cumulative += config.dropChance;
-    if (rarityRoll <= cumulative) {
-      return rarity;
-    }
-  }
-  return 'COMMON'; // fallback
+  
+  // Check rarities in order from rarest to most common
+  // LEGENDARY: < 0.03
+  if (roll < 0.03) return 'LEGENDARY';
+  // EPIC: < 0.15 (0.03 + 0.12)
+  if (roll < 0.15) return 'EPIC';
+  // RARE: < 0.40 (0.15 + 0.25) - but we already checked < 0.30 for drop
+  if (roll < 0.18) return 'RARE';
+  // COMMON: rest (0.18 to 0.30)
+  return 'COMMON';
 }
 
 /**

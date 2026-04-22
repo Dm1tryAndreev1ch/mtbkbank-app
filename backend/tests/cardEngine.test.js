@@ -15,9 +15,7 @@ const mockPrisma = {
   notification: { create: jest.fn() },
   transaction: { update: jest.fn() },
   deckCard: { deleteMany: jest.fn() },
-  systemConfig: { findUnique: jest.fn().mockResolvedValue(null) },
-  $transaction: jest.fn(cb => cb(mockPrisma)),
-  $executeRaw: jest.fn().mockResolvedValue(1),
+  $transaction: jest.fn(async (fn) => fn(mockPrisma)),
 };
 
 jest.mock('@prisma/client', () => {
