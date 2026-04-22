@@ -21,17 +21,28 @@ export default function TabLayout() {
           borderTopColor: colors.transparentBorder,
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
-          height: Platform.OS === 'ios' ? 88 : 72,
+          height: Platform.OS === 'ios' ? 96 : 76,
           paddingTop: 8,
           paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+          paddingHorizontal: 4,
           ...Shadows.lg,
         },
         tabBarLabelStyle: {
           fontSize: 10,
-          fontWeight: '700',
-          letterSpacing: 1,
+          fontFamily: 'Manrope-Bold',
+          letterSpacing: 0.3,
           textTransform: 'uppercase',
+          marginTop: 2,
+          includeFontPadding: false,
         },
+        tabBarItemStyle: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 2,
+          overflow: 'visible',
+        },
+        tabBarAllowFontScaling: false,
       }}
     >
       <Tabs.Screen
