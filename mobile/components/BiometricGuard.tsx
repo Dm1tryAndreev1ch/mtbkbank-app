@@ -16,13 +16,14 @@ import { useThemeColor } from '../hooks/useThemeColor';
 
 export default function BiometricGuard({ children }: { children: React.ReactNode }) {
   const { token } = useStore();
-  // Не блокируем пока не знаем точно есть ли токен
   const [tokenChecked, setTokenChecked] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [failed, setFailed] = useState(false);
   const [biometricType, setBiometricType] = useState<string>('');
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  // Флаг: в данный момент показывается системный диалог аутентификации
+  const isAuthDialogOpen = useRef(false);
   const colors = useThemeColor();
   const s = useMemo(() => mk(colors), [colors]);
 
@@ -39,16 +40,6 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
     );
   };
 
-  // Сначала проверяем наличие токена в SecureStore
-  useEffect(() => {
-    SecureStore.getItemAsync('token')
-      .then(t => {
-        setTokenChecked(true);
-        if (t) authenticate();
-      })
-      .catch(() => setTokenChecked(true));
-  }, []);
-
   const authenticate = async () => {
     if (isChecking) return;
     setIsChecking(true);
@@ -56,19 +47,30 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
     try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-      if (!hasHardware || !isEnrolled) { setIsUnlocked(true); return; }
+      if (!hasHardware || !isEnrolled) {
+        setIsUnlocked(true);
+        return;
+      }
 
       const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-      if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) setBiometricType('face');
-      else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) setBiometricType('fingerprint');
-      else setBiometricType('pin');
+      if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+        setBiometricType('face');
+      } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+        setBiometricType('fingerprint');
+      } else {
+        setBiometricType('pin');
+      }
 
+      // Отмечаем: системный диалог открыт
+      isAuthDialogOpen.current = true;
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Войдите в MTBKBank',
         fallbackLabel: 'Использовать ПИН-код',
         cancelLabel: 'Отмена',
         disableDeviceFallback: false,
       });
+      // Диалог закрыт
+      isAuthDialogOpen.current = false;
 
       if (result.success) {
         lockScale.value = withSequence(
@@ -81,28 +83,49 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
         setFailed(true);
         triggerShake();
       }
-    } catch { setIsUnlocked(true); }
-    finally { setIsChecking(false); }
+    } catch {
+      isAuthDialogOpen.current = false;
+      setIsUnlocked(true);
+    } finally {
+      setIsChecking(false);
+    }
   };
 
-  // Повторная блокировка при сворачивании
+  // Проверяем наличие токена и запускаем биометрию
+  useEffect(() => {
+    SecureStore.getItemAsync('token')
+      .then(t => {
+        setTokenChecked(true);
+        if (t) authenticate();
+      })
+      .catch(() => setTokenChecked(true));
+  }, []);
+
+  // Блокировка при возвращении из фона
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
-      if (appStateRef.current.match(/inactive|background/) && next === 'active' && token) {
-        setIsUnlocked(false);
-        setFailed(false);
-        authenticate();
+      const prev = appStateRef.current;
+
+      // Приложение вернулось из фона (не из-за диалога аутентификации)
+      if (prev.match(/inactive|background/) && next === 'active') {
+        if (!isAuthDialogOpen.current && token) {
+          setIsUnlocked(false);
+          setFailed(false);
+          authenticate();
+        }
       }
-      if (next.match(/inactive|background/)) setIsUnlocked(false);
+
+      // Сбрасываем только при полном сворачивании (без диалога)
+      if (next === 'background' && !isAuthDialogOpen.current) {
+        setIsUnlocked(false);
+      }
+
       appStateRef.current = next;
     });
     return () => sub.remove();
   }, [token]);
 
-  // Пока не знаем наличие токена — прозрачно рендерим детей
   if (!tokenChecked) return <>{children}</>;
-
-  // Нет токена в store (не авторизован) — пропускаем
   if (!token || isUnlocked) return <>{children}</>;
 
   const iconName = biometricType === 'face' ? 'face'
