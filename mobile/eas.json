@@ -1,0 +1,13 @@
+{
+  "cli": {
+    "version": ">= 3.0.0"
+  },
+  "build": {
+    "preview": {
+      "android": {
+        "node": "18.18.0",
+        "packageManager": "npm"
+      }
+    }
+  }
+}
