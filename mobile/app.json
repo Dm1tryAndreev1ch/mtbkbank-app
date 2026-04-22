@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "MTBKBank",
-    "slug": "mtbkbank",
+    "name": "MTBank",
+    "slug": "mtbank",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mtbkbank",
+    "scheme": "mtbank",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,14 +15,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mtbkbank.app",
+      "bundleIdentifier": "com.mtbank.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Приложению нужен доступ к камере для сканирования QR-кодов",
-        "NSFaceIDUsageDescription": "Используется для быстрого и безопасного входа в MTBKBank"
+        "NSFaceIDUsageDescription": "Используется для быстрого и безопасного входа в MTBank"
       }
     },
     "android": {
-      "package": "com.mtbkbank.app",
+      "package": "com.mtbank.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -53,7 +53,7 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Используется для быстрого и безопасного входа в MTBKBank"
+          "faceIDPermission": "Используется для быстрого и безопасного входа в MTBank"
         }
       ]
     ],
