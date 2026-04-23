@@ -24,6 +24,12 @@ function signRefresh(userId) {
   );
 }
 
+// CORS preflight / случайный GET из браузера — без этого часто виден «404» на /api/auth/login
+router.options('/login', (_req, res) => res.sendStatus(204));
+router.get('/login', (_req, res) => {
+  res.status(405).json({ error: 'Используйте POST с JSON: { "phone", "pin" }' });
+});
+
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {

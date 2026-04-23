@@ -23,8 +23,9 @@ const { tickActiveDeckCardHealth } = require('./services/cardEngine');
 const app = express();
 const prisma = new PrismaClient();
 
+const corsOptions = { origin: true, credentials: true };
+app.use(cors(corsOptions));
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 app.use((req, _res, next) => {
