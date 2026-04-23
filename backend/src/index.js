@@ -49,6 +49,15 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/admin', adminRoutes);
 
+/** Корень: чтобы в браузере было видно, что это наш API (а не чужой сервис на том же порту). */
+app.get('/', (_req, res) => {
+  res.json({
+    service: 'MTBBank API',
+    health: '/health',
+    apiPrefix: '/api',
+  });
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
