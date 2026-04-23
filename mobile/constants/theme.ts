@@ -153,7 +153,7 @@ export const getRarityName = (rarity: string) => {
   }
 };
 
-export const formatMoney = (amount: number, currency = '₽') => {
+export const formatMoney = (amount: number, currency = 'Br') => {
   return `${amount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 };
 
