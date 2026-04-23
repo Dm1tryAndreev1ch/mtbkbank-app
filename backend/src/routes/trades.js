@@ -172,6 +172,8 @@ router.put('/:id/reject', async (req, res) => {
 });
 
 // POST /api/trades/send — send card as gift
+// FIX: added check that card is not in an active deck before sending.
+//      If it is, the user is warned and must remove it first.
 router.post('/send', async (req, res) => {
   try {
     const { cardId, toUserId } = req.body;
@@ -181,9 +183,20 @@ router.post('/send', async (req, res) => {
 
     const card = await req.prisma.userCard.findFirst({
       where: { id: cardId, userId: req.userId },
-      include: { collectionCard: true },
+      include: {
+        collectionCard: true,
+        deckCards: { include: { deck: true } },
+      },
     });
     if (!card) return res.status(404).json({ error: 'Карта не найдена' });
+
+    // Warn if the card is in an active deck — user must remove it first
+    const activeDeckEntry = card.deckCards.find(dc => dc.deck.isActive);
+    if (activeDeckEntry) {
+      return res.status(400).json({
+        error: `Карта находится в активной колоде «${activeDeckEntry.deck.name}». Сначала удалите её из колоды.`,
+      });
+    }
 
     await req.prisma.$transaction(async (tx) => {
       await tx.deckCard.deleteMany({ where: { userCardId: cardId } });

@@ -10,6 +10,9 @@ const RARITY_CONFIG = {
   LEGENDARY: { dropChance: 0.03, mbValue: 1000, healthDecay: 0.5, healMultiplier: 2.0,  cashbackRange: [5.0, 10.0] },
 };
 
+// Warning threshold: notify when health drops to or below this value
+const HEALTH_WARNING_THRESHOLD = 30;
+
 const { sendPushNotification, sendCardDeathWarningPush } = require('../push');
 const { broadcastToUser } = require('../websocket');
 
@@ -130,6 +133,8 @@ async function calculateDeckCashback(prisma, deckId) {
 
 /**
  * Decay all card health daily.
+ * FIX: warning threshold changed from narrow "(20, 20+decay]" band
+ *      to a fixed HEALTH_WARNING_THRESHOLD (30) so users reliably get notified.
  */
 async function decayAllCardHealth(prisma) {
   let decayRates = {};
@@ -141,9 +146,10 @@ async function decayAllCardHealth(prisma) {
   for (const [rarity, config] of Object.entries(RARITY_CONFIG)) {
     const decayAmount = decayRates[rarity] || config.healthDecay;
 
+    // FIX: find cards whose health will drop to or below the warning threshold after this decay
     const warningCards = await prisma.userCard.findMany({
       where: {
-        health: { gt: 20, lte: 20 + decayAmount },
+        health: { gt: 0, lte: HEALTH_WARNING_THRESHOLD },
         collectionCard: { rarity },
       },
       include: { collectionCard: true, user: true },

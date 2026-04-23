@@ -71,42 +71,50 @@ router.get('/weekly', async (req, res) => {
 });
 
 // POST /api/quests/:id/claim
+// FIX: claim flag and MB reward are now in a single $transaction to prevent
+//      a server crash between the two steps from losing the user's reward.
 router.post('/:id/claim', async (req, res) => {
   try {
-    // Atomic update bound preventing double-spend clicks immediately asserting lock
-    const { count } = await req.prisma.userQuest.updateMany({
-      where: {
-        id: req.params.id,
-        userId: req.userId,
-        completed: true,
-        claimed: false,
-      },
-      data: { claimed: true },
+    let rewardMB = 0;
+
+    await req.prisma.$transaction(async (tx) => {
+      // Atomically mark as claimed only if completed and not yet claimed
+      const { count } = await tx.userQuest.updateMany({
+        where: {
+          id: req.params.id,
+          userId: req.userId,
+          completed: true,
+          claimed: false,
+        },
+        data: { claimed: true },
+      });
+
+      if (count === 0) {
+        throw new Error('NOT_FOUND');
+      }
+
+      // Fetch quest details inside the same transaction
+      const userQuest = await tx.userQuest.findFirst({
+        where: { id: req.params.id },
+        include: { quest: true },
+      });
+
+      rewardMB = userQuest.quest.rewardMB ?? 0;
+
+      // Award MB points atomically with the claim
+      if (rewardMB > 0) {
+        await tx.user.update({
+          where: { id: req.userId },
+          data: { mbPoints: { increment: rewardMB } },
+        });
+      }
     });
 
-    if (count === 0) {
+    res.json({ success: true, reward: { mb: rewardMB } });
+  } catch (err) {
+    if (err.message === 'NOT_FOUND') {
       return res.status(404).json({ error: 'Квест не найден или уже собран!' });
     }
-
-    // Now safely fetch quest details to award MBs
-    const userQuest = await req.prisma.userQuest.findFirst({
-      where: { id: req.params.id },
-      include: { quest: true },
-    });
-
-    // Give reward
-    if (userQuest.quest.rewardMB > 0) {
-      await req.prisma.user.update({
-        where: { id: req.userId },
-        data: { mbPoints: { increment: userQuest.quest.rewardMB } },
-      });
-    }
-
-    res.json({
-      success: true,
-      reward: { mb: userQuest.quest.rewardMB },
-    });
-  } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
