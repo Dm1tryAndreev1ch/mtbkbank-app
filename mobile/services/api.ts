@@ -71,16 +71,14 @@ export const getTransactions = (params?: any) => api.get('/transactions', { para
 export const getAnalytics = (period?: string) =>
   api.get('/transactions/analytics', { params: { period } });
 
-/** Transfer to another user by phone / card number */
 export const makeTransfer = (data: {
   fromAccountId: string;
-  recipient?: string;      // phone or card number
-  toAccountId?: string;    // OR direct accountId
+  recipient?: string;
+  toAccountId?: string;
   amount: number;
   description?: string;
 }) => api.post('/transactions/transfer', data);
 
-/** Transfer between own accounts */
 export const transferOwn = (data: {
   fromAccountId: string;
   toAccountId: string;
@@ -88,7 +86,6 @@ export const transferOwn = (data: {
   description?: string;
 }) => api.post('/transactions/transfer-own', data);
 
-/** Resolve phone / card number → { user, accountId } */
 export const resolveRecipient = (value: string) =>
   api.get('/transactions/resolve-recipient', { params: { value } });
 
@@ -98,10 +95,17 @@ export const makePayment = (data: any) => api.post('/payments', data);
 export const getScheduledPayments = () => api.get('/payments/scheduled');
 
 // Cards
+/** Fetch all collection card templates. Pass rarity to filter. */
 export const getCollection = (rarity?: string) =>
-  api.get('/cards/collection', { params: { rarity } });
+  api.get('/cards/collection', { params: rarity ? { rarity } : {} });
+
 export const getInventory = (params?: any) => api.get('/cards/inventory', { params });
 export const getCard = (id: string) => api.get(`/cards/${id}`);
+
+/** Purchase a collection card from the shop for MB points. */
+export const buyCard = (collectionCardId: string) =>
+  api.post('/cards/buy', { collectionCardId });
+
 export const sacrificeCard = (sacrificeId: string, targetId: string) =>
   api.post('/cards/sacrifice', { sacrificeId, targetId });
 export const convertCard = (cardId: string) =>

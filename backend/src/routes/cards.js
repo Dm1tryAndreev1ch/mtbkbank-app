@@ -10,14 +10,10 @@ router.use(authMiddleware);
 router.get('/collection', async (req, res) => {
   try {
     const { rarity } = req.query;
-    
-    // Redis Cache key
+
     const cacheKey = rarity ? `cards:collection:rarity:${rarity}` : 'cards:collection:all';
-    
     const cachedData = await getCached(cacheKey);
-    if (cachedData) {
-       return res.json(cachedData);
-    }
+    if (cachedData) return res.json(cachedData);
 
     const where = { isActive: true };
     if (rarity) where.rarity = rarity;
@@ -27,9 +23,7 @@ router.get('/collection', async (req, res) => {
       orderBy: [{ rarity: 'asc' }, { name: 'asc' }],
     });
 
-    // Cache results for 1 hour (3600 seconds)
     await setCached(cacheKey, cards, 3600);
-
     res.json(cards);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -41,10 +35,8 @@ router.get('/inventory', async (req, res) => {
   try {
     const { rarity, sort = 'date' } = req.query;
 
-    const where = { userId: req.userId };
-
     const cards = await req.prisma.userCard.findMany({
-      where,
+      where: { userId: req.userId },
       include: {
         collectionCard: true,
         deckCards: { include: { deck: true } },
@@ -54,13 +46,62 @@ router.get('/inventory', async (req, res) => {
         : { acquiredAt: 'desc' },
     });
 
-    // Filter by rarity after include
     const filtered = rarity
       ? cards.filter(c => c.collectionCard.rarity === rarity)
       : cards;
 
     res.json(filtered);
   } catch (err) {
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// POST /api/cards/buy — purchase a card from the shop for MB points
+router.post('/buy', async (req, res) => {
+  try {
+    const { collectionCardId } = req.body;
+    if (!collectionCardId) {
+      return res.status(400).json({ error: 'Укажите collectionCardId' });
+    }
+
+    const collectionCard = await req.prisma.collectionCard.findFirst({
+      where: { id: collectionCardId, isActive: true },
+    });
+    if (!collectionCard) {
+      return res.status(404).json({ error: 'Карта не найдена или недоступна' });
+    }
+
+    const DEFAULT_PRICES = { COMMON: 300, RARE: 800, EPIC: 1500, LEGENDARY: 3500 };
+    const price = collectionCard.mbPrice ?? DEFAULT_PRICES[collectionCard.rarity] ?? 500;
+
+    const user = await req.prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+    if ((user.mbPoints ?? 0) < price) {
+      return res.status(400).json({ error: `Недостаточно MB. Нужно ${price}, есть ${user.mbPoints ?? 0}` });
+    }
+
+    const result = await req.prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id: req.userId },
+        data: { mbPoints: { decrement: price } },
+      });
+
+      const userCard = await tx.userCard.create({
+        data: {
+          userId: req.userId,
+          collectionCardId,
+          health: collectionCard.maxHealth,
+          acquiredAt: new Date(),
+        },
+        include: { collectionCard: true },
+      });
+
+      return { userCard, mbPoints: updatedUser.mbPoints, price };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('buy card error:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -89,7 +130,6 @@ router.post('/sacrifice', async (req, res) => {
     if (!sacrificeId || !targetId) {
       return res.status(400).json({ error: 'Укажите карту для жертвы и целевую карту' });
     }
-
     const result = await sacrificeCard(req.prisma, req.userId, sacrificeId, targetId);
     res.json(result);
   } catch (err) {
@@ -102,7 +142,6 @@ router.post('/convert', async (req, res) => {
   try {
     const { cardId } = req.body;
     if (!cardId) return res.status(400).json({ error: 'Укажите карту' });
-
     const result = await convertCardToPoints(req.prisma, req.userId, cardId);
     res.json(result);
   } catch (err) {
@@ -110,19 +149,15 @@ router.post('/convert', async (req, res) => {
   }
 });
 
-// GET /api/cards/rarities — rarity distribution stats for user
+// GET /api/cards/stats/rarities
 router.get('/stats/rarities', async (req, res) => {
   try {
     const cards = await req.prisma.userCard.findMany({
       where: { userId: req.userId },
       include: { collectionCard: { select: { rarity: true } } },
     });
-
     const stats = { COMMON: 0, RARE: 0, EPIC: 0, LEGENDARY: 0 };
-    for (const c of cards) {
-      stats[c.collectionCard.rarity]++;
-    }
-
+    for (const c of cards) stats[c.collectionCard.rarity]++;
     res.json(stats);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
