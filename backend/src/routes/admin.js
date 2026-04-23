@@ -9,7 +9,6 @@ router.use(adminMiddleware);
 
 // ==================== USERS ====================
 
-// GET /api/admin/users
 router.get('/users', async (req, res) => {
   try {
     const { limit = 50, offset = 0 } = req.query;
@@ -33,7 +32,6 @@ router.get('/users', async (req, res) => {
   }
 });
 
-// PUT /api/admin/users/:id
 router.put('/users/:id', async (req, res) => {
   try {
     const { name, mbPoints, status, pin } = req.body;
@@ -54,7 +52,6 @@ router.put('/users/:id', async (req, res) => {
   }
 });
 
-// POST /api/admin/users
 router.post('/users', async (req, res) => {
   try {
     const { name, phone, pin, mbPoints = 0, status = 'STANDARD', isAdmin = false } = req.body;
@@ -83,7 +80,6 @@ router.post('/users', async (req, res) => {
 
 // ==================== CARD TEMPLATES ====================
 
-// GET /api/admin/cards
 router.get('/cards', async (req, res) => {
   try {
     const cards = await req.prisma.collectionCard.findMany({
@@ -95,8 +91,6 @@ router.get('/cards', async (req, res) => {
   }
 });
 
-// POST /api/admin/cards
-// FIX: whitelist полей — mass assignment устранён
 router.post('/cards', async (req, res) => {
   try {
     const {
@@ -116,8 +110,6 @@ router.post('/cards', async (req, res) => {
   }
 });
 
-// PUT /api/admin/cards/:id
-// FIX: whitelist полей — mass assignment устранён
 router.put('/cards/:id', async (req, res) => {
   try {
     const {
@@ -146,7 +138,6 @@ router.put('/cards/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/admin/cards/:id
 router.delete('/cards/:id', async (req, res) => {
   try {
     await req.prisma.collectionCard.update({
@@ -161,8 +152,6 @@ router.delete('/cards/:id', async (req, res) => {
 
 // ==================== GRANT CARDS ====================
 
-// POST /api/admin/grant-card
-// FIX: добавлена проверка дубликата перед выдачей
 router.post('/grant-card', async (req, res) => {
   try {
     const { userId, collectionCardId } = req.body;
@@ -195,7 +184,6 @@ router.post('/grant-card', async (req, res) => {
 
 // ==================== USER ACCOUNTS ====================
 
-// GET /api/admin/users/:id/accounts
 router.get('/users/:id/accounts', async (req, res) => {
   try {
     const accounts = await req.prisma.bankAccount.findMany({
@@ -210,24 +198,34 @@ router.get('/users/:id/accounts', async (req, res) => {
 
 // ==================== SIMULATE TRANSACTION ====================
 
-// POST /api/admin/simulate-transaction
 router.post('/simulate-transaction', async (req, res) => {
   try {
     const { userId, amount, category, merchant, merchantIcon, type = 'PURCHASE' } = req.body;
     let { accountId } = req.body;
 
+    // Находим счёт если не передан
     if (!accountId) {
-      const mainAccount = await req.prisma.bankAccount.findFirst({ where: { userId, type: 'main' } });
-      if (!mainAccount) {
-        const anyAccount = await req.prisma.bankAccount.findFirst({ where: { userId } });
-        if (!anyAccount) return res.status(404).json({ error: 'У пользователя нет счетов' });
-        accountId = anyAccount.id;
-      } else {
+      const mainAccount = await req.prisma.bankAccount.findFirst({
+        where: { userId, type: 'main' },
+      });
+
+      if (mainAccount) {
         accountId = mainAccount.id;
+      } else {
+        const anyAccount = await req.prisma.bankAccount.findFirst({
+          where: { userId },
+        });
+        if (!anyAccount) {
+          return res.status(404).json({ error: 'У пользователя нет счетов' });
+        }
+        accountId = anyAccount.id;
       }
     }
 
-    const account = await req.prisma.bankAccount.findFirst({ where: { id: accountId, userId } });
+    // Проверяем что счёт принадлежит пользователю
+    const account = await req.prisma.bankAccount.findFirst({
+      where: { id: accountId, userId },
+    });
     if (!account) return res.status(404).json({ error: 'Счёт не найден' });
 
     const numericAmount = parseFloat(amount);
@@ -235,16 +233,22 @@ router.post('/simulate-transaction', async (req, res) => {
       return res.status(400).json({ error: 'Укажите корректную сумму' });
     }
 
+    // TRANSFER_IN и TOPUP — входящие (деньги приходят на счёт)
     const isCredit = type === 'TRANSFER_IN' || type === 'TOPUP';
-    const txType = type || 'PURCHASE';
 
     const transaction = await req.prisma.$transaction(async (tx) => {
+      // ИСПРАВЛЕНО: используем fromAccountId/toAccountId вместо accountId
       const t = await tx.transaction.create({
         data: {
-          accountId,
           userId,
+          // Входящие: счёт — получатель (toAccountId)
+          // Исходящие: счёт — отправитель (fromAccountId)
+          ...(isCredit
+            ? { toAccountId: accountId }
+            : { fromAccountId: accountId }
+          ),
           amount: numericAmount,
-          type: txType,
+          type,
           status: 'COMPLETED',
           category: category || 'Покупки',
           merchant: merchant || 'Тестовый мерчант',
@@ -252,22 +256,34 @@ router.post('/simulate-transaction', async (req, res) => {
           description: 'Админ: симуляция транзакции',
         },
       });
+
+      // Обновляем баланс счёта
       await tx.bankAccount.update({
         where: { id: accountId },
-        data: { balance: { [isCredit ? 'increment' : 'decrement']: numericAmount } },
+        data: {
+          balance: {
+            [isCredit ? 'increment' : 'decrement']: numericAmount,
+          },
+        },
       });
+
       return t;
     });
 
-    // Card drop processing (non-blocking)
+    // Обработка дропа карты при покупке (не блокирующая)
     if (!isCredit) {
-      processCardDrop(req.prisma, userId, numericAmount, category || 'Покупки').catch(console.error);
+      processCardDrop(
+        req.prisma,
+        userId,
+        numericAmount,
+        category || 'Покупки',
+      ).catch(console.error);
     }
 
     res.json(transaction);
   } catch (err) {
     console.error('Simulate transaction error:', err);
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(500).json({ error: err.message || 'Ошибка сервера' });
   }
 });
 
