@@ -19,6 +19,7 @@ const notificationRoutes = require('./routes/notifications');
 const subscriptionRoutes = require('./routes/subscriptions');
 const adminRoutes = require('./routes/admin');
 const { tickActiveDeckCardHealth } = require('./services/cardEngine');
+const { ensureAllUsersHaveActiveDeck } = require('./services/ensureUserActiveDeck');
 
 const app = express();
 const prisma = new PrismaClient();
@@ -81,6 +82,12 @@ app.listen(PORT, () => {
       console.error('[active-deck-hp]', err)
     );
   }, ACTIVE_DECK_HP_TICK_MS);
+
+  ensureAllUsersHaveActiveDeck(prisma)
+    .then((n) => {
+      if (n > 0) console.log(`[decks] у ${n} пользователей создана или активирована колода по умолчанию`);
+    })
+    .catch((err) => console.error('[decks] ensure:', err.message));
 });
 
 module.exports = app;
