@@ -279,17 +279,7 @@ export default function PaymentScreen() {
       )}
 
       {/* ─── Алерт — одна строка в конце ──────────── */}
-      <AppAlert
-        visible={alert.state.visible}
-        type={alert.state.type}
-        title={alert.state.title}
-        message={alert.state.message}
-        buttonText={alert.state.buttonText}
-        cancelText={alert.state.cancelText}
-        onClose={alert.hide}
-        onConfirm={alert.state.onConfirm}
-        colors={colors}
-      />
+      <AppAlert {...alert.props} colors={colors} />
     </SafeAreaView>
   );
 }
