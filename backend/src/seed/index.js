@@ -239,6 +239,13 @@ async function main() {
     ],
   });
 
+  await prisma.deck.create({
+    data: { userId: user2.id, name: 'Моя колода', isActive: true },
+  });
+  await prisma.deck.create({
+    data: { userId: admin.id, name: 'Моя колода', isActive: true },
+  });
+
   console.log('✅ Колоды созданы');
 
   // ==================== QUESTS ====================
