@@ -7,7 +7,6 @@ const router = express.Router();
 const ACCESS_TTL = '15m';
 const REFRESH_TTL = '30d';
 
-// FIX: isAdmin included in access token so adminMiddleware works correctly
 function signAccess(userId, isAdmin) {
   return jwt.sign(
     { userId, isAdmin: !!isAdmin },
@@ -24,14 +23,8 @@ function signRefresh(userId) {
   );
 }
 
-// CORS preflight / случайный GET из браузера — без этого часто виден «404» на /api/auth/login
-router.options('/login', (_req, res) => res.sendStatus(204));
-router.get('/login', (_req, res) => {
-  res.status(405).json({ error: 'Используйте POST с JSON: { "phone", "pin" }' });
-});
-
-// POST /api/auth/login
-router.post('/login', async (req, res) => {
+/** POST /api/auth/login — вынесен в именованный handler для явного app.post в index.js */
+async function loginHandler(req, res) {
   try {
     const { phone, pin } = req.body;
     if (!phone || !pin) return res.status(400).json({ error: 'Укажите телефон и PIN' });
@@ -63,7 +56,13 @@ router.post('/login', async (req, res) => {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
+}
+
+router.options('/login', (_req, res) => res.sendStatus(204));
+router.get('/login', (_req, res) => {
+  res.status(405).json({ error: 'Используйте POST с JSON: { "phone", "pin" }' });
 });
+router.post('/login', loginHandler);
 
 // POST /api/auth/refresh
 router.post('/refresh', async (req, res) => {
@@ -114,4 +113,4 @@ router.post('/logout', authMiddleware, async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = { router, loginHandler };
