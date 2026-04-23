@@ -1,6 +1,6 @@
-import React, { useCallback, useState, useMemo, useEffect } from 'react';
+import React, { useCallback, useState, useMemo, useEffect, useRef } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch, Dimensions,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch, Dimensions, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -37,33 +37,60 @@ export default function AnalyticsScreen() {
   const [analytics, setAnalytics] = useState<any>(null);
   const [period, setPeriod] = useState('month');
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  // Optimistic subscription state for toggle rollback
+  const [localSubs, setLocalSubs] = useState<any[]>([]);
+
+  const abortRef = useRef<AbortController | null>(null);
 
   const colors = useThemeColor();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
+  // Keep localSubs in sync with store when subscriptions change
+  useEffect(() => {
+    setLocalSubs(subscriptions);
+  }, [subscriptions]);
+
   const fetchAnalytics = useCallback((p: string) => {
+    // Cancel any in-flight request for the previous period
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
+    setFetchError(false);
+
     api.getAnalytics(p)
-      .then(({ data }) => { setAnalytics(data); setLoading(false); })
-      .catch(() => {
+      .then(({ data }) => {
+        if (controller.signal.aborted) return;
+        setAnalytics(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
         setAnalytics(null);
+        setFetchError(true);
         setLoading(false);
       });
   }, []);
 
-  // FIX: single fetch trigger — useFocusEffect handles both focus and period changes
   useFocusEffect(
     useCallback(() => {
       fetchAnalytics(period);
       loadSubscriptions();
       loadLimits();
+      return () => {
+        // Cancel pending request when screen loses focus
+        if (abortRef.current) abortRef.current.abort();
+      };
     }, [period, fetchAnalytics])
   );
 
   const breakdown: any[] = analytics?.breakdown || [];
 
   const chartWidth = screenWidth - Spacing.base * 4;
-  const piePaddingLeft = String(Math.max(0, Math.round((chartWidth - 160) / 2)));
+  const piePaddingLeftNum = Math.max(0, Math.round((chartWidth - 160) / 2));
+  const piePaddingLeft = String(isNaN(piePaddingLeftNum) ? 0 : piePaddingLeftNum);
 
   const chartData = breakdown.map((cat, index) => ({
     name: ' ',
@@ -72,6 +99,20 @@ export default function AnalyticsScreen() {
     legendFontColor: colors.onSurfaceVariant,
     legendFontSize: 12,
   }));
+
+  const handleToggleSubscription = async (subId: string, currentValue: boolean) => {
+    const newValue = !currentValue;
+    // Optimistic update
+    setLocalSubs(prev => prev.map(s => s.id === subId ? { ...s, isActive: newValue } : s));
+    try {
+      await api.toggleSubscription(subId, newValue);
+      loadSubscriptions();
+    } catch {
+      // Rollback on failure
+      setLocalSubs(prev => prev.map(s => s.id === subId ? { ...s, isActive: currentValue } : s));
+      Alert.alert('Ошибка', 'Не удалось изменить статус подписки');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -114,6 +155,14 @@ export default function AnalyticsScreen() {
 
           {loading ? (
             <SkeletonPulse style={{ width: 200, height: 200, borderRadius: 100, marginVertical: 16, alignSelf: 'center' }} colors={colors} />
+          ) : fetchError ? (
+            <View style={styles.errorState}>
+              <MaterialIcons name="cloud-off" size={40} color={colors.error} />
+              <Text style={[styles.errorText, { color: colors.error }]}>Не удалось загрузить данные</Text>
+              <TouchableOpacity onPress={() => fetchAnalytics(period)} style={[styles.retryBtn, { borderColor: colors.primary }]}>
+                <Text style={[styles.retryBtnText, { color: colors.primary }]}>Повторить</Text>
+              </TouchableOpacity>
+            </View>
           ) : chartData.length > 0 ? (
             <Animated.View entering={FadeIn} style={styles.pieWrap}>
               <PieChart
@@ -169,13 +218,13 @@ export default function AnalyticsScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle} allowFontScaling={false}>Подписки</Text>
             <Text style={styles.sectionBadge} allowFontScaling={false}>
-              {subscriptions.filter((s: any) => s.isActive).length} активных
+              {localSubs.filter((s: any) => s.isActive).length} активных
             </Text>
           </View>
           <View style={styles.subsList}>
-            {subscriptions.length === 0
+            {localSubs.length === 0
               ? <Text style={styles.emptyText}>У вас нет подписок</Text>
-              : subscriptions.map((sub: any) => (
+              : localSubs.map((sub: any) => (
                 <View key={sub.id} style={styles.subItem}>
                   <View style={styles.subLeft}>
                     <View style={styles.subIcon}>
@@ -192,7 +241,7 @@ export default function AnalyticsScreen() {
                     value={sub.isActive}
                     trackColor={{ false: colors.surfaceContainerHigh, true: colors.primary }}
                     thumbColor={colors.surfaceContainerLowest}
-                    onValueChange={async (val) => { await api.toggleSubscription(sub.id, val); loadSubscriptions(); }}
+                    onValueChange={() => handleToggleSubscription(sub.id, sub.isActive)}
                   />
                 </View>
               ))
@@ -273,6 +322,10 @@ const getStyles = (C: any) => StyleSheet.create({
   totalAmount: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: C.onSurface, textAlign: 'center', marginTop: 4, marginBottom: 4 },
   pieWrap: { alignItems: 'center', overflow: 'hidden' },
   emptyChart: { color: C.onSurfaceVariant, fontFamily: 'Manrope-Medium', textAlign: 'center', paddingVertical: 40 },
+  errorState: { alignItems: 'center', paddingVertical: 32, gap: 10 },
+  errorText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', textAlign: 'center' },
+  retryBtn: { borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 20, paddingVertical: 8 },
+  retryBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
 
   legendDivider: { height: 1, backgroundColor: C.transparentBorder, marginVertical: Spacing.base },
   legendTitle: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: Spacing.sm },
