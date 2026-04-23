@@ -5,7 +5,13 @@ const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
-// FIX: rate limiting на логин — защита от brute-force атак на PIN
+// Guard: fail fast if JWT_SECRET is not set
+if (!process.env.JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET is not set. Refusing to start.');
+  process.exit(1);
+}
+
+// Rate limiting на логин и verify — защита от brute-force атак на PIN
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
   max: 10,                   // максимум 10 попыток за окно
@@ -40,7 +46,7 @@ router.post('/login', loginLimiter, [
     const accessToken = jwt.sign(
       { userId: user.id, isAdmin: user.isAdmin },
       process.env.JWT_SECRET,
-      { expiresIn: '15m' } // FIX: сокращён TTL с 1h до 15m для повышения безопасности
+      { expiresIn: '15m' }
     );
 
     const refreshToken = jwt.sign(
@@ -70,7 +76,8 @@ router.post('/login', loginLimiter, [
 });
 
 // POST /api/auth/verify — verify PIN (for sensitive operations)
-router.post('/verify', [
+// FIX: loginLimiter применён к /verify — брутфорс PIN через этот эндпоинт теперь ограничен
+router.post('/verify', loginLimiter, [
   body('phone').isString().notEmpty(),
   body('pin').isString().notEmpty()
 ], async (req, res) => {
@@ -104,7 +111,7 @@ router.post('/refresh', async (req, res) => {
       const newAccessToken = jwt.sign(
         { userId: user.id, isAdmin: user.isAdmin },
         process.env.JWT_SECRET,
-        { expiresIn: '15m' } // FIX: сокращён TTL
+        { expiresIn: '15m' }
       );
 
       res.json({ accessToken: newAccessToken });

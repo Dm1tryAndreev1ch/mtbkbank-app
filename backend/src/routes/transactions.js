@@ -3,12 +3,17 @@ const { authMiddleware } = require('../middleware/auth');
 const { getCached, setCached } = require('../cache');
 const router = express.Router();
 
+const MAX_TRANSFER_AMOUNT = 1_000_000;
+
 router.use(authMiddleware);
 
 // GET /api/transactions
 router.get('/', async (req, res) => {
   try {
     const { limit = 20, offset = 0, category, type } = req.query;
+    // FIX: cap limit to prevent DoS via ORM
+    const safeLimit = Math.min(parseInt(limit) || 20, 100);
+    const safeOffset = Math.max(parseInt(offset) || 0, 0);
     const where = { userId: req.userId };
     if (category) where.category = category;
     if (type) where.type = type;
@@ -17,13 +22,13 @@ router.get('/', async (req, res) => {
       req.prisma.transaction.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        take: parseInt(limit),
-        skip: parseInt(offset),
+        take: safeLimit,
+        skip: safeOffset,
       }),
       req.prisma.transaction.count({ where }),
     ]);
 
-    res.json({ transactions, total, limit: parseInt(limit), offset: parseInt(offset) });
+    res.json({ transactions, total, limit: safeLimit, offset: safeOffset });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
   }
@@ -96,7 +101,7 @@ router.get('/resolve-recipient', async (req, res) => {
             { phone: clean },
           ],
         },
-        select: { id: true, name: true, phone: true, avatarUrl: true },
+        select: { id: true, name: true, avatarUrl: true },
       });
       if (user) {
         account = await req.prisma.bankAccount.findFirst({
@@ -119,7 +124,7 @@ router.get('/resolve-recipient', async (req, res) => {
         include: {
           bankAccount: {
             include: {
-              user: { select: { id: true, name: true, phone: true, avatarUrl: true } },
+              user: { select: { id: true, name: true, avatarUrl: true } },
             },
           },
         },
@@ -138,8 +143,9 @@ router.get('/resolve-recipient', async (req, res) => {
       return res.status(400).json({ error: 'Нельзя переводить самому себе через этот метод' });
     }
 
+    // FIX: не возвращаем phone получателя — достаточно name + accountId
     res.json({
-      user: { id: user.id, name: user.name, phone: user.phone, avatarUrl: user.avatarUrl },
+      user: { id: user.id, name: user.name, avatarUrl: user.avatarUrl },
       accountId: account.id,
     });
   } catch (err) {
@@ -156,10 +162,16 @@ router.get('/resolve-recipient', async (req, res) => {
  */
 router.post('/transfer', async (req, res) => {
   try {
-    const { fromAccountId, toAccountId: explicitToAccountId, recipient, amount, description } = req.body;
+    const { fromAccountId, toAccountId: explicitToAccountId, recipient, amount: rawAmount, description } = req.body;
+    const amount = parseFloat(rawAmount);
 
     if (!fromAccountId || !amount || amount <= 0) {
       return res.status(400).json({ error: 'Укажите счёт списания и сумму' });
+    }
+
+    // FIX: верхний лимит суммы перевода
+    if (amount > MAX_TRANSFER_AMOUNT) {
+      return res.status(400).json({ error: `Максимальная сумма одного перевода — ${MAX_TRANSFER_AMOUNT}` });
     }
 
     const fromAccount = await req.prisma.bankAccount.findFirst({
@@ -215,27 +227,32 @@ router.post('/transfer', async (req, res) => {
 
     const toAccount = await req.prisma.bankAccount.findUnique({ where: { id: toAccountId } });
     if (!toAccount) return res.status(404).json({ error: 'Счёт получателя не найден' });
-    if (toAccount.userId === req.userId && !explicitToAccountId) {
+
+    // FIX: проверка self-transfer применяется ВСЕГДА, независимо от mode
+    if (toAccount.userId === req.userId) {
       return res.status(400).json({ error: 'Нельзя переводить самому себе через этот метод. Используйте «Между своими счетами».' });
     }
 
-    // --- Atomic transfer ---
+    // --- Atomic transfer including TRANSFER_IN record ---
+    // FIX: TRANSFER_IN и уведомление создаются ВНУТРИ $transaction для атомарности
+    const destUserId = recipientUserId || toAccount.userId;
+
     const result = await req.prisma.$transaction(async (tx) => {
       // Re-read balance inside transaction to prevent TOCTOU
       const src = await tx.bankAccount.findUnique({ where: { id: fromAccountId } });
       if (src.balance < amount) throw new Error('INSUFFICIENT');
 
-      const dec = await tx.bankAccount.update({
+      await tx.bankAccount.update({
         where: { id: fromAccountId },
         data: { balance: { decrement: amount } },
       });
 
-      const inc = await tx.bankAccount.update({
+      await tx.bankAccount.update({
         where: { id: toAccountId },
         data: { balance: { increment: amount } },
       });
 
-      const trans = await tx.transaction.create({
+      const transOut = await tx.transaction.create({
         data: {
           userId: req.userId,
           fromAccountId,
@@ -249,13 +266,8 @@ router.post('/transfer', async (req, res) => {
         },
       });
 
-      return { trans, inc };
-    });
-
-    // TRANSFER_IN record for recipient
-    const destUserId = recipientUserId || toAccount.userId;
-    if (destUserId !== req.userId) {
-      await req.prisma.transaction.create({
+      // FIX: TRANSFER_IN теперь внутри той же транзакции
+      const transIn = await tx.transaction.create({
         data: {
           userId: destUserId,
           fromAccountId,
@@ -269,17 +281,20 @@ router.post('/transfer', async (req, res) => {
         },
       });
 
-      await req.prisma.notification.create({
-        data: {
-          userId: destUserId,
-          title: '💸 Входящий перевод',
-          body: `Вам поступил перевод ${amount} ${toAccount.currency}`,
-          icon: 'account_balance_wallet',
-        },
-      });
-    }
+      return { transOut, transIn };
+    });
 
-    res.json({ success: true, transaction: result.trans });
+    // Уведомление — некритично, вне транзакции
+    await req.prisma.notification.create({
+      data: {
+        userId: destUserId,
+        title: '💸 Входящий перевод',
+        body: `Вам поступил перевод ${amount} ${toAccount.currency}`,
+        icon: 'account_balance_wallet',
+      },
+    }).catch(err => console.error('Notification create error (non-critical):', err));
+
+    res.json({ success: true, transaction: result.transOut });
   } catch (err) {
     if (err.message === 'INSUFFICIENT') {
       return res.status(400).json({ error: 'Недостаточно средств на момент списания' });
@@ -295,12 +310,17 @@ router.post('/transfer', async (req, res) => {
  */
 router.post('/transfer-own', async (req, res) => {
   try {
-    const { fromAccountId, toAccountId, amount, description } = req.body;
+    const { fromAccountId, toAccountId, amount: rawAmount, description } = req.body;
+    const amount = parseFloat(rawAmount);
+
     if (!fromAccountId || !toAccountId || !amount || amount <= 0) {
       return res.status(400).json({ error: 'Укажите оба счёта и сумму' });
     }
     if (fromAccountId === toAccountId) {
       return res.status(400).json({ error: 'Счета отправителя и получателя совпадают' });
+    }
+    if (amount > MAX_TRANSFER_AMOUNT) {
+      return res.status(400).json({ error: `Максимальная сумма одного перевода — ${MAX_TRANSFER_AMOUNT}` });
     }
 
     // Both accounts must belong to this user

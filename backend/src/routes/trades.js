@@ -71,7 +71,6 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/trades/:id/accept
-// FIX: все операции обёрнуты в $transaction — атомарность гарантирована
 router.put('/:id/accept', async (req, res) => {
   try {
     const trade = await req.prisma.cardTrade.findFirst({
@@ -79,7 +78,7 @@ router.put('/:id/accept', async (req, res) => {
     });
     if (!trade) return res.status(404).json({ error: 'Обмен не найден' });
 
-    // Pre-checks вне транзакции (только чтение)
+    // Pre-checks вне транзакции (только чтение, non-critical)
     const offeredCard = await req.prisma.userCard.findFirst({
       where: { id: trade.offeredCardId, userId: trade.fromUserId },
     });
@@ -98,16 +97,17 @@ router.put('/:id/accept', async (req, res) => {
       }
     }
 
-    if (trade.mbPointsOffer > 0) {
-      const fromUser = await req.prisma.user.findUnique({ where: { id: trade.fromUserId } });
-      if (fromUser.mbPoints < trade.mbPointsOffer) {
-        await req.prisma.cardTrade.update({ where: { id: trade.id }, data: { status: 'CANCELLED' } });
-        return res.status(400).json({ error: 'У отправителя больше нет средств для этого обмена' });
-      }
-    }
-
     // Атомарное выполнение всех изменений
+    // FIX: проверка mbPoints перенесена ВНУТРЬ $transaction — устранён TOCTOU race condition
     await req.prisma.$transaction(async (tx) => {
+      // Re-read mbPoints inside transaction
+      if (trade.mbPointsOffer > 0) {
+        const freshFromUser = await tx.user.findUnique({ where: { id: trade.fromUserId } });
+        if (freshFromUser.mbPoints < trade.mbPointsOffer) {
+          throw new Error('INSUFFICIENT_MB');
+        }
+      }
+
       // Transfer offered card
       await tx.deckCard.deleteMany({ where: { userCardId: trade.offeredCardId } });
       await tx.userCard.update({
@@ -144,6 +144,9 @@ router.put('/:id/accept', async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
+    if (err.message === 'INSUFFICIENT_MB') {
+      return res.status(400).json({ error: 'У отправителя больше нет средств для этого обмена' });
+    }
     console.error('Trade accept error:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
@@ -169,7 +172,6 @@ router.put('/:id/reject', async (req, res) => {
 });
 
 // POST /api/trades/send — send card as gift
-// FIX: обёрнуто в $transaction — атомарность гарантирована
 router.post('/send', async (req, res) => {
   try {
     const { cardId, toUserId } = req.body;

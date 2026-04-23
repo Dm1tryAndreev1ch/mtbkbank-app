@@ -3,6 +3,8 @@ const { authMiddleware } = require('../middleware/auth');
 const { processCardDrop } = require('../services/cardEngine');
 const router = express.Router();
 
+const MAX_PAYMENT_AMOUNT = 1_000_000;
+
 router.use(authMiddleware);
 
 // GET /api/payments/categories
@@ -30,10 +32,15 @@ router.get('/categories', async (req, res) => {
 // POST /api/payments — make a payment
 router.post('/', async (req, res) => {
   try {
-    const { accountId, amount, category, merchant, merchantIcon, description, scheduledAt } = req.body;
+    const { accountId, category, merchant, merchantIcon, description, scheduledAt } = req.body;
+    // FIX: явный parseFloat + проверка на NaN и верхний лимит
+    const amount = parseFloat(req.body.amount);
 
-    if (!accountId || !amount || amount <= 0) {
-      return res.status(400).json({ error: 'Укажите счёт и сумму' });
+    if (!accountId || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Укажите счёт и корректную сумму' });
+    }
+    if (amount > MAX_PAYMENT_AMOUNT) {
+      return res.status(400).json({ error: `Максимальная сумма одного платежа — ${MAX_PAYMENT_AMOUNT}` });
     }
 
     const account = await req.prisma.bankAccount.findFirst({
@@ -60,7 +67,7 @@ router.post('/', async (req, res) => {
       return res.json({ transaction, scheduled: true });
     }
 
-    // FIX: проверка баланса происходит ВНУТРИ транзакции до decrement (TOCTOU устранён)
+    // Проверка баланса происходит ВНУТРИ транзакции до decrement (TOCTOU устранён)
     const result = await req.prisma.$transaction(async (tx) => {
       const currentAccount = await tx.bankAccount.findUnique({
         where: { id: accountId },
@@ -101,7 +108,7 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // FIX: processCardDrop обёрнут в try/catch — сбой дропа не ломает ответ платежа
+    // processCardDrop обёрнут в try/catch — сбой дропа не ломает ответ платежа
     let droppedCard = null;
     try {
       droppedCard = await processCardDrop(req.prisma, req.userId, transaction.id);
