@@ -168,9 +168,20 @@ const DeckFanWidget = ({ decks, styles, colors }: { decks: any[]; styles: any; c
   const totalCashback = cards.reduce((sum: number, c: any) =>
     sum + (c?.collectionCard?.cashbackPercent || 0), 0);
 
-  // fan angles for up to 5 cards
-  const ANGLES = [-18, -9, 0, 9, 18];
-  const OFFSETS = [20, 10, 0, 10, 20]; // vertical offset per position
+  // ИСПРАВЛЕНО: улучшенное позиционирование веера
+  const cardsToShow = cards.slice(0, 5);
+  const cardCount = cardsToShow.length;
+
+  // Динамические углы в зависимости от количества карт
+  const getAngles = (count: number) => {
+    if (count <= 1) return [0];
+    if (count === 2) return [-8, 8];
+    if (count === 3) return [-12, 0, 12];
+    if (count === 4) return [-15, -5, 5, 15];
+    return [-16, -8, 0, 8, 16];
+  };
+
+  const angles = getAngles(cardCount);
 
   return (
     <TouchableOpacity
@@ -185,32 +196,37 @@ const DeckFanWidget = ({ decks, styles, colors }: { decks: any[]; styles: any; c
             <MaterialIcons name="style" size={28} color={colors.onSurfaceVariant} />
           </View>
         ) : (
-          cards.slice(0, 5).map((card: any, i: number) => {
+          cardsToShow.map((card: any, i: number) => {
             const rarity = card?.collectionCard?.rarity || 'COMMON';
             const color = getRarityColor(rarity);
-            const angle = ANGLES[i] ?? 0;
-            const offset = OFFSETS[i] ?? 0;
+            const angle = angles[i] ?? 0;
+
+            // ИСПРАВЛЕНО: правильное центральное позиционирование
+            const centerOffset = (cardCount - 1) * 4; // половина общей ширины
+            const leftPosition = i * 8 - centerOffset;
+
             return (
-              <View
+              <Animated.View
+                entering={FadeIn.delay(i * 80)}
                 key={card.id || i}
                 style={[
                   styles.fanCard,
                   {
                     backgroundColor: color,
-                    transform: [{ rotate: `${angle}deg` }, { translateY: offset }],
-                    zIndex: i === 2 ? 10 : 5 - Math.abs(i - 2),
-                    left: i * 8,
+                    transform: [{ rotate: `${angle}deg` }],
+                    zIndex: cardCount - Math.abs(i - Math.floor(cardCount / 2)),
+                    left: leftPosition,
                   },
                 ]}
               >
                 <MaterialIcons name={RARITY_ICON[rarity] || 'circle'} size={14} color="#fff" />
-              </View>
+              </Animated.View>
             );
           })
         )}
       </View>
 
-      {/* Label */}
+      {/* Label - ИСПРАВЛЕНО: добавлен отступ сверху */}
       <View style={styles.deckInfo}>
         <Text style={styles.deckLabel}>МОЯ КОЛОДА</Text>
         {activeDeck ? (
@@ -432,46 +448,211 @@ const getStyles = (Colors: any) => StyleSheet.create({
 
   // Header
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingHorizontal: Spacing.xl, paddingTop: Spacing.xl, paddingBottom: Spacing.base,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.base,
   },
-  greetingSmall: { fontSize: Fonts.sizes.md, fontWeight: Fonts.weights.medium, color: Colors.onSurfaceVariant, marginBottom: 2, fontFamily: 'Manrope-Medium' },
-  greeting: { fontSize: Fonts.sizes['2xl'], fontWeight: Fonts.weights.extrabold, color: Colors.onSurface, letterSpacing: -0.5, fontFamily: 'Manrope-ExtraBold' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  bellBtn: { position: 'relative', padding: 8 },
-  bellDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.error },
-  mbBadge: { backgroundColor: Colors.primary, borderRadius: BorderRadius.full, paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8, ...Shadows.primary },
-  mbText: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: '#ffffff', letterSpacing: 1 },
-  mbPoints: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#ffffff' },
+  greetingSmall: {
+    fontSize: Fonts.sizes.md,
+    fontWeight: Fonts.weights.medium,
+    color: Colors.onSurfaceVariant,
+    marginBottom: 2,
+    fontFamily: 'Manrope-Medium'
+  },
+  greeting: {
+    fontSize: Fonts.sizes['2xl'],
+    fontWeight: Fonts.weights.extrabold,
+    color: Colors.onSurface,
+    letterSpacing: -0.5,
+    fontFamily: 'Manrope-ExtraBold'
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm
+  },
+  bellBtn: {
+    position: 'relative',
+    padding: 8
+  },
+  bellDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.error
+  },
+  mbBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    ...Shadows.primary
+  },
+  mbText: {
+    fontSize: Fonts.sizes.xs,
+    fontFamily: 'Manrope-Bold',
+    color: '#ffffff',
+    letterSpacing: 1
+  },
+  mbPoints: {
+    fontSize: Fonts.sizes.sm,
+    fontFamily: 'Manrope-ExtraBold',
+    color: '#ffffff'
+  },
 
   // Bank card
-  cardWrapper: { marginHorizontal: Spacing.base, borderRadius: BorderRadius.base, overflow: 'hidden', backgroundColor: 'rgba(42,42,42,0.4)', borderWidth: 1, borderColor: Colors.transparentBorder },
-  cardContainer: { height: 220, width: '100%' },
-  glassCard: { flex: 1, padding: Spacing.xl, justifyContent: 'space-between' },
-  cardPattern: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.1, backgroundColor: '#ffffff' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  cardLabel: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Medium', color: 'rgba(255,255,255,0.7)', letterSpacing: 2 },
-  cardBalance: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-Bold', color: Colors.onPrimary, marginTop: 4 },
-  cardFooter: { marginTop: Spacing.base },
-  cardNumber: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-Medium', color: Colors.onPrimary, letterSpacing: 3 },
-  cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  cardSmallLabel: { fontSize: 9, color: 'rgba(255,255,255,0.6)', fontFamily: 'Manrope-Bold', letterSpacing: 1 },
-  cardHolder: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-SemiBold', color: Colors.onPrimary, letterSpacing: 1 },
-  cardBrand: { width: 64, height: 40, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.15)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  brandCircle1: { width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.error, opacity: 0.9, marginRight: -8 },
-  brandCircle2: { width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.secondaryContainer, opacity: 0.9 },
+  cardWrapper: {
+    marginHorizontal: Spacing.base,
+    borderRadius: BorderRadius.base,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(42,42,42,0.4)',
+    borderWidth: 1,
+    borderColor: Colors.transparentBorder
+  },
+  cardContainer: {
+    height: 220,
+    width: '100%'
+  },
+  glassCard: {
+    flex: 1,
+    padding: Spacing.xl,
+    justifyContent: 'space-between'
+  },
+  cardPattern: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0.1,
+    backgroundColor: '#ffffff'
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start'
+  },
+  cardLabel: {
+    fontSize: Fonts.sizes.xs,
+    fontFamily: 'Manrope-Medium',
+    color: 'rgba(255,255,255,0.7)',
+    letterSpacing: 2
+  },
+  cardBalance: {
+    fontSize: Fonts.sizes['2xl'],
+    fontFamily: 'Manrope-Bold',
+    color: Colors.onPrimary,
+    marginTop: 4
+  },
+  cardFooter: {
+    marginTop: Spacing.base
+  },
+  cardNumber: {
+    fontSize: Fonts.sizes.lg,
+    fontFamily: 'Manrope-Medium',
+    color: Colors.onPrimary,
+    letterSpacing: 3
+  },
+  cardBottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end'
+  },
+  cardSmallLabel: {
+    fontSize: 9,
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: 'Manrope-Bold',
+    letterSpacing: 1
+  },
+  cardHolder: {
+    fontSize: Fonts.sizes.sm,
+    fontFamily: 'Manrope-SemiBold',
+    color: Colors.onPrimary,
+    letterSpacing: 1
+  },
+  cardBrand: {
+    width: 64,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  brandCircle1: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.error,
+    opacity: 0.9,
+    marginRight: -8
+  },
+  brandCircle2: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.secondaryContainer,
+    opacity: 0.9
+  },
 
   // Sections
-  section: { paddingHorizontal: Spacing.base, marginTop: Spacing['2xl'] },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: Spacing.sm, marginBottom: Spacing.base },
-  sectionTitle: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, letterSpacing: 2, textTransform: 'uppercase' },
-  viewAll: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.primary },
+  section: {
+    paddingHorizontal: Spacing.base,
+    marginTop: Spacing['2xl']
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingHorizontal: Spacing.sm,
+    marginBottom: Spacing.base
+  },
+  sectionTitle: {
+    fontSize: Fonts.sizes.sm,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 2,
+    textTransform: 'uppercase'
+  },
+  viewAll: {
+    fontSize: Fonts.sizes.sm,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.primary
+  },
 
   // Quick actions
-  actionsGrid: { flexDirection: 'row', justifyContent: 'space-around', marginTop: Spacing.base },
-  actionItem: { alignItems: 'center', gap: Spacing.sm },
-  actionIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center', ...Shadows.primary },
-  actionLabel: { fontSize: 12, fontFamily: 'Manrope-Bold', color: Colors.onSurface },
+  actionsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: Spacing.base
+  },
+  actionItem: {
+    alignItems: 'center',
+    gap: Spacing.sm
+  },
+  actionIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.primary
+  },
+  actionLabel: {
+    fontSize: 12,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.onSurface
+  },
 
   // ── Promo row ──────────────────────────────────────────────────────────────
   promoRow: {
@@ -504,47 +685,71 @@ const getStyles = (Colors: any) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  promoTitle: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-ExtraBold', color: '#fff' },
-  promoSubtitle: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Medium', color: 'rgba(255,255,255,0.8)', marginTop: 2, flexWrap: 'wrap' },
-  promoDots: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: 10 },
-  promoDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.transparentBorder },
-  promoDotActive: { backgroundColor: Colors.primary, width: 16 },
+  promoTitle: {
+    fontSize: Fonts.sizes.base,
+    fontFamily: 'Manrope-ExtraBold',
+    color: '#fff'
+  },
+  promoSubtitle: {
+    fontSize: Fonts.sizes.xs,
+    fontFamily: 'Manrope-Medium',
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+    flexWrap: 'wrap'
+  },
+  promoDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 10
+  },
+  promoDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.transparentBorder
+  },
+  promoDotActive: {
+    backgroundColor: Colors.primary,
+    width: 16
+  },
 
-  // ── Deck widget ────────────────────────────────────────────────────────────
+  // ── ИСПРАВЛЕНО: Deck widget ────────────────────────────────────────────────
   deckWidgetWrap: {
-    width: DECK_WIDGET_WIDTH,
+    width: DECK_WIDGET_WIDTH + 8, // небольшой запас
     alignItems: 'center',
     paddingTop: 2,
   },
   deckWidget: {
     width: DECK_WIDGET_WIDTH,
-    minHeight: CAROUSEL_ITEM_HEIGHT,
+    minHeight: CAROUSEL_ITEM_HEIGHT + 16, // увеличена высота
     backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.base,
     borderWidth: 1,
     borderColor: Colors.transparentBorder,
     alignItems: 'center',
     paddingVertical: Spacing.base,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8, // увеличен padding
     ...Shadows.sm,
-    gap: 8,
+    gap: 12, // увеличен gap между веером и текстом
   },
   fanContainer: {
-    width: 72,
-    height: 56,
+    width: 80, // увеличена ширина
+    height: 62, // увеличена высота
     position: 'relative',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center', // центрирование по вертикали
+    marginBottom: 4, // отступ снизу
   },
   fanCard: {
     position: 'absolute',
-    width: 32,
-    height: 46,
+    width: 30, // немного уменьшена ширина для лучшего размещения
+    height: 44,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(255,255,255,0.3)',
     ...Shadows.sm,
   },
   fanEmpty: {
@@ -555,19 +760,87 @@ const getStyles = (Colors: any) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  deckInfo: { alignItems: 'center', gap: 2 },
-  deckLabel: { fontSize: 8, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, letterSpacing: 1.5, textTransform: 'uppercase' },
-  deckName: { fontSize: 11, fontFamily: 'Manrope-Bold', color: Colors.onSurface, textAlign: 'center' },
-  deckCashback: { fontSize: 13, fontFamily: 'Manrope-ExtraBold', color: Colors.primary },
+  deckInfo: {
+    alignItems: 'center',
+    gap: 3, // увеличен gap
+    paddingHorizontal: 4, // padding чтобы текст не касался краёв
+  },
+  deckLabel: {
+    fontSize: 8,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.onSurfaceVariant,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase'
+  },
+  deckName: {
+    fontSize: 10, // немного уменьшен размер
+    fontFamily: 'Manrope-Bold',
+    color: Colors.onSurface,
+    textAlign: 'center',
+    lineHeight: 13, // добавлена высота строки
+  },
+  deckCashback: {
+    fontSize: 13,
+    fontFamily: 'Manrope-ExtraBold',
+    color: Colors.primary,
+    marginTop: 1, // небольшой отступ сверху
+  },
 
   // Transactions
-  transactionList: { gap: Spacing.sm },
-  transactionSkeleton: { height: 72, borderRadius: BorderRadius.base, backgroundColor: Colors.surfaceContainer },
-  transactionItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.lg, backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base, ...Shadows.sm, borderWidth: 1, borderColor: Colors.transparentBorder },
-  transactionLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base, flex: 1 },
-  transactionIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.transparentBorder, alignItems: 'center', justifyContent: 'center' },
-  transactionName: { fontSize: 15, fontFamily: 'Manrope-Bold', color: Colors.onSurface },
-  transactionDate: { fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, marginTop: 2, fontFamily: 'Manrope-Medium' },
-  transactionAmount: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface },
-  emptyText: { textAlign: 'center', color: Colors.outlineVariant, padding: Spacing['2xl'], fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Medium' },
+  transactionList: {
+    gap: Spacing.sm
+  },
+  transactionSkeleton: {
+    height: 72,
+    borderRadius: BorderRadius.base,
+    backgroundColor: Colors.surfaceContainer
+  },
+  transactionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Spacing.lg,
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.base,
+    ...Shadows.sm,
+    borderWidth: 1,
+    borderColor: Colors.transparentBorder
+  },
+  transactionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.base,
+    flex: 1
+  },
+  transactionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.transparentBorder,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  transactionName: {
+    fontSize: 15,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.onSurface
+  },
+  transactionDate: {
+    fontSize: Fonts.sizes.sm,
+    color: Colors.onSurfaceVariant,
+    marginTop: 2,
+    fontFamily: 'Manrope-Medium'
+  },
+  transactionAmount: {
+    fontSize: Fonts.sizes.base,
+    fontFamily: 'Manrope-ExtraBold',
+    color: Colors.onSurface
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: Colors.outlineVariant,
+    padding: Spacing['2xl'],
+    fontSize: Fonts.sizes.md,
+    fontFamily: 'Manrope-Medium'
+  },
 });
