@@ -6,12 +6,19 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+# Отменяем предыдущий запуск для той же ветки при новом пуше
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  # ─────────────────────────────────────────────
-  # 1. BACKEND — unit tests
-  # ─────────────────────────────────────────────
+
+  # ═══════════════════════════════════════════════
+  # BACKEND
+  # ═══════════════════════════════════════════════
+
   backend-test:
-    name: "Backend — Unit Tests"
+    name: "Backend — Unit Tests (Jest)"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,68 +38,8 @@ jobs:
         run: npm ci
 
       - name: Run Jest tests
-        run: npm test -- --ci --forceExit --reporters=default
+        run: npm test -- --ci --forceExit --coverage --coverageReporters=text-summary
 
-  # ─────────────────────────────────────────────
-  # 2. MOBILE — TypeScript check
-  # ─────────────────────────────────────────────
-  mobile-typecheck:
-    name: "Mobile — TypeScript Check"
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./mobile
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: mobile/package-lock.json
-
-      # npm install (не ci) — синхронизирует lock-файл если package.json
-      # был обновлён вручную без запуска npm install локально
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: TypeScript compiler check
-        run: npx tsc --noEmit
-
-  # ─────────────────────────────────────────────
-  # 3. MOBILE — Expo Doctor (конфигурация Expo)
-  # ─────────────────────────────────────────────
-  mobile-expo-doctor:
-    name: "Mobile — Expo Doctor"
-    runs-on: ubuntu-latest
-    needs: mobile-typecheck
-    defaults:
-      run:
-        working-directory: ./mobile
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: mobile/package-lock.json
-
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Run Expo Doctor
-        run: npx expo-doctor@latest
-        # Не блокируем pipeline при предупреждениях (только при ошибках)
-        continue-on-error: true
-
-  # ─────────────────────────────────────────────
-  # 4. BACKEND — безопасность зависимостей
-  # ─────────────────────────────────────────────
   backend-audit:
     name: "Backend — Security Audit"
     runs-on: ubuntu-latest
@@ -112,33 +59,206 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit for high/critical vulnerabilities
+      # Фейлит только на high/critical уязвимостях
+      - name: Audit dependencies
         run: npm audit --audit-level=high
-        # Предупреждения не блокируют, только high+ уязвимости
         continue-on-error: true
 
-  # ─────────────────────────────────────────────
-  # 5. Summary — итоговый статус
-  # ─────────────────────────────────────────────
-  ci-summary:
-    name: "CI Summary"
+      # Проверка устаревших пакетов (advisory)
+      - name: Check outdated packages
+        run: npm outdated || true
+
+  # ═══════════════════════════════════════════════
+  # MOBILE
+  # ═══════════════════════════════════════════════
+
+  mobile-typecheck:
+    name: "Mobile — TypeScript Check"
     runs-on: ubuntu-latest
-    needs: [ backend-test, mobile-typecheck, mobile-expo-doctor, backend-audit ]
+    defaults:
+      run:
+        working-directory: ./mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      # npm install синхронизирует lock-файл если package.json менялся вручную
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: TypeScript compiler check
+        run: npx tsc --noEmit
+
+  mobile-audit:
+    name: "Mobile — Security Audit"
+    runs-on: ubuntu-latest
+    needs: mobile-typecheck
+    defaults:
+      run:
+        working-directory: ./mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high --legacy-peer-deps
+        continue-on-error: true
+
+      - name: Check outdated packages
+        run: npm outdated || true
+
+  mobile-expo-doctor:
+    name: "Mobile — Expo Doctor"
+    runs-on: ubuntu-latest
+    needs: mobile-typecheck
+    defaults:
+      run:
+        working-directory: ./mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      # Проверяет совместимость версий пакетов с Expo SDK
+      - name: Run Expo Doctor
+        run: npx expo-doctor@latest
+        continue-on-error: true
+
+  # ═══════════════════════════════════════════════
+  # ADMIN (Vite + React)
+  # ═══════════════════════════════════════════════
+
+  admin-build:
+    name: "Admin — Vite Build"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./admin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install dependencies
+        # Если нет lock-файла — создаём его на месте
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      # Убеждаемся что продакшн-сборка не сломана
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-dist
+          path: admin/dist/
+          retention-days: 7
+
+  admin-audit:
+    name: "Admin — Security Audit"
+    runs-on: ubuntu-latest
+    needs: admin-build
+    defaults:
+      run:
+        working-directory: ./admin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  # ═══════════════════════════════════════════════
+  # ИТОГОВЫЙ СТАТУС
+  # ═══════════════════════════════════════════════
+
+  ci-summary:
+    name: "✅ CI Summary"
+    runs-on: ubuntu-latest
+    needs:
+      - backend-test
+      - backend-audit
+      - mobile-typecheck
+      - mobile-audit
+      - mobile-expo-doctor
+      - admin-build
+      - admin-audit
     if: always()
 
     steps:
-      - name: Check all jobs passed
+      - name: Evaluate results
         run: |
-          if [ "${{ needs.backend-test.result }}" != "success" ]; then
-            echo "❌ Backend tests failed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  MTBank CI — Full Pipeline Summary"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "  BACKEND"
+          echo "    unit tests  : ${{ needs.backend-test.result }}"
+          echo "    audit       : ${{ needs.backend-audit.result }}  (advisory)"
+          echo ""
+          echo "  MOBILE"
+          echo "    typecheck   : ${{ needs.mobile-typecheck.result }}"
+          echo "    audit       : ${{ needs.mobile-audit.result }}  (advisory)"
+          echo "    expo-doctor : ${{ needs.mobile-expo-doctor.result }}  (advisory)"
+          echo ""
+          echo "  ADMIN"
+          echo "    vite build  : ${{ needs.admin-build.result }}"
+          echo "    audit       : ${{ needs.admin-audit.result }}  (advisory)"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Блокирующие проверки (обязательные)
+          FAILED=0
+          if [ "${{ needs.backend-test.result }}"    != "success" ]; then echo "❌ backend-test failed";    FAILED=1; fi
+          if [ "${{ needs.mobile-typecheck.result }}" != "success" ]; then echo "❌ mobile-typecheck failed"; FAILED=1; fi
+          if [ "${{ needs.admin-build.result }}"     != "success" ]; then echo "❌ admin-build failed";     FAILED=1; fi
+
+          if [ "$FAILED" = "1" ]; then
+            echo ""
+            echo "Pipeline FAILED — fix required checks above."
             exit 1
           fi
-          if [ "${{ needs.mobile-typecheck.result }}" != "success" ]; then
-            echo "❌ Mobile TypeScript check failed"
-            exit 1
-          fi
-          echo "✅ All required checks passed"
-          echo "   backend-test:       ${{ needs.backend-test.result }}"
-          echo "   mobile-typecheck:   ${{ needs.mobile-typecheck.result }}"
-          echo "   mobile-expo-doctor: ${{ needs.mobile-expo-doctor.result }} (advisory)"
-          echo "   backend-audit:      ${{ needs.backend-audit.result }} (advisory)"
+
+          echo "✅ All required checks passed."
