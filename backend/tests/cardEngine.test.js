@@ -34,6 +34,7 @@ describe('Card Engine Mechanics', () => {
     jest.clearAllMocks();
     // Re-apply persistent defaults after clearAllMocks wipes them
     mockPrisma.systemConfig.findUnique.mockResolvedValue(null);
+    mockPrisma.$transaction.mockImplementation(async (fn) => fn(mockPrisma));
   });
 
   describe('rollCardDrop', () => {

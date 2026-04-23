@@ -16,8 +16,6 @@ import Animated2, { FadeIn } from 'react-native-reanimated';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import { LinearGradient } from 'expo-linear-gradient';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 type Rarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
 interface CollectionCard {
@@ -32,8 +30,6 @@ interface CollectionCard {
   mbPrice?: number;
   isActive: boolean;
 }
-
-// ─── Rarity helpers ──────────────────────────────────────────────────────────
 
 const RARITY_GRADIENTS: Record<Rarity, [string, string, string]> = {
   COMMON:    ['#4b5563', '#374151', '#1f2937'],
@@ -58,8 +54,6 @@ function formatTimer(ms: number): string {
   return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
 }
 
-// ─── LegendaryGlow ────────────────────────────────────────────────────────────
-
 function LegendaryGlow() {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -79,8 +73,6 @@ function LegendaryGlow() {
   );
 }
 
-// ─── ShopCardItem ─────────────────────────────────────────────────────────────
-
 interface ShopCardItemProps {
   card: CollectionCard;
   purchased: boolean;
@@ -94,10 +86,7 @@ function ShopCardItem({ card, purchased, canAfford, onBuy }: ShopCardItemProps) 
   const isLegendary = card.rarity === 'LEGENDARY';
   const price = card.mbPrice ?? DEFAULT_PRICES[card.rarity];
   const initials = (card.brandName ?? card.name)
-    .split(' ')
-    .slice(0, 2)
-    .map((w: string) => w[0]?.toUpperCase() ?? '')
-    .join('');
+    .split(' ').slice(0, 2).map((w: string) => w[0]?.toUpperCase() ?? '').join('');
 
   return (
     <View style={shopStyles.cardWrap}>
@@ -144,57 +133,45 @@ function ShopCardItem({ card, purchased, canAfford, onBuy }: ShopCardItemProps) 
 const shopStyles = StyleSheet.create({
   cardWrap: { width: '47%', borderRadius: BorderRadius.base, overflow: 'hidden', ...Shadows.md },
   cardGradient: { padding: Spacing.md, gap: 6, minHeight: 210, borderRadius: BorderRadius.base, overflow: 'hidden' },
-  rarityBadge: {
-    position: 'absolute', top: 8, right: 8,
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: BorderRadius.full,
-  },
+  rarityBadge: { position: 'absolute', top: 8, right: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: BorderRadius.full },
   rarityBadgeText: { fontSize: 7, fontFamily: 'Manrope-ExtraBold', color: '#fff', letterSpacing: 0.5 },
   brandIconWrap: { alignItems: 'center', marginTop: 20, marginBottom: 4 },
-  brandCircle: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  brandCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   initialsText: { fontSize: 22, fontFamily: 'Manrope-ExtraBold' },
   cardName: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-ExtraBold', color: '#fff', textAlign: 'center' },
   cashbackRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
   cashbackText: { fontSize: 10, fontFamily: 'Manrope-Bold', color: 'rgba(255,255,255,0.85)' },
-  buyBtn: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: BorderRadius.full, paddingVertical: 8,
-    alignItems: 'center', marginTop: 4,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
-  },
+  buyBtn: { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: BorderRadius.full, paddingVertical: 8, alignItems: 'center', marginTop: 4, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
   buyBtnDisabled: { backgroundColor: 'rgba(0,0,0,0.3)', borderColor: 'rgba(255,255,255,0.1)' },
   buyBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#fff' },
-  purchasedBadge: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 4, marginTop: 4, paddingVertical: 6,
-    backgroundColor: 'rgba(34,197,94,0.2)', borderRadius: BorderRadius.full,
-  },
+  purchasedBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 4, paddingVertical: 6, backgroundColor: 'rgba(34,197,94,0.2)', borderRadius: BorderRadius.full },
   purchasedText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: '#22c55e' },
-  purchasedOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    borderRadius: BorderRadius.base,
-  },
+  purchasedOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: BorderRadius.base },
 });
 
 // ─── ShopTab ──────────────────────────────────────────────────────────────────
 
 const REFRESH_HOURS = 8;
 const FORCE_REFRESH_COST = 500;
+const SHOP_SLOT_COUNT = 6;
 
-function ShopTab({ userPoints, onPointsChange, colors }: {
+function ShopTab({
+  userPoints,
+  onPurchaseSuccess,
+  colors,
+  inventoryCollectionIds,
+}: {
   userPoints: number;
-  onPointsChange: (delta: number) => void;
+  onPurchaseSuccess: (newMbPoints: number) => void;
   colors: any;
+  inventoryCollectionIds: Set<string>;
 }) {
   const [allCards, setAllCards] = useState<CollectionCard[]>([]);
   const [shopCards, setShopCards] = useState<CollectionCard[]>([]);
   const [loading, setLoading] = useState(true);
-  const [purchasedIds, setPurchasedIds] = useState<string[]>([]);
+  const [buying, setBuying] = useState(false);
+  // IDs of collectionCards purchased this session (derives "Куплено" badge)
+  const [sessionPurchasedIds, setSessionPurchasedIds] = useState<Set<string>>(new Set());
   const [nextRefresh, setNextRefresh] = useState<Date>(() => {
     const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS); return d;
   });
@@ -204,16 +181,13 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
   const [successCard, setSuccessCard] = useState<CollectionCard | null>(null);
   const successAnim = useRef(new Animated.Value(0)).current;
 
+  // Load ALL collection cards from backend (all rarities)
   const loadShopCards = useCallback(async () => {
     setLoading(true);
     try {
-      const [epicRes, legendaryRes] = await Promise.all([
-        apiClient.getCollection('EPIC'),
-        apiClient.getCollection('LEGENDARY'),
-      ]);
-      const combined: CollectionCard[] = [...(epicRes.data ?? []), ...(legendaryRes.data ?? [])];
-      setAllCards(combined);
-      rollFromPool(combined);
+      const { data } = await apiClient.getCollection(); // no rarity filter → all
+      setAllCards(data ?? []);
+      rollFromPool(data ?? []);
     } catch {
       Alert.alert('Ошибка', 'Не удалось загрузить карты магазина');
     } finally {
@@ -225,10 +199,11 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
 
   function rollFromPool(pool: CollectionCard[]) {
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    setShopCards(shuffled.slice(0, 6));
-    setPurchasedIds([]);
+    setShopCards(shuffled.slice(0, SHOP_SLOT_COUNT));
+    setSessionPurchasedIds(new Set());
   }
 
+  // Timer tick
   useEffect(() => {
     const tick = () => setTimerMs(Math.max(0, nextRefresh.getTime() - Date.now()));
     tick();
@@ -236,6 +211,7 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
     return () => clearInterval(id);
   }, [nextRefresh]);
 
+  // Auto-refresh when timer expires
   useEffect(() => {
     if (timerMs === 0 && allCards.length > 0) {
       const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS);
@@ -255,7 +231,7 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
       [
         { text: 'Отмена', style: 'cancel' },
         { text: 'Обновить', onPress: () => {
-          onPointsChange(-FORCE_REFRESH_COST);
+          onPurchaseSuccess(userPoints - FORCE_REFRESH_COST);
           const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS);
           setNextRefresh(d);
           rollFromPool(allCards);
@@ -266,27 +242,41 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
 
   const handleBuy = (card: CollectionCard) => setConfirmCard(card);
 
-  const handleConfirmBuy = () => {
-    if (!confirmCard) return;
-    const price = confirmCard.mbPrice ?? DEFAULT_PRICES[confirmCard.rarity];
+  const handleConfirmBuy = async () => {
+    if (!confirmCard || buying) return;
     setConfirmCard(null);
-    onPointsChange(-price);
-    setPurchasedIds((prev) => [...prev, confirmCard.id]);
-    setSuccessCard(confirmCard);
-    successAnim.setValue(0);
-    Animated.spring(successAnim, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }).start(
-      () => setTimeout(() => setSuccessCard(null), 1800)
-    );
+    setBuying(true);
+    try {
+      const { data } = await apiClient.buyCard(confirmCard.id);
+      // data = { userCard, mbPoints, price }
+      setSessionPurchasedIds((prev) => new Set([...prev, confirmCard.id]));
+      onPurchaseSuccess(data.mbPoints); // sync MB balance to parent
+      setSuccessCard(confirmCard);
+      successAnim.setValue(0);
+      Animated.spring(successAnim, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }).start(
+        () => setTimeout(() => setSuccessCard(null), 1800)
+      );
+    } catch (err: any) {
+      Alert.alert('Ошибка', err?.response?.data?.error || 'Не удалось купить карту');
+    } finally {
+      setBuying(false);
+    }
   };
+
+  // A card is "purchased" if bought this session OR already in inventory
+  const isPurchased = (card: CollectionCard) =>
+    sessionPurchasedIds.has(card.id) || inventoryCollectionIds.has(card.id);
 
   const filteredCards = filterRarity
     ? shopCards.filter((c) => c.rarity === filterRarity)
     : shopCards;
 
   const FILTERS: Array<{ key: Rarity | null; label: string; color: string }> = [
-    { key: null,        label: 'Все',         color: colors.primary },
-    { key: 'EPIC',      label: 'Эпические',   color: '#a78bfa' },
-    { key: 'LEGENDARY', label: 'Легендарные', color: '#fbbf24' },
+    { key: null,        label: 'Все',          color: colors.primary },
+    { key: 'COMMON',    label: 'Обычные',       color: '#9ca3af' },
+    { key: 'RARE',      label: 'Редкие',        color: '#60a5fa' },
+    { key: 'EPIC',      label: 'Эпические',     color: '#a78bfa' },
+    { key: 'LEGENDARY', label: 'Легендарные',   color: '#fbbf24' },
   ];
 
   if (loading) {
@@ -302,6 +292,13 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
 
   return (
     <View style={{ flex: 1 }}>
+      {buying && (
+        <View style={shopTabStyles.buyingOverlay}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={shopTabStyles.buyingText}>Покупка...</Text>
+        </View>
+      )}
+
       <View style={shopTabStyles.header}>
         <View>
           <Text style={shopTabStyles.headerTitle}>Магазин карт</Text>
@@ -339,10 +336,9 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
               filterRarity !== f.key && { borderColor: colors.outlineVariant },
             ]}
           >
-            <Text style={[
-              shopTabStyles.filterChipText,
-              { color: filterRarity === f.key ? '#fff' : colors.onSurfaceVariant },
-            ]}>{f.label}</Text>
+            <Text style={[shopTabStyles.filterChipText, { color: filterRarity === f.key ? '#fff' : colors.onSurfaceVariant }]}>
+              {f.label}
+            </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -357,7 +353,7 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
           <ShopCardItem
             key={card.id}
             card={card}
-            purchased={purchasedIds.includes(card.id)}
+            purchased={isPurchased(card)}
             canAfford={userPoints >= (card.mbPrice ?? DEFAULT_PRICES[card.rarity])}
             onBuy={handleBuy}
           />
@@ -451,35 +447,17 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
 }
 
 const shopTabStyles = StyleSheet.create({
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.base, paddingBottom: Spacing.sm,
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.base, paddingTop: Spacing.base, paddingBottom: Spacing.sm },
   headerTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: '#fff' },
   points: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', marginTop: 2 },
-  refreshBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderWidth: 1, borderRadius: BorderRadius.full,
-    paddingHorizontal: 12, paddingVertical: 6,
-  },
+  refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 6 },
   refreshBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
-  timerRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginHorizontal: Spacing.base, borderRadius: BorderRadius.sm,
-    paddingHorizontal: 12, paddingVertical: 6, marginBottom: Spacing.sm,
-  },
+  timerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: Spacing.base, borderRadius: BorderRadius.sm, paddingHorizontal: 12, paddingVertical: 6, marginBottom: Spacing.sm },
   timerText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
   filterScroll: { marginBottom: Spacing.sm, flexGrow: 0 },
-  filterChip: {
-    borderWidth: 1, borderRadius: BorderRadius.full,
-    paddingHorizontal: 14, paddingVertical: 6,
-    backgroundColor: 'transparent',
-  },
+  filterChip: { borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: 'transparent' },
   filterChipText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
-  grid: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: Spacing.base, gap: Spacing.sm,
-  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.base, gap: Spacing.sm },
   emptyState: { width: '100%', alignItems: 'center', paddingVertical: 48, gap: 12 },
   emptyText: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: Spacing.xl },
@@ -492,21 +470,15 @@ const shopTabStyles = StyleSheet.create({
   confirmBonus: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', textAlign: 'center', paddingHorizontal: Spacing.xl },
   confirmPrice: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', textAlign: 'center', paddingBottom: Spacing.sm },
   confirmBtns: { flexDirection: 'row', gap: 10, padding: Spacing.base },
-  confirmCancelBtn: {
-    flex: 1, borderWidth: 1, borderRadius: BorderRadius.base,
-    paddingVertical: 14, alignItems: 'center',
-  },
+  confirmCancelBtn: { flex: 1, borderWidth: 1, borderRadius: BorderRadius.base, paddingVertical: 14, alignItems: 'center' },
   confirmCancelText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
   confirmBuyBtn: { flex: 2, borderRadius: BorderRadius.base, paddingVertical: 14, alignItems: 'center' },
   confirmBuyText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#fff' },
-  successOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.82)',
-    alignItems: 'center', justifyContent: 'center', gap: 16,
-    zIndex: 999,
-  },
+  successOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.82)', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 999 },
   successTitle: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: '#22c55e' },
   successSub: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Medium', color: 'rgba(255,255,255,0.75)', textAlign: 'center', paddingHorizontal: 32 },
+  buyingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', gap: 12, zIndex: 1000 },
+  buyingText: { color: '#fff', fontFamily: 'Manrope-Bold', fontSize: Fonts.sizes.base },
 });
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -546,6 +518,13 @@ export default function CardsScreen() {
   };
 
   useEffect(() => { loadCards(); loadDecks(); loadQuests(); }, []);
+
+  // Set of collectionCard IDs already owned by the user — used by ShopTab
+  // to mark cards as already purchased even before this session
+  const inventoryCollectionIds = useMemo<Set<string>>(
+    () => new Set(cards.map((c: any) => c.collectionCardId as string)),
+    [cards]
+  );
 
   const activeDeck = decks.find((d: any) => d.isActive);
 
@@ -635,7 +614,6 @@ export default function CardsScreen() {
   const filteredCards = filter ? cards.filter((c: any) => c.collectionCard.rarity === filter) : cards;
   const availableCards = cards.filter((c: any) => !equippedCardIds.has(c.id));
 
-  // Per-brand cashback chips from active deck
   const deckCashbackChips = useMemo(() => {
     if (!activeDeck?.deckCards?.length) return [];
     return [...(activeDeck.deckCards as any[])]
@@ -648,6 +626,13 @@ export default function CardsScreen() {
         rarity: dc.userCard.collectionCard.rarity,
       }));
   }, [activeDeck]);
+
+  // Called by ShopTab after a successful purchase
+  const handlePurchaseSuccess = useCallback((newMbPoints: number) => {
+    setLocalPoints(newMbPoints);
+    loadCards();  // refresh inventory so the new card appears immediately
+    loadUser();   // sync user.mbPoints in global store
+  }, []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -690,8 +675,9 @@ export default function CardsScreen() {
       {activeTab === 'shop' && (
         <ShopTab
           userPoints={localPoints}
-          onPointsChange={(delta) => setLocalPoints((p) => Math.max(0, p + delta))}
+          onPurchaseSuccess={handlePurchaseSuccess}
           colors={colors}
+          inventoryCollectionIds={inventoryCollectionIds}
         />
       )}
 
@@ -699,30 +685,18 @@ export default function CardsScreen() {
       {activeTab === 'deck' && (
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-          {/* Active Deck */}
           {activeDeck ? (
             <Animated2.View entering={FadeIn} style={styles.deckSection}>
-              {/* Deck name */}
               <Text style={styles.deckName}>{activeDeck.name}</Text>
 
-              {/* Per-brand cashback chips */}
               {deckCashbackChips.length > 0 && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.cashbackChipsRow}
-                  contentContainerStyle={{ gap: 8, paddingRight: 4 }}
-                >
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cashbackChipsRow} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
                   {deckCashbackChips.map((chip) => {
                     const rarityColor = getRarityCol(chip.rarity);
                     return (
                       <View key={chip.id} style={[styles.cashbackChip, { borderColor: rarityColor, backgroundColor: rarityColor + '18' }]}>
-                        <Text style={[styles.cashbackChipBrand, { color: rarityColor }]} numberOfLines={1}>
-                          {chip.brand}
-                        </Text>
-                        <Text style={[styles.cashbackChipPct, { color: rarityColor }]}>
-                          {chip.percent}%
-                        </Text>
+                        <Text style={[styles.cashbackChipBrand, { color: rarityColor }]} numberOfLines={1}>{chip.brand}</Text>
+                        <Text style={[styles.cashbackChipPct, { color: rarityColor }]}>{chip.percent}%</Text>
                       </View>
                     );
                   })}
@@ -778,7 +752,6 @@ export default function CardsScreen() {
             </View>
           )}
 
-          {/* Daily Quests */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Ежедневные задания</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.questScroll}>
@@ -816,7 +789,6 @@ export default function CardsScreen() {
             </ScrollView>
           </View>
 
-          {/* Actions */}
           <View style={styles.actionsRow}>
             <TouchableOpacity onPress={() => router.push('/collection')} style={styles.actionRowBtn}>
               <MaterialIcons name="auto-awesome-mosaic" size={20} color={colors.primary} />
@@ -828,7 +800,6 @@ export default function CardsScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Filter */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Инвентарь</Text>
             <View style={styles.filterRow}>
@@ -840,7 +811,6 @@ export default function CardsScreen() {
             </View>
           </View>
 
-          {/* Card Grid */}
           <View style={styles.cardGrid}>
             {filteredCards.map((card: any) => {
               const c = card.collectionCard;
@@ -883,7 +853,7 @@ export default function CardsScreen() {
               <View style={styles.emptyContainer}>
                 <MaterialIcons name="style" size={48} color={colors.outlineVariant} />
                 <Text style={styles.emptyStateText}>Нет карточек</Text>
-                <Text style={styles.emptySubtext}>Совершайте покупки, чтобы получить новые карточки!</Text>
+                <Text style={styles.emptySubtext}>Купите карты в магазине или совершайте покупки!</Text>
               </View>
             )}
           </View>
@@ -891,7 +861,7 @@ export default function CardsScreen() {
         </ScrollView>
       )}
 
-      {/* ── Picker Modal ── */}
+      {/* Picker Modal */}
       <Modal visible={pickerModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -926,7 +896,7 @@ export default function CardsScreen() {
         </View>
       </Modal>
 
-      {/* ── Sacrifice Target Modal ── */}
+      {/* Sacrifice Target Modal */}
       <Modal visible={sacrificeStep === 'pick_target'} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -968,7 +938,7 @@ export default function CardsScreen() {
         </View>
       </Modal>
 
-      {/* ── Card Detail Modal ── */}
+      {/* Card Detail Modal */}
       <Modal visible={detailModalVisible} transparent animationType="fade">
         <View style={styles.modalCenterOverlay}>
           <View style={[styles.detailCardContent, selectedCard && { borderColor: getRarityCol(selectedCard.collectionCard.rarity) }]}>
@@ -1033,8 +1003,6 @@ export default function CardsScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const getStyles = (Colors: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scrollContent: { paddingBottom: 120 },
@@ -1049,21 +1017,12 @@ const getStyles = (Colors: any) => StyleSheet.create({
   tabSwitcher: { flexDirection: 'row', marginHorizontal: Spacing.base, marginBottom: Spacing.base, backgroundColor: Colors.surfaceContainerHigh, borderRadius: BorderRadius.full, padding: 4 },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: BorderRadius.full },
   tabBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold' },
-
-  // Deck
   deckSection: { marginHorizontal: Spacing.base, marginTop: Spacing.sm, backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.xl, ...Shadows.md, borderWidth: 1, borderColor: Colors.transparentBorder },
   deckName: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface, marginBottom: Spacing.sm },
-
-  // Per-brand cashback chips
   cashbackChipsRow: { marginBottom: Spacing.base, flexGrow: 0 },
-  cashbackChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    borderWidth: 1, borderRadius: BorderRadius.full,
-    paddingHorizontal: 12, paddingVertical: 5,
-  },
+  cashbackChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 5 },
   cashbackChipBrand: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', maxWidth: 90 },
   cashbackChipPct: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold' },
-
   deckLoadingOverlay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: Spacing.sm },
   deckLoadingText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant },
   deckGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, justifyContent: 'center' },
@@ -1078,7 +1037,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
   healthBarContainer: { width: '90%', height: 4, backgroundColor: Colors.surfaceContainerHigh, borderRadius: 2, overflow: 'hidden', marginBottom: 2 },
   healthBarFill: { height: '100%', borderRadius: 2 },
   emptySlotText: { fontSize: 10, color: Colors.outlineVariant, fontFamily: 'Manrope-Medium', textAlign: 'center' },
-
   section: { paddingHorizontal: Spacing.base, marginTop: Spacing.xl },
   sectionTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface, marginBottom: Spacing.base, letterSpacing: -0.3 },
   questScroll: { marginHorizontal: -Spacing.base, paddingHorizontal: Spacing.base },

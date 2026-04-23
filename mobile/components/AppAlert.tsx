@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,134 +7,97 @@ import {
   Modal,
   Dimensions,
   Pressable,
+  Platform,
 } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
-  runOnJS,
-  FadeIn,
-  ZoomIn,
-  interpolate,
-  Easing,
 } from 'react-native-reanimated';
 import { MaterialIcons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import { Fonts, Spacing, BorderRadius } from '../constants/theme';
 
 export type AppAlertType = 'success' | 'error' | 'warning' | 'info' | 'confirm';
+
+export interface AppAlertButton {
+  text: string;
+  onPress?: () => void;
+}
 
 export interface AppAlertProps {
   visible: boolean;
   type?: AppAlertType;
   title: string;
   message?: string;
-  buttonText?: string;
-  cancelText?: string;
-  onClose: () => void;
-  onConfirm?: () => void;
+  /** Primary / confirm button */
+  confirmButton?: AppAlertButton;
+  /** Cancel button (shown only for `confirm` type) */
+  cancelButton?: AppAlertButton;
+  /** Called when the alert is dismissed by any means */
+  onDismiss: () => void;
+  /** Auto-close after N ms (not for `confirm` type) */
+  autoDismissMs?: number;
   colors: any;
 }
 
-const ALERT_CONFIG = {
+const ALERT_CONFIG: Record<
+  AppAlertType,
+  {
+    icon: string;
+    bgColor: string;
+    lightBg: string;
+    darkBg: string;
+    haptic: Haptics.NotificationFeedbackType | null;
+  }
+> = {
   success: {
     icon: 'check-circle',
-    gradient: ['#22c55e', '#16a34a'],
     bgColor: '#22c55e',
     lightBg: '#f0fdf4',
     darkBg: '#052e16',
-    particles: ['✦', '✦', '✦', '✦'],
+    haptic: Haptics.NotificationFeedbackType.Success,
   },
   error: {
     icon: 'cancel',
-    gradient: ['#ef4444', '#dc2626'],
     bgColor: '#ef4444',
     lightBg: '#fef2f2',
     darkBg: '#2d0a0a',
-    particles: [],
+    haptic: Haptics.NotificationFeedbackType.Error,
   },
   warning: {
     icon: 'warning',
-    gradient: ['#f59e0b', '#d97706'],
     bgColor: '#f59e0b',
     lightBg: '#fffbeb',
     darkBg: '#2d1a00',
-    particles: [],
+    haptic: Haptics.NotificationFeedbackType.Warning,
   },
   info: {
     icon: 'info',
-    gradient: ['#3b82f6', '#2563eb'],
     bgColor: '#3b82f6',
     lightBg: '#eff6ff',
     darkBg: '#0a1628',
-    particles: [],
+    haptic: null,
   },
   confirm: {
-    icon: 'help',
-    gradient: ['#8b5cf6', '#7c3aed'],
+    icon: 'help-outline',
     bgColor: '#8b5cf6',
     lightBg: '#f5f3ff',
     darkBg: '#1a0a2e',
-    particles: [],
+    haptic: null,
   },
-} as const;
+};
 
 const { width } = Dimensions.get('window');
 
-// Анимированная частица
-const Particle = ({ delay, color }: { delay: number; color: string }) => {
-  const translateY = useSharedValue(0);
-  const translateX = useSharedValue(0);
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0);
-
-  useEffect(() => {
-    const randomX = (Math.random() - 0.5) * 120;
-    const randomY = -(Math.random() * 80 + 40);
-
-    setTimeout(() => {
-      opacity.value = withTiming(1, { duration: 200 });
-      scale.value = withSpring(1);
-      translateX.value = withTiming(randomX, { duration: 800 });
-      translateY.value = withTiming(randomY, { duration: 800 });
-      setTimeout(() => {
-        opacity.value = withTiming(0, { duration: 400 });
-      }, 500);
-    }, delay);
-  }, []);
-
-  const style = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View style={[particleStyles.particle, style]}>
-      <Text style={{ color, fontSize: 12 }}>✦</Text>
-    </Animated.View>
-  );
-};
-
-const particleStyles = StyleSheet.create({
-  particle: { position: 'absolute' },
-});
-
-// Пульсирующее кольцо
+/** Пульсирующее кольцо при появлении иконки */
 const PulseRing = ({ color }: { color: string }) => {
   const scale = useSharedValue(0.8);
-  const opacity = useSharedValue(0.6);
+  const opacity = useSharedValue(0.5);
 
   useEffect(() => {
-    scale.value = withSpring(1.3, {
-      damping: 8,
-      stiffness: 80,
-      mass: 0.8,
-    });
+    scale.value = withSpring(1.35, { damping: 8, stiffness: 80, mass: 0.8 });
     opacity.value = withTiming(0, { duration: 600 });
   }, []);
 
@@ -151,7 +114,7 @@ const PulseRing = ({ color }: { color: string }) => {
           width: 88,
           height: 88,
           borderRadius: 44,
-          borderWidth: 3,
+          borderWidth: 2.5,
           borderColor: color,
         },
         style,
@@ -160,64 +123,116 @@ const PulseRing = ({ color }: { color: string }) => {
   );
 };
 
+/** Частицы для success-алерта */
+const Particle = ({ delay, color }: { delay: number; color: string }) => {
+  const tx = useSharedValue(0);
+  const ty = useSharedValue(0);
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(0);
+
+  useEffect(() => {
+    const rx = (Math.random() - 0.5) * 120;
+    const ry = -(Math.random() * 80 + 40);
+    const timer = setTimeout(() => {
+      opacity.value = withTiming(1, { duration: 200 });
+      scale.value = withSpring(1);
+      tx.value = withTiming(rx, { duration: 800 });
+      ty.value = withTiming(ry, { duration: 800 });
+      const fadeTimer = setTimeout(() => {
+        opacity.value = withTiming(0, { duration: 400 });
+      }, 500);
+      return () => clearTimeout(fadeTimer);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View style={[{ position: 'absolute' }, style]}>
+      <Text style={{ color, fontSize: 12 }}>✦</Text>
+    </Animated.View>
+  );
+};
+
 export default function AppAlert({
   visible,
   type = 'info',
   title,
   message,
-  buttonText = 'Понятно',
-  cancelText = 'Отмена',
-  onClose,
-  onConfirm,
+  confirmButton,
+  cancelButton,
+  onDismiss,
+  autoDismissMs,
   colors,
 }: AppAlertProps) {
   const config = ALERT_CONFIG[type];
-  const isDark = colors.background === '#0f1117' || colors.isDark;
+  const isDark = colors.isDark || colors.background === '#0f1117';
+  const isConfirm = type === 'confirm';
 
   const scale = useSharedValue(0.7);
   const opacity = useSharedValue(0);
-  const translateY = useSharedValue(30);
+  const ty = useSharedValue(30);
 
-  const cardBg = isDark ? config.darkBg : config.lightBg;
-  const borderColor = `${config.bgColor}40`;
-
+  // Тактильный отклик при появлении
   useEffect(() => {
-    if (visible) {
-      opacity.value = withTiming(1, { duration: 250 });
-      scale.value = withSpring(1, {
-        damping: 14,
-        stiffness: 200,
-        mass: 0.8,
-      });
-      translateY.value = withSpring(0, {
-        damping: 14,
-        stiffness: 200,
-      });
-    } else {
-      opacity.value = withTiming(0, { duration: 180 });
-      scale.value = withTiming(0.85, { duration: 180 });
-      translateY.value = withTiming(20, { duration: 180 });
+    if (visible && config.haptic) {
+      Haptics.notificationAsync(config.haptic).catch(() => {});
     }
   }, [visible]);
 
-  const overlayStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
+  // Анимация появления / скрытия
+  useEffect(() => {
+    if (visible) {
+      opacity.value = withTiming(1, { duration: 220 });
+      scale.value = withSpring(1, { damping: 14, stiffness: 220, mass: 0.8 });
+      ty.value = withSpring(0, { damping: 14, stiffness: 220 });
+    } else {
+      opacity.value = withTiming(0, { duration: 160 });
+      scale.value = withTiming(0.88, { duration: 160 });
+      ty.value = withTiming(16, { duration: 160 });
+    }
+  }, [visible]);
 
+  // Авто-закрытие
+  useEffect(() => {
+    if (visible && autoDismissMs && !isConfirm) {
+      const t = setTimeout(onDismiss, autoDismissMs);
+      return () => clearTimeout(t);
+    }
+  }, [visible, autoDismissMs, isConfirm]);
+
+  const overlayStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
   const cardStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }, { translateY: translateY.value }],
+    transform: [{ scale: scale.value }, { translateY: ty.value }],
     opacity: opacity.value,
   }));
 
   if (!visible) return null;
 
-  const isConfirm = type === 'confirm';
+  const confirmLabel = confirmButton?.text ?? (isConfirm ? 'Подтвердить' : 'Понятно');
+  const cancelLabel = cancelButton?.text ?? 'Отмена';
+  const borderColor = `${config.bgColor}40`;
 
   return (
-    <Modal transparent visible={visible} statusBarTranslucent animationType="none">
+    <Modal
+      transparent
+      visible={visible}
+      statusBarTranslucent
+      animationType="none"
+      accessibilityViewIsModal
+      onRequestClose={isConfirm ? undefined : onDismiss}
+    >
       {/* Backdrop */}
       <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, overlayStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={isConfirm ? undefined : onClose} />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={isConfirm ? undefined : onDismiss}
+          accessibilityLabel="Закрыть"
+        />
       </Animated.View>
 
       {/* Card */}
@@ -226,64 +241,50 @@ export default function AppAlert({
           style={[
             styles.card,
             {
-              backgroundColor: isDark ? colors.surfaceContainerLow || '#1a1a2e' : '#ffffff',
+              backgroundColor: isDark ? colors.surfaceContainerLow ?? '#1a1a2e' : '#ffffff',
               borderColor,
               shadowColor: config.bgColor,
             },
             cardStyle,
           ]}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
         >
-          {/* Декоративная полоска сверху */}
+          {/* Акцентная полоска */}
           <View style={[styles.topBar, { backgroundColor: config.bgColor }]} />
 
-          {/* Иконка с анимацией */}
+          {/* Иконка */}
           <View style={styles.iconArea}>
             <PulseRing color={config.bgColor} />
-
-            {/* Частицы для success */}
             {type === 'success' &&
-              [0, 100, 200, 300].map((delay, i) => (
-                <Particle key={i} delay={delay} color={config.bgColor} />
+              [0, 100, 200, 300].map((d, i) => (
+                <Particle key={i} delay={d} color={config.bgColor} />
               ))}
-
             <View style={[styles.iconCircle, { backgroundColor: `${config.bgColor}20` }]}>
               <View style={[styles.iconInner, { backgroundColor: `${config.bgColor}30` }]}>
-                <MaterialIcons
-                  name={config.icon as any}
-                  size={36}
-                  color={config.bgColor}
-                />
+                <MaterialIcons name={config.icon as any} size={36} color={config.bgColor} />
               </View>
             </View>
           </View>
 
-          {/* Текст */}
+          {/* Заголовок */}
           <Text
-            style={[
-              styles.title,
-              { color: isDark ? '#ffffff' : '#0f172a' },
-            ]}
+            style={[styles.title, { color: isDark ? '#ffffff' : '#0f172a' }]}
+            accessibilityRole="header"
           >
             {title}
           </Text>
 
-          {message ? (
-            <Text
-              style={[
-                styles.message,
-                { color: isDark ? '#94a3b8' : '#64748b' },
-              ]}
-            >
+          {/* Сообщение */}
+          {!!message && (
+            <Text style={[styles.message, { color: isDark ? '#94a3b8' : '#64748b' }]}>
               {message}
             </Text>
-          ) : null}
+          )}
 
           {/* Разделитель */}
           <View
-            style={[
-              styles.divider,
-              { backgroundColor: isDark ? '#ffffff12' : '#0000000a' },
-            ]}
+            style={[styles.divider, { backgroundColor: isDark ? '#ffffff12' : '#0000000a' }]}
           />
 
           {/* Кнопки */}
@@ -298,39 +299,36 @@ export default function AppAlert({
                     borderColor: isDark ? '#ffffff20' : '#e2e8f0',
                   },
                 ]}
-                onPress={onClose}
+                onPress={() => { cancelButton?.onPress?.(); onDismiss(); }}
                 activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel={cancelLabel}
               >
-                <Text
-                  style={[
-                    styles.btnCancelText,
-                    { color: isDark ? '#94a3b8' : '#64748b' },
-                  ]}
-                >
-                  {cancelText}
+                <Text style={[styles.btnCancelText, { color: isDark ? '#94a3b8' : '#64748b' }]}>
+                  {cancelLabel}
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[
-                  styles.btnBase,
-                  styles.btnPrimary,
-                  { backgroundColor: config.bgColor },
-                ]}
-                onPress={onConfirm ?? onClose}
+                style={[styles.btnBase, styles.btnPrimary, { backgroundColor: config.bgColor }]}
+                onPress={() => { confirmButton?.onPress?.(); onDismiss(); }}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={confirmLabel}
               >
                 <MaterialIcons name="check" size={18} color="#fff" />
-                <Text style={styles.btnPrimaryText}>{buttonText}</Text>
+                <Text style={styles.btnPrimaryText}>{confirmLabel}</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity
               style={[styles.btnSingle, { backgroundColor: config.bgColor }]}
-              onPress={onClose}
+              onPress={() => { confirmButton?.onPress?.(); onDismiss(); }}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={confirmLabel}
             >
-              <Text style={styles.btnSingleText}>{buttonText}</Text>
+              <Text style={styles.btnSingleText}>{confirmLabel}</Text>
             </TouchableOpacity>
           )}
         </Animated.View>
@@ -340,9 +338,7 @@ export default function AppAlert({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    backgroundColor: '#00000070',
-  },
+  backdrop: { backgroundColor: '#00000070' },
   center: {
     flex: 1,
     justifyContent: 'center',
@@ -361,10 +357,7 @@ const styles = StyleSheet.create({
     elevation: 20,
     paddingBottom: Spacing.xl,
   },
-  topBar: {
-    height: 4,
-    width: '100%',
-  },
+  topBar: { height: 4, width: '100%' },
   iconArea: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -408,11 +401,7 @@ const styles = StyleSheet.create({
     marginVertical: Spacing.lg,
     borderRadius: 1,
   },
-  btnRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: Spacing.xl,
-  },
+  btnRow: { flexDirection: 'row', gap: 10, paddingHorizontal: Spacing.xl },
   btnBase: {
     flex: 1,
     flexDirection: 'row',
@@ -422,19 +411,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.base,
     gap: 6,
   },
-  btnCancel: {
-    borderWidth: 1.5,
-  },
-  btnCancelText: {
-    fontFamily: 'Manrope-Bold',
-    fontSize: 15,
-  },
+  btnCancel: { borderWidth: 1.5 },
+  btnCancelText: { fontFamily: 'Manrope-Bold', fontSize: 15 },
   btnPrimary: {},
-  btnPrimaryText: {
-    color: '#fff',
-    fontFamily: 'Manrope-ExtraBold',
-    fontSize: 15,
-  },
+  btnPrimaryText: { color: '#fff', fontFamily: 'Manrope-ExtraBold', fontSize: 15 },
   btnSingle: {
     marginHorizontal: Spacing.xl,
     paddingVertical: 14,
