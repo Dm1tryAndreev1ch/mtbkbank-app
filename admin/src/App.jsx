@@ -8,10 +8,16 @@ let TOKEN = localStorage.getItem('admin_token') || '';
  * Иначе относительный /api… — через proxy Vite (ADMIN_BACKEND_URL в vite.config).
  */
 function withApiBase(path) {
-  const p = path.startsWith('/') ? path : `/${path}`;
-  const base = (import.meta.env.VITE_API_ORIGIN || import.meta.env.VITE_API_BASE_URL || '')
-    .replace(/\/$/, '');
-  return base ? `${base}${p}` : p;
+  let p = path.startsWith('/') ? path : `/${path}`;
+  let base = (import.meta.env.VITE_API_ORIGIN || import.meta.env.VITE_API_BASE_URL || '')
+    .trim()
+    .replace(/\/+$/, '');
+  if (!base) return p;
+  // http://host:3000/api + /api/... → убрать хвост /api, иначе 404 на /api/api/...
+  if (p.startsWith('/api') && /\/api$/i.test(base)) {
+    base = base.replace(/\/api$/i, '');
+  }
+  return `${base}${p}`;
 }
 
 function parseJsonBody(text) {
