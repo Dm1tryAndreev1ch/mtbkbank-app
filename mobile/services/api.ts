@@ -3,13 +3,24 @@ import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-let API_BASE = 'http://localhost:3000/api';
-if (Constants.expoConfig?.hostUri) {
-  const host = Constants.expoConfig.hostUri.split(':')[0];
-  API_BASE = `http://${host}:3000/api`;
-} else if (Platform.OS === 'android') {
-  API_BASE = 'http://10.0.2.2:3000/api';
+function getApiBase(): string {
+  // Expo Go + Dev Client: hostUri = "192.168.x.x:8081"
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    (Constants.manifest as any)?.debuggerHost;
+  if (hostUri) {
+    const host = hostUri.split(':')[0];
+    return `http://${host}:3000/api`;
+  }
+  // Android emulator
+  if (Platform.OS === 'android') return 'http://10.0.2.2:3000/api';
+  // iOS simulator
+  if (Platform.OS === 'ios') return 'http://localhost:3000/api';
+  // Fallback — replace with your machine's LAN IP if needed
+  return 'http://192.168.1.100:3000/api';
 }
+
+const API_BASE = getApiBase();
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -37,6 +48,9 @@ api.interceptors.response.use(
           const res = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
           if (res.data.accessToken) {
             await SecureStore.setItemAsync('token', res.data.accessToken);
+            if (res.data.refreshToken) {
+              await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
+            }
             originalRequest.headers.Authorization = `Bearer ${res.data.accessToken}`;
             return api(originalRequest);
           }
