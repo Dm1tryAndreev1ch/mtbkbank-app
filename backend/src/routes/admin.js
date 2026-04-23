@@ -134,6 +134,15 @@ router.post('/users', async (req, res) => {
       },
     });
 
+    // FIX: создаём дефолтную активную колоду для каждого нового пользователя
+    await req.prisma.deck.create({
+      data: {
+        userId: user.id,
+        name: 'Моя колода',
+        isActive: true,
+      },
+    });
+
     res.json(user);
   } catch (err) {
     console.error('Create user error:', err);
