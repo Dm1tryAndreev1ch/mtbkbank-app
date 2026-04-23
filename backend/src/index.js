@@ -1,9 +1,9 @@
-require('dotenv').config(); // FIX: load .env before anything else
+require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');          // FIX: security headers
-const rateLimit = require('express-rate-limit'); // FIX: rate limiting
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { PrismaClient } = require('@prisma/client');
 
 const authRoutes = require('./routes/auth');
@@ -18,10 +18,8 @@ const adminRoutes = require('./routes/admin');
 const app = express();
 const prisma = new PrismaClient();
 
-// Security headers
 app.use(helmet());
 
-// Rate limiting: 200 requests per 15 minutes per IP
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -31,49 +29,15 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// CORS — explicit allowlist from env + always-allowed patterns
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
-  : [];
-
-// Always allowed: Expo Go, localhost, LAN subnets (mobile dev on real device)
-const ALLOWED_PATTERNS = [
-  /^exp:\/\/.*/,
-  /^http:\/\/localhost(:\d+)?$/,
-  /^http:\/\/127\.0\.0\.1(:\d+)?$/,
-  /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/,
-  /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
-  /^http:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/,
-];
-
-app.use(cors({
-  origin: (origin, callback) => {
-    // No origin = same-origin / native app / curl — allow
-    if (!origin) return callback(null, true);
-
-    // Explicit allowlist from ALLOWED_ORIGINS env
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-
-    // Pattern-based allowlist (Expo Go + LAN, all environments)
-    if (ALLOWED_PATTERNS.some((p) => p.test(origin))) {
-      return callback(null, true);
-    }
-
-    console.warn('[CORS] Blocked origin:', origin);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-}));
+app.use(cors({ origin: true, credentials: true }));
 
 app.use(express.json());
 
-// Attach prisma to every request
 app.use((req, _res, next) => {
   req.prisma = prisma;
   next();
 });
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/accounts', accountRoutes);
@@ -83,7 +47,6 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/admin', adminRoutes);
 
-// Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
