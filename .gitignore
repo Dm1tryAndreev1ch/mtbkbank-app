@@ -1,5 +1,10 @@
 node_modules/
 .env
+
+# Локальные/временные артефакты миграций (имена файлов)
+migration_lock.toml
+**/migration.sql
+
 dist/
 build/
 .next/
