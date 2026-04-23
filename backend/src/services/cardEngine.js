@@ -16,25 +16,23 @@ const { broadcastToUser } = require('../websocket');
 /**
  * Roll for a card drop after a purchase transaction.
  * Returns null or a rarity string.
- * FIX: шанс выпадения карты исправлен — 30% (roll < 0.30), комментарий синхронизирован с кодом.
+ *
+ * Two independent Math.random() calls:
+ *   1st — did a drop happen? (< 0.30 = yes, 30% overall drop rate)
+ *   2nd — which rarity? weighted against RARITY_CONFIG dropChance thresholds
+ *         LEGENDARY < 0.03 | EPIC < 0.15 | RARE < 0.40 | COMMON otherwise
  */
 function rollCardDrop(overrideRates = null) {
   const rates = overrideRates || RARITY_CONFIG;
-  
-  // Single roll determines both drop and rarity
-  const roll = Math.random();
-  
-  // 30% chance to get ANY card on a purchase
-  if (roll >= 0.30) return null;
-  
-  // Check rarities in order from rarest to most common
-  // LEGENDARY: < 0.03
-  if (roll < 0.03) return 'LEGENDARY';
-  // EPIC: < 0.15 (0.03 + 0.12)
-  if (roll < 0.15) return 'EPIC';
-  // RARE: < 0.40 (0.15 + 0.25) - but we already checked < 0.30 for drop
-  if (roll < 0.18) return 'RARE';
-  // COMMON: rest (0.18 to 0.30)
+
+  // First roll: did a drop happen at all?
+  if (Math.random() >= 0.30) return null;
+
+  // Second roll: which rarity?
+  const rarityRoll = Math.random();
+  if (rarityRoll < (rates.LEGENDARY?.dropChance ?? 0.03)) return 'LEGENDARY';
+  if (rarityRoll < (rates.LEGENDARY?.dropChance ?? 0.03) + (rates.EPIC?.dropChance ?? 0.12)) return 'EPIC';
+  if (rarityRoll < (rates.LEGENDARY?.dropChance ?? 0.03) + (rates.EPIC?.dropChance ?? 0.12) + (rates.RARE?.dropChance ?? 0.25)) return 'RARE';
   return 'COMMON';
 }
 
@@ -132,8 +130,6 @@ async function calculateDeckCashback(prisma, deckId) {
 
 /**
  * Decay all card health daily.
- * FIX: устранён N+1 — обновление здоровья выполняется через updateMany по каждой редкости,
- * а не отдельным запросом на каждую карту. Карты с предупреждением обрабатываются отдельно.
  */
 async function decayAllCardHealth(prisma) {
   let decayRates = {};
@@ -145,7 +141,6 @@ async function decayAllCardHealth(prisma) {
   for (const [rarity, config] of Object.entries(RARITY_CONFIG)) {
     const decayAmount = decayRates[rarity] || config.healthDecay;
 
-    // Найти карты, пересекающие порог 20 HP (нужен индивидуальный push)
     const warningCards = await prisma.userCard.findMany({
       where: {
         health: { gt: 20, lte: 20 + decayAmount },
@@ -162,8 +157,6 @@ async function decayAllCardHealth(prisma) {
       broadcastToUser(card.userId, 'CARD_WARNING', { cardId: card.id, health: newHealth });
     }
 
-    // Массовое обновление через raw SQL-подобный подход
-    // Prisma не поддерживает computed updateMany, поэтому используем $executeRaw
     await prisma.$executeRaw`
       UPDATE "UserCard"
       SET health = GREATEST(0, health - ${decayAmount})
@@ -236,7 +229,6 @@ async function sacrificeCard(prisma, userId, sacrificeId, targetId) {
   const rarity = sacrificeCard.collectionCard.rarity;
   const healMultiplier = RARITY_CONFIG[rarity].healMultiplier;
   const healAmount = Math.floor(sacrificeCard.collectionCard.maxHealth * healMultiplier);
-
   const newHealth = Math.min(targetCard.collectionCard.maxHealth, targetCard.health + healAmount);
 
   const resultData = await prisma.$transaction(async (tx) => {
