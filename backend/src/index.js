@@ -31,18 +31,39 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// CORS allowlist via ALLOWED_ORIGINS env variable
+// CORS — explicit allowlist from env + dev patterns
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:8081', 'http://localhost:3000', 'exp://localhost:8081'];
+  ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
+  : [];
+
+// Allowed in development: Expo Go, localhost, LAN subnets
+const DEV_PATTERNS = [
+  /^exp:\/\/.*/,
+  /^http:\/\/localhost(:\d+)?$/,
+  /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+  /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+  /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+  /^http:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // No origin = same-origin request / native app / curl — allow
+    if (!origin) return callback(null, true);
+
+    // Explicit production allowlist
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    // Pattern-based allowlist (dev only)
+    if (
+      process.env.NODE_ENV !== 'production' &&
+      DEV_PATTERNS.some((p) => p.test(origin))
+    ) {
+      return callback(null, true);
     }
+
+    console.warn('[CORS] Blocked origin:', origin);
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
 }));
