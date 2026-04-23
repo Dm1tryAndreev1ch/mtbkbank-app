@@ -17,8 +17,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/subscriptions — create a new subscription
-// FIX: добавлен эндпоинт создания (был заглушкой)
+// POST /api/subscriptions
 router.post('/', async (req, res) => {
   try {
     const { name, amount, currency = 'BYN', icon, category, nextPayment } = req.body;
@@ -47,17 +46,30 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/subscriptions/:id
+// FIX: allow editing core fields, not only isActive
 router.put('/:id', async (req, res) => {
   try {
-    const { isActive } = req.body;
+    const { name, amount, currency, icon, category, nextPayment, isActive } = req.body;
     const sub = await req.prisma.subscription.findFirst({
       where: { id: req.params.id, userId: req.userId },
     });
     if (!sub) return res.status(404).json({ error: 'Подписка не найдена' });
 
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (amount !== undefined) {
+      if (!amount || amount <= 0) return res.status(400).json({ error: 'Сумма должна быть больше 0' });
+      data.amount = amount;
+    }
+    if (currency !== undefined) data.currency = currency;
+    if (icon !== undefined) data.icon = icon;
+    if (category !== undefined) data.category = category;
+    if (nextPayment !== undefined) data.nextPayment = new Date(nextPayment);
+    if (isActive !== undefined) data.isActive = isActive;
+
     const updated = await req.prisma.subscription.update({
       where: { id: sub.id },
-      data: { isActive },
+      data,
     });
     res.json(updated);
   } catch (err) {
@@ -65,8 +77,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/subscriptions/:id — remove subscription
-// FIX: добавлен эндпоинт удаления (был заглушкой)
+// DELETE /api/subscriptions/:id
 router.delete('/:id', async (req, res) => {
   try {
     const sub = await req.prisma.subscription.findFirst({
