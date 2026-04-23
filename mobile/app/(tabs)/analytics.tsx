@@ -46,15 +46,7 @@ export default function AnalyticsScreen() {
     api.getAnalytics(p)
       .then(({ data }) => { setAnalytics(data); setLoading(false); })
       .catch(() => {
-        setAnalytics({
-          totalSpent: 45200,
-          breakdown: [
-            { category: 'Супермаркеты', amount: 15000 },
-            { category: 'Переводы', amount: 12000 },
-            { category: 'Рестораны', amount: 8200 },
-            { category: 'Развлечения', amount: 10000 },
-          ],
-        });
+        setAnalytics(null);
         setLoading(false);
       });
   }, []);
@@ -161,7 +153,7 @@ export default function AnalyticsScreen() {
                   <SkeletonPulse key={i} style={styles.legendItem} colors={colors} />
                 ))
               : breakdown.map((cat, i) => {
-                  const pct = analytics.totalSpent > 0
+                  const pct = analytics?.totalSpent > 0
                     ? (cat.amount / analytics.totalSpent) * 100
                     : 0;
                   return (

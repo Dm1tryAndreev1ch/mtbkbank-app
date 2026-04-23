@@ -38,8 +38,9 @@ export default function TopupScreen() {
       await api.topupAccount(mainAcc.id, amt);
       await loadAccounts();
       Alert.alert('Успешно', `Счёт пополнен на ${formatMoney(amt)}`, [{ text: 'OK', onPress: () => router.back() }]);
-    } catch {
-      Alert.alert('Успешно', `Счёт пополнен на ${formatMoney(amt)} (демо)`, [{ text: 'OK', onPress: () => router.back() }]);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Не удалось выполнить пополнение. Попробуйте позже.';
+      Alert.alert('Ошибка', msg);
     } finally { setLoading(false); }
   };
 
