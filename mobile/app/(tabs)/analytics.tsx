@@ -51,15 +51,14 @@ export default function AnalyticsScreen() {
       });
   }, []);
 
+  // FIX: single fetch trigger — useFocusEffect handles both focus and period changes
   useFocusEffect(
     useCallback(() => {
       fetchAnalytics(period);
       loadSubscriptions();
       loadLimits();
-    }, [period])
+    }, [period, fetchAnalytics])
   );
-
-  useEffect(() => { fetchAnalytics(period); }, [period]);
 
   const breakdown: any[] = analytics?.breakdown || [];
 
