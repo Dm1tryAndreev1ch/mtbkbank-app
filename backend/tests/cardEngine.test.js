@@ -15,6 +15,7 @@ const mockPrisma = {
   notification: { create: jest.fn() },
   transaction: { update: jest.fn() },
   deckCard: { deleteMany: jest.fn() },
+  systemConfig: { findUnique: jest.fn().mockResolvedValue(null) }, // returns null → use default decay rates
   $executeRaw: jest.fn(),
   $transaction: jest.fn(async (fn) => fn(mockPrisma)),
 };
@@ -31,6 +32,8 @@ describe('Card Engine Mechanics', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Re-apply persistent defaults after clearAllMocks wipes them
+    mockPrisma.systemConfig.findUnique.mockResolvedValue(null);
   });
 
   describe('rollCardDrop', () => {
