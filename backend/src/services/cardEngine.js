@@ -235,7 +235,7 @@ async function cleanupDeadCards(prisma) {
 
 /**
  * Decrease HP for user cards that are currently in an active deck (one tick per interval).
- * Creates in-app notifications when HP enters the low zone and when a card is destroyed.
+ * Creates in-app notifications (Notification /api/notifications only — no Expo OS push, no websocket).
  */
 async function tickActiveDeckCardHealth(prisma) {
   const { lossPerTick } = getActiveDeckHpTickConfig();
@@ -269,10 +269,6 @@ async function tickActiveDeckCardHealth(prisma) {
             icon: 'heart_broken',
           },
         });
-        broadcastToUser(uc.userId, 'CARD_DESTROYED', {
-          cardId: uc.id,
-          reason: 'ZERO_HP',
-        });
         continue;
       }
 
@@ -290,10 +286,6 @@ async function tickActiveDeckCardHealth(prisma) {
             body: `Карта «${uc.collectionCard.name}» в активной колоде: осталось ${newHealth} HP.`,
             icon: 'warning',
           },
-        });
-        broadcastToUser(uc.userId, 'CARD_LOW_HP', {
-          cardId: uc.id,
-          health: newHealth,
         });
       }
     }

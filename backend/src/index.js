@@ -50,7 +50,11 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
 
-/** Interval between active-deck HP ticks; override with ACTIVE_DECK_HP_TICK_MS in .env */
+/**
+ * HP drains on the server on this interval even when the mobile app is closed,
+ * as long as this Node process is running (not tied to a client).
+ * Override: ACTIVE_DECK_HP_TICK_MS in .env (default 60000 = 60s).
+ */
 const ACTIVE_DECK_HP_TICK_MS = Math.max(
   1000,
   parseInt(process.env.ACTIVE_DECK_HP_TICK_MS || '60000', 10) || 60000
