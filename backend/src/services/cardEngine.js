@@ -13,6 +13,25 @@ const RARITY_CONFIG = {
 // Warning threshold: notify when health drops to or below this value
 const HEALTH_WARNING_THRESHOLD = 30;
 
+/**
+ * Active deck HP drain — only cards slotted in the user’s active deck lose HP on a timer.
+ *
+ * Change tick interval: env ACTIVE_DECK_HP_TICK_MS in backend/.env (see .env.example).
+ * Change HP lost per tick: ACTIVE_DECK_HP_LOSS_PER_TICK (default 1).
+ * Change “low HP” threshold: ACTIVE_DECK_LOW_HP_THRESHOLD (default 30).
+ */
+const ACTIVE_DECK_LOW_HP_THRESHOLD = Math.max(
+  1,
+  parseInt(process.env.ACTIVE_DECK_LOW_HP_THRESHOLD || String(HEALTH_WARNING_THRESHOLD), 10) || HEALTH_WARNING_THRESHOLD
+);
+
+function getActiveDeckHpTickConfig() {
+  const loss = parseInt(process.env.ACTIVE_DECK_HP_LOSS_PER_TICK || '1', 10);
+  return {
+    lossPerTick: Number.isFinite(loss) && loss > 0 ? loss : 1,
+  };
+}
+
 const { sendPushNotification, sendCardDeathWarningPush } = require('../push');
 const { broadcastToUser } = require('../websocket');
 
@@ -215,6 +234,73 @@ async function cleanupDeadCards(prisma) {
 }
 
 /**
+ * Decrease HP for user cards that are currently in an active deck (one tick per interval).
+ * Creates in-app notifications when HP enters the low zone and when a card is destroyed.
+ */
+async function tickActiveDeckCardHealth(prisma) {
+  const { lossPerTick } = getActiveDeckHpTickConfig();
+
+  const activeDecks = await prisma.deck.findMany({
+    where: { isActive: true },
+    include: {
+      deckCards: {
+        include: {
+          userCard: { include: { collectionCard: true } },
+        },
+      },
+    },
+  });
+
+  for (const deck of activeDecks) {
+    for (const dc of deck.deckCards) {
+      const uc = dc.userCard;
+      if (!uc || uc.health <= 0) continue;
+
+      const oldHealth = uc.health;
+      const newHealth = oldHealth - lossPerTick;
+
+      if (newHealth <= 0) {
+        await prisma.userCard.delete({ where: { id: uc.id } });
+        await prisma.notification.create({
+          data: {
+            userId: uc.userId,
+            title: '💀 Карта уничтожена',
+            body: `Карта «${uc.collectionCard.name}» потеряла всё здоровье и исчезла из коллекции.`,
+            icon: 'heart_broken',
+          },
+        });
+        broadcastToUser(uc.userId, 'CARD_DESTROYED', {
+          cardId: uc.id,
+          reason: 'ZERO_HP',
+        });
+        continue;
+      }
+
+      await prisma.userCard.update({
+        where: { id: uc.id },
+        data: { health: newHealth },
+      });
+
+      const enteredLowZone = oldHealth > ACTIVE_DECK_LOW_HP_THRESHOLD && newHealth <= ACTIVE_DECK_LOW_HP_THRESHOLD;
+      if (enteredLowZone) {
+        await prisma.notification.create({
+          data: {
+            userId: uc.userId,
+            title: '⚠️ Низкое здоровье карты',
+            body: `Карта «${uc.collectionCard.name}» в активной колоде: осталось ${newHealth} HP.`,
+            icon: 'warning',
+          },
+        });
+        broadcastToUser(uc.userId, 'CARD_LOW_HP', {
+          cardId: uc.id,
+          health: newHealth,
+        });
+      }
+    }
+  }
+}
+
+/**
  * Sacrifice one card to heal another.
  */
 async function sacrificeCard(prisma, userId, sacrificeId, targetId) {
@@ -287,6 +373,7 @@ module.exports = {
   calculateDeckCashback,
   decayAllCardHealth,
   cleanupDeadCards,
+  tickActiveDeckCardHealth,
   sacrificeCard,
   convertCardToPoints,
 };

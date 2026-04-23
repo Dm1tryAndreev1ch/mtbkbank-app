@@ -12,6 +12,7 @@ const mockPrisma = {
   user: { findUnique: jest.fn(), update: jest.fn() },
   userCard: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), delete: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
   collectionCard: { findMany: jest.fn() },
+  deck: { findMany: jest.fn() },
   notification: { create: jest.fn() },
   transaction: { update: jest.fn() },
   deckCard: { deleteMany: jest.fn() },
@@ -26,7 +27,7 @@ jest.mock('@prisma/client', () => {
   };
 });
 
-const { processCardDrop, decayAllCardHealth, sacrificeCard, rollCardDrop } = require('../src/services/cardEngine');
+const { processCardDrop, decayAllCardHealth, sacrificeCard, rollCardDrop, tickActiveDeckCardHealth } = require('../src/services/cardEngine');
 
 describe('Card Engine Mechanics', () => {
 
@@ -83,6 +84,60 @@ describe('Card Engine Mechanics', () => {
       await decayAllCardHealth(mockPrisma);
 
       expect(mockPrisma.$executeRaw).toHaveBeenCalled();
+    });
+  });
+
+  describe('tickActiveDeckCardHealth', () => {
+    it('reduces health for cards in active deck slots', async () => {
+      mockPrisma.deck.findMany.mockResolvedValue([
+        {
+          id: 'deck1',
+          isActive: true,
+          deckCards: [
+            {
+              userCard: {
+                id: 'uc1',
+                userId: 'user1',
+                health: 50,
+                collectionCard: { name: 'Brand A' },
+              },
+            },
+          ],
+        },
+      ]);
+      mockPrisma.userCard.update.mockResolvedValue({});
+
+      await tickActiveDeckCardHealth(mockPrisma);
+
+      expect(mockPrisma.userCard.update).toHaveBeenCalledWith({
+        where: { id: 'uc1' },
+        data: { health: 49 },
+      });
+    });
+
+    it('deletes card at 0 HP and creates death notification', async () => {
+      mockPrisma.deck.findMany.mockResolvedValue([
+        {
+          id: 'deck1',
+          isActive: true,
+          deckCards: [
+            {
+              userCard: {
+                id: 'ucDead',
+                userId: 'user1',
+                health: 1,
+                collectionCard: { name: 'Gone' },
+              },
+            },
+          ],
+        },
+      ]);
+      mockPrisma.userCard.delete.mockResolvedValue({});
+
+      await tickActiveDeckCardHealth(mockPrisma);
+
+      expect(mockPrisma.userCard.delete).toHaveBeenCalledWith({ where: { id: 'ucDead' } });
+      expect(mockPrisma.notification.create).toHaveBeenCalled();
     });
   });
 

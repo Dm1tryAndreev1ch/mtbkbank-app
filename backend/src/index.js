@@ -18,6 +18,7 @@ const limitRoutes = require('./routes/limits');
 const notificationRoutes = require('./routes/notifications');
 const subscriptionRoutes = require('./routes/subscriptions');
 const adminRoutes = require('./routes/admin');
+const { tickActiveDeckCardHealth } = require('./services/cardEngine');
 
 const app = express();
 const prisma = new PrismaClient();
@@ -48,8 +49,22 @@ app.use('/api/admin', adminRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
+
+/** Interval between active-deck HP ticks; override with ACTIVE_DECK_HP_TICK_MS in .env */
+const ACTIVE_DECK_HP_TICK_MS = Math.max(
+  1000,
+  parseInt(process.env.ACTIVE_DECK_HP_TICK_MS || '60000', 10) || 60000
+);
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Active deck HP tick every ${ACTIVE_DECK_HP_TICK_MS}ms (env ACTIVE_DECK_HP_TICK_MS)`);
+
+  setInterval(() => {
+    tickActiveDeckCardHealth(prisma).catch((err) =>
+      console.error('[active-deck-hp]', err)
+    );
+  }, ACTIVE_DECK_HP_TICK_MS);
 });
 
 module.exports = app;
