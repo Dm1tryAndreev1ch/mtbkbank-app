@@ -3,11 +3,21 @@ import React, { useState, useEffect } from 'react';
 const API = '/api/admin';
 let TOKEN = localStorage.getItem('admin_token') || '';
 
-/** Relative path uses Vite proxy (dev/preview). Set VITE_API_BASE_URL if the UI is hosted without /api proxy. */
+/**
+ * VITE_API_ORIGIN (see .env.development) = прямой URL API — надёжный логин (JSON), без HTML от прокси.
+ * Иначе относительный /api… — через proxy Vite (ADMIN_BACKEND_URL в vite.config).
+ */
 function withApiBase(path) {
-  const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
   const p = path.startsWith('/') ? path : `/${path}`;
+  const base = (import.meta.env.VITE_API_ORIGIN || import.meta.env.VITE_API_BASE_URL || '')
+    .replace(/\/$/, '');
   return base ? `${base}${p}` : p;
+}
+
+function parseJsonBody(text) {
+  const raw = (text || '').replace(/^\uFEFF/, '').trim();
+  if (!raw) return {};
+  return JSON.parse(raw);
 }
 
 async function apiFetch(path, opts = {}) {
@@ -45,9 +55,12 @@ function LoginPage({ onLogin }) {
       const text = await res.text();
       let data = {};
       try {
-        data = text ? JSON.parse(text) : {};
+        data = parseJsonBody(text);
       } catch {
-        setError('Сервер вернул неожиданный ответ. Запущен ли API на порту 3000?');
+        const hint = text.trimStart().startsWith('<')
+          ? 'Ответ похож на HTML (часто прокси Vite). Убедитесь, что в admin/.env.development задан VITE_API_ORIGIN и backend запущен.'
+          : 'Ответ не JSON. Запустите backend (порт из VITE_API_ORIGIN, обычно 3000).';
+        setError(hint);
         return;
       }
       if (!res.ok) {
