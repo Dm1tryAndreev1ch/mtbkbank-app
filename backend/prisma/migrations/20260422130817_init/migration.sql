@@ -24,6 +24,7 @@ CREATE TABLE "User" (
     "pin" TEXT NOT NULL,
     "avatarUrl" TEXT,
     "expoPushToken" TEXT,
+    "refreshToken" TEXT,
     "mbPoints" INTEGER NOT NULL DEFAULT 0,
     "status" "UserStatus" NOT NULL DEFAULT 'STANDARD',
     "isAdmin" BOOLEAN NOT NULL DEFAULT false,
