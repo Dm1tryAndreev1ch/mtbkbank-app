@@ -3,8 +3,15 @@ import React, { useState, useEffect } from 'react';
 const API = '/api/admin';
 let TOKEN = localStorage.getItem('admin_token') || '';
 
+/** Relative path uses Vite proxy (dev/preview). Set VITE_API_BASE_URL if the UI is hosted without /api proxy. */
+function withApiBase(path) {
+  const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return base ? `${base}${p}` : p;
+}
+
 async function apiFetch(path, opts = {}) {
-  const res = await fetch(path, {
+  const res = await fetch(withApiBase(path), {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
@@ -28,12 +35,25 @@ function LoginPage({ onLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     try {
-      const data = await fetch('/api/auth/login', {
+      const res = await fetch(withApiBase('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, pin }),
-      }).then(r => r.json());
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setError('Сервер вернул неожиданный ответ. Запущен ли API на порту 3000?');
+        return;
+      }
+      if (!res.ok) {
+        setError(data.error || `Ошибка входа (${res.status})`);
+        return;
+      }
       if (data.accessToken && data.user?.isAdmin) {
         TOKEN = data.accessToken;
         localStorage.setItem('admin_token', data.accessToken);
@@ -44,7 +64,7 @@ function LoginPage({ onLogin }) {
         setError(data.error || 'Ошибка входа');
       }
     } catch (err) {
-      setError('Ошибка соединения');
+      setError('Нет соединения с API. Запустите backend (`npm run dev` в папке backend) и откройте админку через `npm run dev` в папке admin.');
     }
   };
 
