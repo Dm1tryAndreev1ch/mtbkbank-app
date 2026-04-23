@@ -1,5 +1,9 @@
+require('dotenv').config(); // FIX: load .env before anything else
+
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');          // FIX: security headers
+const rateLimit = require('express-rate-limit'); // FIX: rate limiting
 const { PrismaClient } = require('@prisma/client');
 
 const authRoutes = require('./routes/auth');
@@ -14,7 +18,20 @@ const adminRoutes = require('./routes/admin');
 const app = express();
 const prisma = new PrismaClient();
 
-// FIX: CORS allowlist via ALLOWED_ORIGINS env variable
+// Security headers
+app.use(helmet());
+
+// Rate limiting: 200 requests per 15 minutes per IP
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много запросов, попробуйте позже' },
+});
+app.use(limiter);
+
+// CORS allowlist via ALLOWED_ORIGINS env variable
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : ['http://localhost:8081', 'http://localhost:3000', 'exp://localhost:8081'];

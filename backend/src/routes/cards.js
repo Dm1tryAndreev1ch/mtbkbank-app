@@ -6,11 +6,10 @@ const router = express.Router();
 
 router.use(authMiddleware);
 
-// GET /api/cards/collection — all available card templates
+// GET /api/cards/collection
 router.get('/collection', async (req, res) => {
   try {
     const { rarity } = req.query;
-
     const cacheKey = rarity ? `cards:collection:rarity:${rarity}` : 'cards:collection:all';
     const cachedData = await getCached(cacheKey);
     if (cachedData) return res.json(cachedData);
@@ -23,7 +22,6 @@ router.get('/collection', async (req, res) => {
       orderBy: [{ rarity: 'asc' }, { name: 'asc' }],
     });
 
-    // Reduced TTL from 3600 to 300s so new cards appear within 5 minutes
     await setCached(cacheKey, cards, 300);
     res.json(cards);
   } catch (err) {
@@ -31,7 +29,7 @@ router.get('/collection', async (req, res) => {
   }
 });
 
-// GET /api/cards/inventory — user's collected cards
+// GET /api/cards/inventory
 router.get('/inventory', async (req, res) => {
   try {
     const { rarity, sort = 'date' } = req.query;
@@ -57,7 +55,7 @@ router.get('/inventory', async (req, res) => {
   }
 });
 
-// GET /api/cards/stats/rarities — must be ABOVE /:id to avoid being caught by the dynamic route
+// GET /api/cards/stats/rarities — MUST be above /:id
 router.get('/stats/rarities', async (req, res) => {
   try {
     const cards = await req.prisma.userCard.findMany({
@@ -72,7 +70,7 @@ router.get('/stats/rarities', async (req, res) => {
   }
 });
 
-// POST /api/cards/buy — purchase a card from the shop for MB points
+// POST /api/cards/buy
 router.post('/buy', async (req, res) => {
   try {
     const { collectionCardId } = req.body;
@@ -87,7 +85,6 @@ router.post('/buy', async (req, res) => {
       return res.status(404).json({ error: 'Карта не найдена или недоступна' });
     }
 
-    // Guard against duplicate purchases
     const alreadyOwned = await req.prisma.userCard.findFirst({
       where: { userId: req.userId, collectionCardId },
     });
@@ -110,12 +107,13 @@ router.post('/buy', async (req, res) => {
         data: { mbPoints: { decrement: price } },
       });
 
+      // FIX: explicit source: 'SHOP' so CardSource enum is satisfied
       const userCard = await tx.userCard.create({
         data: {
           userId: req.userId,
           collectionCardId,
           health: collectionCard.maxHealth,
-          acquiredAt: new Date(),
+          source: 'SHOP',
         },
         include: { collectionCard: true },
       });
@@ -144,7 +142,7 @@ router.post('/sacrifice', async (req, res) => {
   }
 });
 
-// POST /api/cards/convert — convert card to MB points
+// POST /api/cards/convert
 router.post('/convert', async (req, res) => {
   try {
     const { cardId } = req.body;
@@ -156,7 +154,7 @@ router.post('/convert', async (req, res) => {
   }
 });
 
-// GET /api/cards/:id — MUST remain last to avoid catching static paths above
+// GET /api/cards/:id — MUST remain last
 router.get('/:id', async (req, res) => {
   try {
     const card = await req.prisma.userCard.findFirst({

@@ -27,6 +27,7 @@ enum CardSource {
   QUEST
   ADMIN
   GIFT
+  SHOP
 }
 
 enum TradeStatus {
@@ -52,55 +53,56 @@ enum QuestType {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String     @id @default(cuid())
   name          String
-  phone         String    @unique
+  phone         String     @unique
   pin           String
   avatarUrl     String?
   expoPushToken String?
-  mbPoints      Int       @default(0)
+  refreshToken  String?    // FIX: stored for revocation support
+  mbPoints      Int        @default(0)
   status        UserStatus @default(STANDARD)
-  isAdmin       Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  isAdmin       Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
-  accounts      BankAccount[]
-  bankCards     BankCard[]
-  userCards     UserCard[]
-  decks         Deck[]
-  tradesFrom    CardTrade[]   @relation("TradesFrom")
-  tradesTo      CardTrade[]   @relation("TradesTo")
-  userQuests    UserQuest[]
-  subscriptions Subscription[]
+  accounts       BankAccount[]
+  bankCards      BankCard[]
+  userCards      UserCard[]
+  decks          Deck[]
+  tradesFrom     CardTrade[]    @relation("TradesFrom")
+  tradesTo       CardTrade[]    @relation("TradesTo")
+  userQuests     UserQuest[]
+  subscriptions  Subscription[]
   spendingLimits SpendingLimit[]
-  notifications Notification[]
-  transactions  Transaction[]
+  notifications  Notification[]
+  transactions   Transaction[]
 }
 
 model BankAccount {
   id        String   @id @default(cuid())
   userId    String
   name      String
-  type      String   // main, savings, currency
+  type      String
   balance   Float    @default(0)
   currency  String   @default("RUB")
   createdAt DateTime @default(now())
 
-  user         User          @relation(fields: [userId], references: [id])
-  bankCards    BankCard[]
+  user             User          @relation(fields: [userId], references: [id])
+  bankCards        BankCard[]
   transactionsFrom Transaction[] @relation("TransFrom")
   transactionsTo   Transaction[] @relation("TransTo")
 }
 
 model BankCard {
-  id          String   @id @default(cuid())
-  userId      String
-  accountId   String
+  id           String   @id @default(cuid())
+  userId       String
+  accountId    String
   maskedNumber String
-  type        String   // VISA, Mastercard
-  tier        String   // Standard, Premium, Black
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  type         String
+  tier         String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   user    User        @relation(fields: [userId], references: [id])
   account BankAccount @relation(fields: [accountId], references: [id])
@@ -118,9 +120,9 @@ model Transaction {
   merchant      String?
   merchantIcon  String?
   description   String?
-  status        String          @default("completed") // completed, pending, scheduled
+  status        String          @default("completed")
   scheduledAt   DateTime?
-  droppedCardId String?         // card dropped from this transaction
+  droppedCardId String?
   createdAt     DateTime        @default(now())
 
   user        User         @relation(fields: [userId], references: [id])
@@ -129,19 +131,22 @@ model Transaction {
 }
 
 model CollectionCard {
-  id              String   @id @default(cuid())
-  name            String
-  brandName       String
-  brandIcon       String   // material icon name
-  rarity          Rarity
-  cashbackPercent Float
-  cashbackCategory String? // specific category or null for all
-  imageUrl        String?
-  description     String?
-  mbValue         Int      // points when converted
-  maxHealth       Int      @default(100)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
+  id               String   @id @default(cuid())
+  name             String
+  brandName        String
+  brandIcon        String
+  brandLogo        String?
+  imageUrl         String?
+  description      String?
+  rarity           Rarity
+  cashbackPercent  Float
+  cashbackCategory String?
+  mbValue          Int      @default(0)
+  mbPrice          Int?     // FIX: shop price; falls back to rarity default if null
+  maxHealth        Int      @default(100)
+  dropRate         Float    @default(0)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
 
   userCards UserCard[]
 }
@@ -151,7 +156,7 @@ model UserCard {
   userId           String
   collectionCardId String
   health           Int        @default(100)
-  source           CardSource
+  source           CardSource @default(PURCHASE)
   acquiredAt       DateTime   @default(now())
 
   user           User           @relation(fields: [userId], references: [id])
@@ -200,16 +205,16 @@ model CardTrade {
 }
 
 model Quest {
-  id          String    @id @default(cuid())
-  title       String
-  description String
-  icon        String
-  rewardMB    Int       @default(0)
+  id           String    @id @default(cuid())
+  title        String
+  description  String
+  icon         String
+  rewardMB     Int       @default(0)
   rewardCardId String?
-  type        QuestType
-  condition   String    // JSON string describing condition
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
+  type         QuestType
+  condition    String
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
 
   userQuests UserQuest[]
 }
@@ -238,6 +243,7 @@ model Subscription {
   icon        String
   amount      Float
   currency    String   @default("RUB")
+  category    String   @default("Другое")
   nextPayment DateTime
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -246,12 +252,12 @@ model Subscription {
 }
 
 model SpendingLimit {
-  id          String @id @default(cuid())
+  id          String   @id @default(cuid())
   userId      String
   category    String
   limitAmount Float
-  spentAmount Float  @default(0)
-  period      String @default("monthly")
+  spentAmount Float    @default(0)
+  period      String   @default("monthly")
   createdAt   DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
@@ -274,5 +280,5 @@ model Notification {
 model SystemConfig {
   id    String @id @default(cuid())
   key   String @unique
-  value String // JSON value
+  value String
 }

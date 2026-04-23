@@ -7,11 +7,21 @@ const router = express.Router();
 const ACCESS_TTL = '15m';
 const REFRESH_TTL = '30d';
 
-function signAccess(userId) {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: ACCESS_TTL });
+// FIX: isAdmin included in access token so adminMiddleware works correctly
+function signAccess(userId, isAdmin) {
+  return jwt.sign(
+    { userId, isAdmin: !!isAdmin },
+    process.env.JWT_SECRET,
+    { expiresIn: ACCESS_TTL }
+  );
 }
+
 function signRefresh(userId) {
-  return jwt.sign({ userId }, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, { expiresIn: REFRESH_TTL });
+  return jwt.sign(
+    { userId },
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    { expiresIn: REFRESH_TTL }
+  );
 }
 
 // POST /api/auth/login
@@ -27,10 +37,9 @@ router.post('/login', async (req, res) => {
     const ok = await bcrypt.compare(pin, user.pin);
     if (!ok) return res.status(401).json({ error: 'Неверный телефон или PIN' });
 
-    const accessToken = signAccess(user.id);
+    const accessToken = signAccess(user.id, user.isAdmin);
     const refreshToken = signRefresh(user.id);
 
-    // FIX: persist refresh token for later revocation
     await req.prisma.user.update({
       where: { id: user.id },
       data: { refreshToken },
@@ -63,17 +72,16 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ error: 'Недействительный refresh token' });
     }
 
-    // FIX: validate stored token to support revocation
     const user = await req.prisma.user.findUnique({
       where: { id: payload.userId },
-      select: { id: true, status: true, refreshToken: true },
+      select: { id: true, status: true, isAdmin: true, refreshToken: true },
     });
     if (!user || user.refreshToken !== refreshToken) {
       return res.status(401).json({ error: 'Недействительный refresh token' });
     }
     if (user.status === 'BLOCKED') return res.status(403).json({ error: 'Аккаунт заблокирован' });
 
-    const newAccessToken = signAccess(user.id);
+    const newAccessToken = signAccess(user.id, user.isAdmin);
     const newRefreshToken = signRefresh(user.id);
 
     await req.prisma.user.update({
@@ -88,7 +96,6 @@ router.post('/refresh', async (req, res) => {
 });
 
 // POST /api/auth/logout
-// FIX: ревокация refresh token при logout
 router.post('/logout', authMiddleware, async (req, res) => {
   try {
     await req.prisma.user.update({

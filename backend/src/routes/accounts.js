@@ -35,8 +35,9 @@ router.get('/:id', async (req, res) => {
 // POST /api/accounts/:id/topup
 router.post('/:id/topup', async (req, res) => {
   try {
-    const { amount } = req.body;
-    if (!amount || amount <= 0) {
+    // FIX: parseFloat to handle string input, then validate
+    const amount = parseFloat(req.body.amount);
+    if (isNaN(amount) || amount <= 0) {
       return res.status(400).json({ error: 'Укажите корректную сумму' });
     }
 
@@ -45,6 +46,7 @@ router.post('/:id/topup', async (req, res) => {
     });
     if (!account) return res.status(404).json({ error: 'Счёт не найден' });
 
+    // FIX: correct Transaction fields — userId + toAccountId, no stray accountId
     const [updatedAccount, transaction] = await req.prisma.$transaction([
       req.prisma.bankAccount.update({
         where: { id: account.id },
@@ -66,6 +68,7 @@ router.post('/:id/topup', async (req, res) => {
 
     res.json({ account: updatedAccount, transaction });
   } catch (err) {
+    console.error('Topup error:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
