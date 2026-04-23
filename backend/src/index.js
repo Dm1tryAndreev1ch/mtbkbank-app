@@ -31,13 +31,13 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// CORS — explicit allowlist from env + dev patterns
+// CORS — explicit allowlist from env + always-allowed patterns
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
   : [];
 
-// Allowed in development: Expo Go, localhost, LAN subnets
-const DEV_PATTERNS = [
+// Always allowed: Expo Go, localhost, LAN subnets (mobile dev on real device)
+const ALLOWED_PATTERNS = [
   /^exp:\/\/.*/,
   /^http:\/\/localhost(:\d+)?$/,
   /^http:\/\/127\.0\.0\.1(:\d+)?$/,
@@ -48,17 +48,14 @@ const DEV_PATTERNS = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // No origin = same-origin request / native app / curl — allow
+    // No origin = same-origin / native app / curl — allow
     if (!origin) return callback(null, true);
 
-    // Explicit production allowlist
+    // Explicit allowlist from ALLOWED_ORIGINS env
     if (allowedOrigins.includes(origin)) return callback(null, true);
 
-    // Pattern-based allowlist (dev only)
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      DEV_PATTERNS.some((p) => p.test(origin))
-    ) {
+    // Pattern-based allowlist (Expo Go + LAN, all environments)
+    if (ALLOWED_PATTERNS.some((p) => p.test(origin))) {
       return callback(null, true);
     }
 
