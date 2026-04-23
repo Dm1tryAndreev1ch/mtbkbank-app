@@ -34,13 +34,11 @@ export default function PaymentsScreen() {
   const [categories, setCategories] = useState<any[]>([]);
   const [scheduled, setScheduled] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<any>(null);
   const [payAmount, setPayAmount] = useState('');
   const [merchantName, setMerchantName] = useState('');
   const [isPaying, setIsPaying] = useState(false);
-
   const [droppedCard, setDroppedCard] = useState<any>(null);
 
   const colors = useThemeColor();
@@ -58,7 +56,6 @@ export default function PaymentsScreen() {
         api.getPaymentCategories().catch(() => ({ data: [] })),
         api.getScheduledPayments().catch(() => ({ data: [] }))
       ]);
-
       setCategories(catRes.data.length ? catRes.data : [
         { id: 1, icon: 'home', name: 'ЖКУ и дом', description: 'Электричество, вода, газ', color: '#b7c8e1' },
         { id: 2, icon: 'wifi', name: 'Связь и интернет', description: 'Оплата провайдера', color: '#508ff8' },
@@ -91,7 +88,6 @@ export default function PaymentsScreen() {
       Alert.alert('Ошибка', 'Нет доступного счета');
       return;
     }
-
     setIsPaying(true);
     try {
       const res = await api.makePayment({
@@ -100,9 +96,7 @@ export default function PaymentsScreen() {
         categoryId: selectedCategory?.id,
         merchant: merchantName
       });
-
       setModalVisible(false);
-
       if (res.data?.cardDrop) {
         setDroppedCard(res.data.cardDrop);
       } else {
@@ -115,13 +109,7 @@ export default function PaymentsScreen() {
         const rand = Math.random();
         if (rand > 0.3) {
           setDroppedCard({
-            collectionCard: {
-              name: 'Черная Метка',
-              brandName: 'Visa Infinite',
-              rarity: 'LEGENDARY',
-              brandIcon: 'diamond',
-              cashbackPercent: 10
-            },
+            collectionCard: { name: 'Черная Метка', brandName: 'Visa Infinite', rarity: 'LEGENDARY', brandIcon: 'diamond', cashbackPercent: 10 },
             health: 100
           });
         } else {
@@ -144,7 +132,6 @@ export default function PaymentsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.mbBadge} onPress={() => router.push('/(tabs)/cards')}>
             <MaterialIcons name="monetization-on" size={18} color={'#fdcf49'} />
@@ -158,7 +145,6 @@ export default function PaymentsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Search */}
         <View style={styles.searchSection}>
           <View style={styles.searchBar}>
             <MaterialIcons name="search" size={22} color={colors.onSurfaceVariant} />
@@ -172,7 +158,6 @@ export default function PaymentsScreen() {
           </View>
         </View>
 
-        {/* Quick Transfers */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Быстрые переводы</Text>
@@ -187,7 +172,6 @@ export default function PaymentsScreen() {
               </View>
               <Text style={styles.contactName}>Добавить</Text>
             </TouchableOpacity>
-
             {CONTACTS.map((contact, i) => (
               <TouchableOpacity key={i} style={styles.contactItem}>
                 <View style={[styles.contactAvatar, { backgroundColor: contact.color }]}>
@@ -199,7 +183,6 @@ export default function PaymentsScreen() {
           </ScrollView>
         </View>
 
-        {/* Payment Categories */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Категории платежей</Text>
           <View style={styles.categoriesList}>
@@ -220,7 +203,6 @@ export default function PaymentsScreen() {
           </View>
         </View>
 
-        {/* Scheduled Payments */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Плановые платежи</Text>
           <View style={styles.scheduledList}>
@@ -238,50 +220,41 @@ export default function PaymentsScreen() {
             )}
           </View>
         </View>
-
       </ScrollView>
 
-      {/* Payment Modal Overlay */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>
-              {selectedCategory?.name ?? 'Оплата'}
-            </Text>
-
-            <Text style={styles.modalFieldLabel}>Получатель / магазин</Text>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Новый платеж</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)} disabled={isPaying}>
+                <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalFieldLabel}>Сервис / Получатель</Text>
             <TextInput
               style={styles.modalInput}
               value={merchantName}
               onChangeText={setMerchantName}
-              placeholder="Название"
+              placeholder="Название сервиса"
               placeholderTextColor={colors.outlineVariant}
             />
-
-            <Text style={styles.modalFieldLabel}>Сумма списания (Br)</Text>
+            <Text style={styles.modalFieldLabel}>Сумма списания (₽)</Text>
             <TextInput
-              style={styles.modalInput}
+              style={[styles.modalInput, { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold' }]}
               value={payAmount}
               onChangeText={setPayAmount}
+              keyboardType="numeric"
               placeholder="0.00"
               placeholderTextColor={colors.outlineVariant}
-              keyboardType="decimal-pad"
             />
-
             <TouchableOpacity
-              style={[styles.payBtn, isPaying && { opacity: 0.6 }]}
+              style={[styles.modalSubmitBtn, isPaying && { opacity: 0.7 }]}
+              activeOpacity={0.8}
               onPress={handleMakePayment}
               disabled={isPaying}
-              activeOpacity={0.8}
             >
-              {isPaying
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.payBtnLabel}>Оплатить</Text>
-              }
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}>
-              <Text style={styles.cancelLabel}>Отмена</Text>
+              {isPaying ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSubmitText}>Оплатить</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -291,94 +264,55 @@ export default function PaymentsScreen() {
         <CardDropReveal
           card={droppedCard}
           onDismiss={() => setDroppedCard(null)}
+          onEquip={() => { setDroppedCard(null); router.push('/(tabs)/cards'); }}
         />
       )}
     </SafeAreaView>
   );
 }
 
-const getStyles = (colors: any) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { paddingBottom: 100 },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.md, paddingBottom: Spacing.sm,
-  },
-  mbBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.surfaceContainer, borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm, paddingVertical: 6,
-  },
-  mbBadgeLabel: { fontSize: Fonts.sizes.sm, color: colors.onSurface, fontFamily: Fonts.family, fontWeight: Fonts.weights.semibold },
-  notifIcon: { position: 'relative', padding: 4 },
-  notifDot: {
-    position: 'absolute', top: 4, right: 4,
-    width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444',
-  },
-  searchSection: { paddingHorizontal: Spacing.base, marginBottom: Spacing.md },
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: colors.surfaceContainer, borderRadius: BorderRadius.base,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-  },
-  searchInput: { flex: 1, fontSize: Fonts.sizes.base, color: colors.onSurface, fontFamily: Fonts.family },
-  section: { marginBottom: Spacing.lg, paddingHorizontal: Spacing.base },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
-  sectionTitle: { fontSize: Fonts.sizes.base, fontWeight: Fonts.weights.semibold, color: colors.onSurface, fontFamily: Fonts.family, marginBottom: Spacing.sm },
-  viewAll: { fontSize: Fonts.sizes.sm, color: colors.primary, fontFamily: Fonts.family },
-  contactsScroll: { gap: Spacing.md, paddingRight: Spacing.base },
-  contactItem: { alignItems: 'center', gap: 6, width: 64 },
-  addNewAvatar: {
-    width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderStyle: 'dashed',
-    borderColor: colors.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  contactAvatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  contactInitials: { fontSize: Fonts.sizes.md, fontWeight: Fonts.weights.bold, color: '#fff', fontFamily: Fonts.family },
-  contactName: { fontSize: Fonts.sizes.xs, color: colors.onSurfaceVariant, fontFamily: Fonts.family, textAlign: 'center' },
-  categoriesList: { gap: Spacing.sm },
-  categoryRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.surface, borderRadius: BorderRadius.base,
-    padding: Spacing.md, ...Shadows.sm,
-  },
-  categoryLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  categoryIcon: { width: 48, height: 48, borderRadius: BorderRadius.md, alignItems: 'center', justifyContent: 'center' },
-  categoryText: { gap: 2 },
-  categoryLabel: { fontSize: Fonts.sizes.md, fontWeight: Fonts.weights.semibold, color: colors.onSurface, fontFamily: Fonts.family },
-  categoryDesc: { fontSize: Fonts.sizes.xs, color: colors.onSurfaceVariant, fontFamily: Fonts.family },
-  categorySkeleton: { height: 72, borderRadius: BorderRadius.base, marginBottom: Spacing.sm },
-  scheduledList: { gap: Spacing.sm },
-  scheduledRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: colors.surface, borderRadius: BorderRadius.base,
-    padding: Spacing.md, ...Shadows.sm,
-  },
-  scheduledDetail: { flex: 1 },
-  scheduledName: { fontSize: Fonts.sizes.md, fontWeight: Fonts.weights.medium, color: colors.onSurface, fontFamily: Fonts.family },
-  scheduledDate: { fontSize: Fonts.sizes.xs, color: colors.onSurfaceVariant, fontFamily: Fonts.family },
-  scheduledAmount: { fontSize: Fonts.sizes.md, fontWeight: Fonts.weights.bold, color: colors.onSurface, fontFamily: Fonts.family },
-  emptyText: { fontSize: Fonts.sizes.sm, color: colors.onSurfaceVariant, textAlign: 'center', paddingVertical: Spacing.lg, fontFamily: Fonts.family },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: Spacing.xl, paddingBottom: 40,
-  },
-  modalHandle: {
-    width: 40, height: 4, borderRadius: 2, backgroundColor: colors.outlineVariant,
-    alignSelf: 'center', marginBottom: Spacing.lg,
-  },
-  modalTitle: { fontSize: Fonts.sizes.lg, fontWeight: Fonts.weights.bold, color: colors.onSurface, fontFamily: Fonts.family, marginBottom: Spacing.lg },
-  modalFieldLabel: { fontSize: Fonts.sizes.sm, color: colors.onSurfaceVariant, fontFamily: Fonts.family, marginBottom: 6 },
-  modalInput: {
-    backgroundColor: colors.surfaceContainer, borderRadius: BorderRadius.sm,
-    padding: Spacing.md, fontSize: Fonts.sizes.base, color: colors.onSurface,
-    fontFamily: Fonts.family, marginBottom: Spacing.md,
-  },
-  payBtn: {
-    backgroundColor: colors.primary, borderRadius: BorderRadius.sm,
-    padding: Spacing.md, alignItems: 'center', marginTop: Spacing.sm,
-  },
-  payBtnLabel: { fontSize: Fonts.sizes.base, fontWeight: Fonts.weights.bold, color: '#fff', fontFamily: Fonts.family },
-  cancelBtn: { padding: Spacing.md, alignItems: 'center', marginTop: Spacing.xs },
-  cancelLabel: { fontSize: Fonts.sizes.base, color: colors.onSurfaceVariant, fontFamily: Fonts.family },
+const getStyles = (Colors: any) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  scrollContent: { paddingBottom: 120 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.xl, paddingTop: Spacing.base, paddingBottom: Spacing.sm },
+  mbBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: BorderRadius.full, backgroundColor: Colors.surfaceContainerHighest },
+  mbBadgeLabel: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: Colors.onSurface, letterSpacing: 2, textTransform: 'uppercase' },
+  notifIcon: { position: 'relative', padding: 8 },
+  notifDot: { position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.error },
+  searchSection: { paddingHorizontal: Spacing.xl, marginBottom: Spacing.xl },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: Colors.surfaceContainerLow, borderRadius: BorderRadius.base, paddingHorizontal: Spacing.base, paddingVertical: 4, borderWidth: 1, borderColor: Colors.transparentBorder },
+  searchInput: { flex: 1, fontSize: Fonts.sizes.base, color: Colors.onSurface, paddingVertical: Spacing.md, fontFamily: 'Manrope-Medium' },
+  section: { paddingHorizontal: Spacing.xl, marginBottom: Spacing['2xl'] },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: Spacing.base },
+  sectionTitle: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-Bold', color: Colors.onSurface, letterSpacing: -0.3 },
+  viewAll: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.primary, letterSpacing: 0.3 },
+  contactsScroll: { paddingRight: Spacing.xl, gap: Spacing.base },
+  contactItem: { alignItems: 'center', gap: Spacing.sm, width: 72 },
+  addNewAvatar: { width: 64, height: 64, borderRadius: 20, backgroundColor: Colors.surfaceContainerHigh, alignItems: 'center', justifyContent: 'center' },
+  contactAvatar: { width: 64, height: 64, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  contactInitials: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-ExtraBold', color: '#ffffff' },
+  contactName: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, letterSpacing: 0.3, textAlign: 'center' },
+  categoriesList: { gap: Spacing.base, marginTop: Spacing.base },
+  categorySkeleton: { height: 80, borderRadius: BorderRadius.lg, marginBottom: 8 },
+  categoryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.base, borderWidth: 1, borderColor: Colors.transparentBorder, ...Shadows.sm },
+  categoryLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg, flex: 1 },
+  categoryIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  categoryText: { flex: 1 },
+  categoryLabel: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: Colors.onSurface, letterSpacing: -0.2 },
+  categoryDesc: { fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, marginTop: 2, fontFamily: 'Manrope-Medium' },
+  scheduledList: { gap: Spacing.base, marginTop: Spacing.base },
+  scheduledRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base, padding: Spacing.base, borderWidth: 1, borderColor: Colors.transparentBorder, ...Shadows.sm },
+  scheduledDetail: { flex: 1, paddingHorizontal: Spacing.base },
+  scheduledName: { fontFamily: 'Manrope-Bold', color: Colors.onSurface, fontSize: Fonts.sizes.base },
+  scheduledDate: { fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, fontSize: Fonts.sizes.xs, marginTop: 4 },
+  scheduledAmount: { fontFamily: 'Manrope-ExtraBold', color: Colors.primary, fontSize: Fonts.sizes.md },
+  emptyText: { fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, textAlign: 'center', marginVertical: Spacing.xl },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing.xl, ...Shadows.lg, paddingBottom: 60 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xl },
+  modalTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface },
+  modalFieldLabel: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, marginBottom: 8 },
+  modalInput: { backgroundColor: Colors.surfaceContainerLowest, color: Colors.onSurface, fontFamily: 'Manrope-Medium', padding: Spacing.base, borderRadius: BorderRadius.md, marginBottom: Spacing.xl, borderWidth: 1, borderColor: Colors.transparentBorder },
+  modalSubmitBtn: { backgroundColor: Colors.primary, borderRadius: BorderRadius.base, paddingVertical: Spacing.base, alignItems: 'center', marginTop: Spacing.sm },
+  modalSubmitText: { color: Colors.onPrimary, fontFamily: 'Manrope-ExtraBold', fontSize: Fonts.sizes.md },
 });
