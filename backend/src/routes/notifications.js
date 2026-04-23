@@ -27,12 +27,11 @@ router.get('/', async (req, res) => {
   }
 });
 
-// PUT /api/notifications/read-all
-// FIX: placed before /:id/read so Express does not treat "read-all" as :id
-router.put('/read-all', async (req, res) => {
+// PUT /api/notifications/:id/read
+router.put('/:id/read', async (req, res) => {
   try {
-    await req.prisma.notification.updateMany({
-      where: { userId: req.userId, read: false },
+    await req.prisma.notification.update({
+      where: { id: req.params.id },
       data: { read: true },
     });
     res.json({ success: true });
@@ -41,17 +40,11 @@ router.put('/read-all', async (req, res) => {
   }
 });
 
-// PUT /api/notifications/:id/read
-router.put('/:id/read', async (req, res) => {
+// PUT /api/notifications/read-all
+router.put('/read-all', async (req, res) => {
   try {
-    const notification = await req.prisma.notification.findFirst({
-      where: { id: req.params.id, userId: req.userId },
-      select: { id: true },
-    });
-    if (!notification) return res.status(404).json({ error: 'Уведомление не найдено' });
-
-    await req.prisma.notification.update({
-      where: { id: req.params.id },
+    await req.prisma.notification.updateMany({
+      where: { userId: req.userId, read: false },
       data: { read: true },
     });
     res.json({ success: true });
