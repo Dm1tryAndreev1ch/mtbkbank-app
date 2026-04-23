@@ -75,8 +75,8 @@ function DashboardPage() {
   const [extended, setExtended] = useState(null);
 
   useEffect(() => {
-    apiFetch(`${API}/dashboard`).then(setStats).catch(() => { });
-    apiFetch(`${API}/dashboard/extended`).then(setExtended).catch(() => { });
+    apiFetch(`${API}/dashboard`).then(setStats).catch(() => {});
+    apiFetch(`${API}/dashboard/extended`).then(setExtended).catch(() => {});
   }, []);
 
   if (!stats) return <p>Загрузка...</p>;
@@ -94,7 +94,7 @@ function DashboardPage() {
         <div className="stat-card"><div className="stat-label">Транзакций</div><div className="stat-value">{stats.totalTransactions}</div></div>
         {extended && <div className="stat-card"><div className="stat-label">Общий баланс</div><div className="stat-value" style={{ color: 'var(--success)' }}>₽ {extended.totalBalance?.toLocaleString('ru-RU')}</div></div>}
       </div>
-
+      
       {extended && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, marginBottom: 32 }}>
           <div className="table-container">
@@ -104,7 +104,7 @@ function DashboardPage() {
               <tbody>
                 {extended.recentTransactions.slice(0, 5).map(t => (
                   <tr key={t.id}>
-                    <td><div style={{ fontWeight: 700 }}>{t.user?.name}</div><div style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>{t.merchant}</div></td>
+                    <td><div style={{fontWeight: 700}}>{t.user?.name}</div><div style={{fontSize: 12, color: 'var(--on-surface-variant)'}}>{t.merchant}</div></td>
                     <td><span className={`badge badge-standard`}>{t.type}</span></td>
                     <td style={{ fontWeight: 700, color: t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? 'var(--success)' : 'inherit' }}>
                       {t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? '+' : '-'} {t.amount} ₽
@@ -144,7 +144,7 @@ function UsersPage() {
   const [createForm, setCreateForm] = useState({ name: '', phone: '', pin: '1234', mbPoints: 0, status: 'STANDARD' });
 
   // FIX: API returns { users, total, limit, offset } — extract .users array
-  const load = () => apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch(() => { });
+  const load = () => apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch(() => {});
   useEffect(() => { load(); }, []);
 
   const handleSave = async () => {
@@ -199,14 +199,14 @@ function UsersPage() {
         <div className="modal-overlay" onClick={() => setEditing(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h2 className="modal-title">Редактировать пользователя</h2>
-            <div className="form-group"><label className="form-label">Имя</label><input className="form-input" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="form-group"><label className="form-label">MB Баллы</label><input className="form-input" type="number" value={form.mbPoints || 0} onChange={e => setForm({ ...form, mbPoints: parseInt(e.target.value) })} /></div>
+            <div className="form-group"><label className="form-label">Имя</label><input className="form-input" value={form.name || ''} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div className="form-group"><label className="form-label">MB Баллы</label><input className="form-input" type="number" value={form.mbPoints || 0} onChange={e => setForm({...form, mbPoints: parseInt(e.target.value)})} /></div>
             <div className="form-group"><label className="form-label">Статус</label>
-              <select className="form-select" value={form.status || ''} onChange={e => setForm({ ...form, status: e.target.value })}>
-                <option value="STANDARD">Standard</option><option value="SILVER">Silver</option><option value="GOLD">Gold</option><option value="PLATINUM">Platinum</option>
+              <select className="form-select" value={form.status || ''} onChange={e => setForm({...form, status: e.target.value})}>
+                <option value="STANDARD">Standard</option><option value="SILVER">Silver</option><option value="GOLD">Gold</option><option value="PLATINUM">Platinum</option><option value="BLOCKED">Blocked</option>
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Новый ПИН (если нужно)</label><input className="form-input" maxLength={4} placeholder="****" onChange={e => setForm({ ...form, pin: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Новый ПИН (если нужно)</label><input className="form-input" maxLength={4} placeholder="****" onChange={e => setForm({...form, pin: e.target.value})} /></div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn" onClick={() => setEditing(null)}>Отмена</button>
               <button className="btn btn-primary" onClick={handleSave}>Сохранить</button>
@@ -219,9 +219,9 @@ function UsersPage() {
         <div className="modal-overlay" onClick={() => setShowCreate(false)}>
           <form className="modal" onClick={e => e.stopPropagation()} onSubmit={handleCreate}>
             <h2 className="modal-title">Новый пользователь</h2>
-            <div className="form-group"><label className="form-label">Имя</label><input className="form-input" required value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} /></div>
-            <div className="form-group"><label className="form-label">Телефон</label><input className="form-input" required value={createForm.phone} onChange={e => setCreateForm({ ...createForm, phone: e.target.value })} placeholder="+79..." /></div>
-            <div className="form-group"><label className="form-label">ПИН-код</label><input className="form-input" required maxLength={4} value={createForm.pin} onChange={e => setCreateForm({ ...createForm, pin: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Имя</label><input className="form-input" required value={createForm.name} onChange={e => setCreateForm({...createForm, name: e.target.value})} /></div>
+            <div className="form-group"><label className="form-label">Телефон</label><input className="form-input" required value={createForm.phone} onChange={e => setCreateForm({...createForm, phone: e.target.value})} placeholder="+79..." /></div>
+            <div className="form-group"><label className="form-label">ПИН-код</label><input className="form-input" required maxLength={4} value={createForm.pin} onChange={e => setCreateForm({...createForm, pin: e.target.value})} /></div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" className="btn" onClick={() => setShowCreate(false)}>Отмена</button>
               <button type="submit" className="btn btn-primary">Создать</button>
@@ -239,7 +239,7 @@ function CardsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', brandName: '', brandIcon: 'style', rarity: 'COMMON', cashbackPercent: 1.0, mbValue: 10, maxHealth: 100, description: '' });
 
-  const load = () => apiFetch(`${API}/cards`).then(setCards).catch(() => { });
+  const load = () => apiFetch(`${API}/cards`).then(setCards).catch(() => {});
   useEffect(() => { load(); }, []);
 
   const handleCreate = async (e) => {
@@ -290,20 +290,20 @@ function CardsPage() {
         <div className="modal-overlay" onClick={() => setShowCreate(false)}>
           <form className="modal" onClick={e => e.stopPropagation()} onSubmit={handleCreate}>
             <h2 className="modal-title">Новая карта</h2>
-            <div className="form-group"><label className="form-label">Название</label><input className="form-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="form-group"><label className="form-label">Бренд</label><input className="form-input" required value={form.brandName} onChange={e => setForm({ ...form, brandName: e.target.value })} /></div>
-            <div className="form-group"><label className="form-label">Иконка (Material Icon)</label><input className="form-input" value={form.brandIcon} onChange={e => setForm({ ...form, brandIcon: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Название</label><input className="form-input" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div className="form-group"><label className="form-label">Бренд</label><input className="form-input" required value={form.brandName} onChange={e => setForm({...form, brandName: e.target.value})} /></div>
+            <div className="form-group"><label className="form-label">Иконка (Material Icon)</label><input className="form-input" value={form.brandIcon} onChange={e => setForm({...form, brandIcon: e.target.value})} /></div>
             <div className="form-group"><label className="form-label">Редкость</label>
-              <select className="form-select" value={form.rarity} onChange={e => setForm({ ...form, rarity: e.target.value })}>
+              <select className="form-select" value={form.rarity} onChange={e => setForm({...form, rarity: e.target.value})}>
                 <option value="COMMON">Common</option><option value="RARE">Rare</option><option value="EPIC">Epic</option><option value="LEGENDARY">Legendary</option>
               </select>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-              <div className="form-group"><label className="form-label">Кэшбэк %</label><input className="form-input" type="number" step="0.1" value={form.cashbackPercent} onChange={e => setForm({ ...form, cashbackPercent: e.target.value })} /></div>
-              <div className="form-group"><label className="form-label">MB Стоимость</label><input className="form-input" type="number" value={form.mbValue} onChange={e => setForm({ ...form, mbValue: e.target.value })} /></div>
-              <div className="form-group"><label className="form-label">Макс. HP</label><input className="form-input" type="number" value={form.maxHealth} onChange={e => setForm({ ...form, maxHealth: e.target.value })} /></div>
+              <div className="form-group"><label className="form-label">Кэшбэк %</label><input className="form-input" type="number" step="0.1" value={form.cashbackPercent} onChange={e => setForm({...form, cashbackPercent: e.target.value})} /></div>
+              <div className="form-group"><label className="form-label">MB Стоимость</label><input className="form-input" type="number" value={form.mbValue} onChange={e => setForm({...form, mbValue: e.target.value})} /></div>
+              <div className="form-group"><label className="form-label">Макс. HP</label><input className="form-input" type="number" value={form.maxHealth} onChange={e => setForm({...form, maxHealth: e.target.value})} /></div>
             </div>
-            <div className="form-group"><label className="form-label">Описание</label><input className="form-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Описание</label><input className="form-input" value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" className="btn" onClick={() => setShowCreate(false)}>Отмена</button>
               <button type="submit" className="btn btn-primary">Создать</button>
@@ -325,7 +325,7 @@ function SimulatePage() {
 
   // FIX: API returns { users, total, limit, offset } — extract .users array
   useEffect(() => {
-    apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch(() => { });
+    apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch(() => {});
   }, []);
 
   const loadAccounts = async (userId) => {
@@ -384,25 +384,25 @@ function SimulatePage() {
             </div>
             {accounts.length > 0 && (
               <div className="form-group"><label className="form-label">Счёт</label>
-                <select className="form-select" value={form.accountId} onChange={e => setForm({ ...form, accountId: e.target.value })}>
+                <select className="form-select" value={form.accountId} onChange={e => setForm({...form, accountId: e.target.value})}>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name} — {a.balance?.toLocaleString('ru-RU')} {a.currency || '₽'}</option>)}
                 </select>
               </div>
             )}
             <div className="form-group"><label className="form-label">Тип операции</label>
-              <select className="form-select" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+              <select className="form-select" value={form.type} onChange={e => setForm({...form, type: e.target.value})}>
                 <option value="PURCHASE">Покупка (списание)</option>
                 <option value="TRANSFER_IN">Входящий перевод (зачисление)</option>
                 <option value="TOPUP">Пополнение</option>
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Сумма ₽</label><input className="form-input" type="number" min="1" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required /></div>
+            <div className="form-group"><label className="form-label">Сумма ₽</label><input className="form-input" type="number" min="1" step="0.01" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} required /></div>
             <div className="form-group"><label className="form-label">Категория</label>
-              <select className="form-select" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+              <select className="form-select" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
                 <option>Покупки</option><option>Кафе и Рестораны</option><option>Транспорт</option><option>Развлечения</option><option>Сервисы</option><option>Перевод</option><option>Пополнение</option>
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Мерчант / Описание</label><input className="form-input" value={form.merchant} onChange={e => setForm({ ...form, merchant: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Мерчант / Описание</label><input className="form-input" value={form.merchant} onChange={e => setForm({...form, merchant: e.target.value})} /></div>
             <button type="submit" className="btn btn-primary" style={{ width: '100%', opacity: loading ? 0.7 : 1 }} disabled={loading}>
               {loading ? '⏳ Выполняется...' : (<><span className="material-icons-outlined" style={{ fontSize: 18 }}>play_arrow</span> Выполнить транзакцию</>)}
             </button>
@@ -442,9 +442,9 @@ function SimulatePage() {
 // ===== APP SHELL =====
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Дашборд', icon: 'dashboard' },
-  { key: 'users', label: 'Пользователи', icon: 'people' },
-  { key: 'cards', label: 'Карты', icon: 'style' },
-  { key: 'simulate', label: 'Симуляция', icon: 'play_circle' },
+  { key: 'users',     label: 'Пользователи', icon: 'people' },
+  { key: 'cards',     label: 'Карты', icon: 'style' },
+  { key: 'simulate',  label: 'Симуляция', icon: 'play_circle' },
 ];
 
 export default function App() {
@@ -501,9 +501,9 @@ export default function App() {
       </aside>
       <main style={{ flex: 1, padding: 32, overflowY: 'auto' }}>
         {page === 'dashboard' && <DashboardPage />}
-        {page === 'users' && <UsersPage />}
-        {page === 'cards' && <CardsPage />}
-        {page === 'simulate' && <SimulatePage />}
+        {page === 'users'     && <UsersPage />}
+        {page === 'cards'     && <CardsPage />}
+        {page === 'simulate'  && <SimulatePage />}
       </main>
     </div>
   );

@@ -116,7 +116,7 @@ const PromoCarousel = ({ styles, colors }: { styles: any; colors: any }) => {
         showsHorizontalScrollIndicator={false}
         snapToInterval={CAROUSEL_ITEM_WIDTH + 12}
         decelerationRate="fast"
-        contentContainerStyle={{ paddingRight: 8 }}
+        contentContainerStyle={{ paddingLeft: Spacing.base, paddingRight: 8 }}
         onScroll={onScroll}
         scrollEventThrottle={16}
         renderItem={({ item }) => (
@@ -361,7 +361,7 @@ export default function HomeScreen() {
         <View style={styles.promoRow}>
           {/* Carousel takes ~72% width */}
           <View style={{ flex: 1 }}>
-            <Text style={[styles.sectionTitle, { marginBottom: Spacing.base }]}>
+            <Text style={[styles.sectionTitle, { paddingHorizontal: Spacing.base, marginBottom: Spacing.base }]}>
               АКЦИИ
             </Text>
             <PromoCarousel styles={styles} colors={colors} />
@@ -478,8 +478,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginTop: Spacing['2xl'],
-    paddingHorizontal: Spacing.base,
-    gap: Spacing.base,
+    paddingRight: Spacing.base,
   },
 
   // Promo carousel card
@@ -515,27 +514,27 @@ const getStyles = (Colors: any) => StyleSheet.create({
   deckWidgetWrap: {
     width: DECK_WIDGET_WIDTH,
     alignItems: 'center',
+    paddingTop: 2,
   },
   deckWidget: {
     width: DECK_WIDGET_WIDTH,
-    minHeight: CAROUSEL_ITEM_HEIGHT + 30,
+    minHeight: CAROUSEL_ITEM_HEIGHT,
     backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.base,
     borderWidth: 1,
     borderColor: Colors.transparentBorder,
     alignItems: 'center',
-    paddingVertical: Spacing.lg,
+    paddingVertical: Spacing.base,
     paddingHorizontal: 6,
     ...Shadows.sm,
-    gap: Spacing.sm,
+    gap: 8,
   },
   fanContainer: {
     width: 72,
-    height: 64,
+    height: 56,
     position: 'relative',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.xs,
+    justifyContent: 'flex-end',
   },
   fanCard: {
     position: 'absolute',
@@ -556,10 +555,10 @@ const getStyles = (Colors: any) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  deckInfo: { alignItems: 'center', gap: 2, paddingHorizontal: 4 },
+  deckInfo: { alignItems: 'center', gap: 2 },
   deckLabel: { fontSize: 8, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, letterSpacing: 1.5, textTransform: 'uppercase' },
-  deckName: { fontSize: 10, fontFamily: 'Manrope-Bold', color: Colors.onSurface, textAlign: 'center' },
-  deckCashback: { fontSize: 12, fontFamily: 'Manrope-ExtraBold', color: Colors.primary },
+  deckName: { fontSize: 11, fontFamily: 'Manrope-Bold', color: Colors.onSurface, textAlign: 'center' },
+  deckCashback: { fontSize: 13, fontFamily: 'Manrope-ExtraBold', color: Colors.primary },
 
   // Transactions
   transactionList: { gap: Spacing.sm },

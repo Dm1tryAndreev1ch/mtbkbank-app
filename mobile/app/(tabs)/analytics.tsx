@@ -74,21 +74,16 @@ export default function AnalyticsScreen() {
       });
   }, []);
 
-  // Загрузка аналитики при изменении периода
-  useEffect(() => {
-    fetchAnalytics(period);
-  }, [period, fetchAnalytics]);
-
-  // Обновление данных при возврате на экран
   useFocusEffect(
     useCallback(() => {
+      fetchAnalytics(period);
       loadSubscriptions();
       loadLimits();
       return () => {
         // Cancel pending request when screen loses focus
         if (abortRef.current) abortRef.current.abort();
       };
-    }, [loadSubscriptions, loadLimits])
+    }, [period, fetchAnalytics])
   );
 
   const breakdown: any[] = analytics?.breakdown || [];
@@ -197,23 +192,23 @@ export default function AnalyticsScreen() {
           <View style={styles.legendGrid}>
             {loading
               ? Array.from({ length: 4 }).map((_, i) => (
-                <SkeletonPulse key={i} style={styles.legendItem} colors={colors} />
-              ))
+                  <SkeletonPulse key={i} style={styles.legendItem} colors={colors} />
+                ))
               : breakdown.map((cat, i) => {
-                const pct = analytics?.totalSpent > 0
-                  ? (cat.amount / analytics.totalSpent) * 100
-                  : 0;
-                return (
-                  <View key={cat.category} style={styles.legendItem}>
-                    <View style={styles.legendRow}>
-                      <View style={[styles.legendDot, { backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }]} />
-                      <Text style={styles.legendCat} numberOfLines={1} allowFontScaling={false}>{cat.category}</Text>
+                  const pct = analytics?.totalSpent > 0
+                    ? (cat.amount / analytics.totalSpent) * 100
+                    : 0;
+                  return (
+                    <View key={cat.category} style={styles.legendItem}>
+                      <View style={styles.legendRow}>
+                        <View style={[styles.legendDot, { backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }]} />
+                        <Text style={styles.legendCat} numberOfLines={1} allowFontScaling={false}>{cat.category}</Text>
+                      </View>
+                      <Text style={styles.legendAmt} numberOfLines={1} allowFontScaling={false}>₽ {Math.round(cat.amount).toLocaleString('ru-RU')}</Text>
+                      <Text style={styles.legendPct} allowFontScaling={false}>{pct.toFixed(1)}%</Text>
                     </View>
-                    <Text style={styles.legendAmt} numberOfLines={1} allowFontScaling={false}>₽ {Math.round(cat.amount).toLocaleString('ru-RU')}</Text>
-                    <Text style={styles.legendPct} allowFontScaling={false}>{pct.toFixed(1)}%</Text>
-                  </View>
-                );
-              })
+                  );
+                })
             }
           </View>
         </View>

@@ -67,20 +67,16 @@ router.post('/', async (req, res) => {
       return res.json({ transaction, scheduled: true });
     }
 
-    // Проверка баланса происходит ВНУТРИ транзакции до decrement (TOCTOU устранён)
+    // Atomic debit guard against race conditions.
     const result = await req.prisma.$transaction(async (tx) => {
-      const currentAccount = await tx.bankAccount.findUnique({
-        where: { id: accountId },
-      });
-
-      if (currentAccount.balance < amount) {
-        throw new Error('Недостаточно средств на момент оплаты');
-      }
-
-      const uAcc = await tx.bankAccount.update({
-        where: { id: accountId },
+      const debitResult = await tx.bankAccount.updateMany({
+        where: { id: accountId, balance: { gte: amount } },
         data: { balance: { decrement: amount } },
       });
+      if (debitResult.count !== 1) {
+        throw new Error('Недостаточно средств на момент оплаты');
+      }
+      const uAcc = await tx.bankAccount.findUnique({ where: { id: accountId } });
 
       const trans = await tx.transaction.create({
         data: {

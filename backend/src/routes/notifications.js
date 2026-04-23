@@ -30,10 +30,13 @@ router.get('/', async (req, res) => {
 // PUT /api/notifications/:id/read
 router.put('/:id/read', async (req, res) => {
   try {
-    await req.prisma.notification.update({
-      where: { id: req.params.id },
+    const result = await req.prisma.notification.updateMany({
+      where: { id: req.params.id, userId: req.userId },
       data: { read: true },
     });
+    if (result.count === 0) {
+      return res.status(404).json({ error: 'Уведомление не найдено' });
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });

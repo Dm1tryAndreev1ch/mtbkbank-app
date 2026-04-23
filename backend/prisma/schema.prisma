@@ -12,6 +12,7 @@ enum UserStatus {
   SILVER
   GOLD
   PLATINUM
+  BLOCKED
 }
 
 enum Rarity {
@@ -162,6 +163,8 @@ model UserCard {
   user           User           @relation(fields: [userId], references: [id])
   collectionCard CollectionCard @relation(fields: [collectionCardId], references: [id])
   deckCards      DeckCard[]
+
+  @@unique([userId, collectionCardId])
 }
 
 model Deck {

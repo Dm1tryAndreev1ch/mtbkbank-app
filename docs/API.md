@@ -192,11 +192,10 @@ Authorization: Bearer <token>
 Все `/api/admin/*` маршруты требуют `isAdmin: true`.
 
 - `GET /admin/dashboard` — статистика
+- `GET /admin/dashboard/extended` — расширенная статистика (балансы, последние транзакции)
 - `GET/POST /admin/users` — управление пользователями
 - `PUT /admin/users/:id` — редактирование
 - `GET/POST/PUT/DELETE /admin/cards` — шаблоны карт
 - `POST /admin/grant-card` — выдать карту пользователю
 - `POST /admin/simulate-transaction` — симуляция транзакции
-- `GET/POST/PUT /admin/quests` — управление квестами
-- `GET /admin/config` — текущая конфигурация
-- `PUT /admin/config/:key` — обновить настройку
+- `GET /admin/users/:id/accounts` — счета пользователя для симуляций/операций

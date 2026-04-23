@@ -108,7 +108,7 @@ export default function PaymentScreen() {
       await api.makePayment({
         accountId: mainAcc.id,
         amount: amt,
-        categoryId: selected?.id,
+        category: selected?.title || 'Оплата',
         merchant: service?.name || selected?.title,
       });
       await loadAccounts();
@@ -117,13 +117,9 @@ export default function PaymentScreen() {
         `${formatMoney(amt)} успешно списано со счёта`,
         () => router.back(),   // ← вызовется после закрытия алерта
       );
-    } catch {
-      // в демо-режиме тоже показываем success
-      alert.success(
-        'Демо-платёж проведён',
-        `${formatMoney(amt)} — тестовая оплата выполнена`,
-        () => router.back(),
-      );
+    } catch (e: any) {
+      const message = e?.response?.data?.error || 'Не удалось выполнить платеж. Попробуйте позже.';
+      alert.error('Платёж не выполнен', message);
     } finally {
       setLoading(false);
     }

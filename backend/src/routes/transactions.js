@@ -83,13 +83,13 @@ router.get('/analytics', async (req, res) => {
 
 /**
  * GET /api/transactions/resolve-recipient
- * Resolves a phone number or card number to a user + account.
- * Query: ?value=+37529...  or  ?value=0000000000000000
+ * Resolves a phone number to a user + account.
+ * Query: ?value=+37529...
  */
 router.get('/resolve-recipient', async (req, res) => {
   try {
     const { value } = req.query;
-    if (!value) return res.status(400).json({ error: 'Укажите номер телефона или карты' });
+    if (!value) return res.status(400).json({ error: 'Укажите номер телефона' });
 
     const clean = value.replace(/[\s\-+]/g, '');
     let user = null;
@@ -122,22 +122,10 @@ router.get('/resolve-recipient', async (req, res) => {
       }
     }
 
-    // Try card number lookup (16 digits)
+    // Card-number based recipient resolution is intentionally disabled.
+    // Using only masked PAN digits is unsafe and can route money to a wrong user.
     if (!user && /^\d{16}$/.test(clean)) {
-      const card = await req.prisma.bankCard.findFirst({
-        where: { cardNumber: clean },
-        include: {
-          bankAccount: {
-            include: {
-              user: { select: { id: true, name: true, avatarUrl: true } },
-            },
-          },
-        },
-      });
-      if (card) {
-        user = card.bankAccount.user;
-        account = card.bankAccount;
-      }
+      return res.status(400).json({ error: 'Перевод по номеру карты временно недоступен. Используйте телефон получателя.' });
     }
 
     if (!user || !account) {
@@ -163,7 +151,7 @@ router.get('/resolve-recipient', async (req, res) => {
  * POST /api/transactions/transfer
  * Supports two modes:
  *   1. { fromAccountId, toAccountId, amount, description }  — classic between known accounts
- *   2. { fromAccountId, recipient, amount, description }    — resolve by phone/card then transfer
+ *   2. { fromAccountId, recipient, amount, description }    — resolve by phone then transfer
  */
 router.post('/transfer', async (req, res) => {
   try {
@@ -194,7 +182,7 @@ router.post('/transfer', async (req, res) => {
 
       // By phone
       if (/^\d{10,12}$/.test(clean)) {
-        const normalized = clean.startsWith('375') ? `+${clean}` : `+${clean}`;
+        const normalized = clean.startsWith('375') ? `+${clean}` : clean;
         const toUser = await req.prisma.user.findFirst({
           where: {
             OR: [{ phone: normalized }, { phone: `+${clean}` }, { phone: clean }],
@@ -210,13 +198,9 @@ router.post('/transfer', async (req, res) => {
         }
       }
 
-      // By card number
+      // Card-number based recipient resolution is intentionally disabled.
       if (!targetAccount && /^\d{16}$/.test(clean)) {
-        const card = await req.prisma.bankCard.findFirst({
-          where: { cardNumber: clean },
-          include: { bankAccount: true },
-        });
-        if (card) targetAccount = card.bankAccount;
+        return res.status(400).json({ error: 'Перевод по номеру карты временно недоступен. Используйте телефон получателя.' });
       }
 
       if (!targetAccount) {
@@ -232,6 +216,9 @@ router.post('/transfer', async (req, res) => {
 
     const toAccount = await req.prisma.bankAccount.findUnique({ where: { id: toAccountId } });
     if (!toAccount) return res.status(404).json({ error: 'Счёт получателя не найден' });
+    if (fromAccount.currency !== toAccount.currency) {
+      return res.status(400).json({ error: 'Перевод между разными валютами не поддерживается' });
+    }
 
     // FIX: проверка self-transfer применяется ВСЕГДА, независимо от mode
     if (toAccount.userId === req.userId) {
@@ -243,14 +230,12 @@ router.post('/transfer', async (req, res) => {
     const destUserId = recipientUserId || toAccount.userId;
 
     const result = await req.prisma.$transaction(async (tx) => {
-      // Re-read balance inside transaction to prevent TOCTOU
-      const src = await tx.bankAccount.findUnique({ where: { id: fromAccountId } });
-      if (src.balance < amount) throw new Error('INSUFFICIENT');
-
-      await tx.bankAccount.update({
-        where: { id: fromAccountId },
+      // Atomic guard against race conditions: decrement only if enough balance remains.
+      const debitResult = await tx.bankAccount.updateMany({
+        where: { id: fromAccountId, balance: { gte: amount } },
         data: { balance: { decrement: amount } },
       });
+      if (debitResult.count !== 1) throw new Error('INSUFFICIENT');
 
       await tx.bankAccount.update({
         where: { id: toAccountId },
@@ -335,12 +320,17 @@ router.post('/transfer-own', async (req, res) => {
     ]);
     if (!fromAcc) return res.status(404).json({ error: 'Счёт списания не найден' });
     if (!toAcc) return res.status(404).json({ error: 'Счёт зачисления не найден' });
+    if (fromAcc.currency !== toAcc.currency) {
+      return res.status(400).json({ error: 'Перевод между разными валютами не поддерживается' });
+    }
 
     const result = await req.prisma.$transaction(async (tx) => {
-      const src = await tx.bankAccount.findUnique({ where: { id: fromAccountId } });
-      if (src.balance < amount) throw new Error('INSUFFICIENT');
+      const debitResult = await tx.bankAccount.updateMany({
+        where: { id: fromAccountId, balance: { gte: amount } },
+        data: { balance: { decrement: amount } },
+      });
+      if (debitResult.count !== 1) throw new Error('INSUFFICIENT');
 
-      await tx.bankAccount.update({ where: { id: fromAccountId }, data: { balance: { decrement: amount } } });
       const inc = await tx.bankAccount.update({ where: { id: toAccountId }, data: { balance: { increment: amount } } });
 
       const trans = await tx.transaction.create({

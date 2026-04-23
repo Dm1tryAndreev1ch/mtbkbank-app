@@ -7,8 +7,69 @@ const router = express.Router();
 router.use(authMiddleware);
 router.use(adminMiddleware);
 
+// ==================== DASHBOARD ====================
+
+// GET /api/admin/dashboard
+router.get('/dashboard', async (req, res) => {
+  try {
+    const [totalUsers, totalCards, totalTransactions, mbAgg, cards] = await Promise.all([
+      req.prisma.user.count(),
+      req.prisma.userCard.count(),
+      req.prisma.transaction.count(),
+      req.prisma.user.aggregate({ _sum: { mbPoints: true } }),
+      req.prisma.userCard.findMany({
+        select: { collectionCard: { select: { rarity: true } } },
+      }),
+    ]);
+
+    const rarityDistribution = { COMMON: 0, RARE: 0, EPIC: 0, LEGENDARY: 0 };
+    for (const c of cards) {
+      const rarity = c.collectionCard?.rarity;
+      if (rarity && rarityDistribution[rarity] !== undefined) {
+        rarityDistribution[rarity] += 1;
+      }
+    }
+
+    res.json({
+      totalUsers,
+      totalCards,
+      totalTransactions,
+      totalMBInCirculation: mbAgg._sum.mbPoints || 0,
+      rarityDistribution,
+    });
+  } catch (err) {
+    console.error('Admin dashboard error:', err);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// GET /api/admin/dashboard/extended
+router.get('/dashboard/extended', async (req, res) => {
+  try {
+    const [balanceAgg, recentTransactions] = await Promise.all([
+      req.prisma.bankAccount.aggregate({ _sum: { balance: true } }),
+      req.prisma.transaction.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: {
+          user: { select: { id: true, name: true, phone: true } },
+        },
+      }),
+    ]);
+
+    res.json({
+      totalBalance: balanceAgg._sum.balance || 0,
+      recentTransactions,
+    });
+  } catch (err) {
+    console.error('Admin extended dashboard error:', err);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // ==================== USERS ====================
 
+// GET /api/admin/users
 router.get('/users', async (req, res) => {
   try {
     const { limit = 50, offset = 0 } = req.query;
@@ -32,6 +93,7 @@ router.get('/users', async (req, res) => {
   }
 });
 
+// PUT /api/admin/users/:id
 router.put('/users/:id', async (req, res) => {
   try {
     const { name, mbPoints, status, pin } = req.body;
@@ -52,6 +114,7 @@ router.put('/users/:id', async (req, res) => {
   }
 });
 
+// POST /api/admin/users
 router.post('/users', async (req, res) => {
   try {
     const { name, phone, pin, mbPoints = 0, status = 'STANDARD', isAdmin = false } = req.body;
@@ -80,6 +143,7 @@ router.post('/users', async (req, res) => {
 
 // ==================== CARD TEMPLATES ====================
 
+// GET /api/admin/cards
 router.get('/cards', async (req, res) => {
   try {
     const cards = await req.prisma.collectionCard.findMany({
@@ -91,15 +155,17 @@ router.get('/cards', async (req, res) => {
   }
 });
 
+// POST /api/admin/cards
+// FIX: whitelist полей — mass assignment устранён
 router.post('/cards', async (req, res) => {
   try {
     const {
-      name, description, rarity, brandName, brandLogo, imageUrl,
+      name, description, rarity, brandName, brandIcon, brandLogo, imageUrl,
       cashbackPercent, maxHealth, dropRate, isActive,
     } = req.body;
     const card = await req.prisma.collectionCard.create({
       data: {
-        name, description, rarity, brandName, brandLogo, imageUrl,
+        name, description, rarity, brandName, brandIcon, brandLogo, imageUrl,
         cashbackPercent, maxHealth, dropRate,
         isActive: isActive !== undefined ? isActive : true,
       },
@@ -110,10 +176,12 @@ router.post('/cards', async (req, res) => {
   }
 });
 
+// PUT /api/admin/cards/:id
+// FIX: whitelist полей — mass assignment устранён
 router.put('/cards/:id', async (req, res) => {
   try {
     const {
-      name, description, rarity, brandName, brandLogo, imageUrl,
+      name, description, rarity, brandName, brandIcon, brandLogo, imageUrl,
       cashbackPercent, maxHealth, dropRate, isActive,
     } = req.body;
     const data = {};
@@ -121,6 +189,7 @@ router.put('/cards/:id', async (req, res) => {
     if (description !== undefined) data.description = description;
     if (rarity !== undefined) data.rarity = rarity;
     if (brandName !== undefined) data.brandName = brandName;
+    if (brandIcon !== undefined) data.brandIcon = brandIcon;
     if (brandLogo !== undefined) data.brandLogo = brandLogo;
     if (imageUrl !== undefined) data.imageUrl = imageUrl;
     if (cashbackPercent !== undefined) data.cashbackPercent = cashbackPercent;
@@ -138,6 +207,7 @@ router.put('/cards/:id', async (req, res) => {
   }
 });
 
+// DELETE /api/admin/cards/:id
 router.delete('/cards/:id', async (req, res) => {
   try {
     await req.prisma.collectionCard.update({
@@ -152,6 +222,8 @@ router.delete('/cards/:id', async (req, res) => {
 
 // ==================== GRANT CARDS ====================
 
+// POST /api/admin/grant-card
+// FIX: добавлена проверка дубликата перед выдачей
 router.post('/grant-card', async (req, res) => {
   try {
     const { userId, collectionCardId } = req.body;
@@ -178,12 +250,16 @@ router.post('/grant-card', async (req, res) => {
 
     res.json(userCard);
   } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(400).json({ error: 'У пользователя уже есть эта карта' });
+    }
     res.status(500).json({ error: 'Ошибка выдачи карты' });
   }
 });
 
 // ==================== USER ACCOUNTS ====================
 
+// GET /api/admin/users/:id/accounts
 router.get('/users/:id/accounts', async (req, res) => {
   try {
     const accounts = await req.prisma.bankAccount.findMany({
@@ -198,34 +274,24 @@ router.get('/users/:id/accounts', async (req, res) => {
 
 // ==================== SIMULATE TRANSACTION ====================
 
+// POST /api/admin/simulate-transaction
 router.post('/simulate-transaction', async (req, res) => {
   try {
     const { userId, amount, category, merchant, merchantIcon, type = 'PURCHASE' } = req.body;
     let { accountId } = req.body;
 
-    // Находим счёт если не передан
     if (!accountId) {
-      const mainAccount = await req.prisma.bankAccount.findFirst({
-        where: { userId, type: 'main' },
-      });
-
-      if (mainAccount) {
-        accountId = mainAccount.id;
-      } else {
-        const anyAccount = await req.prisma.bankAccount.findFirst({
-          where: { userId },
-        });
-        if (!anyAccount) {
-          return res.status(404).json({ error: 'У пользователя нет счетов' });
-        }
+      const mainAccount = await req.prisma.bankAccount.findFirst({ where: { userId, type: 'main' } });
+      if (!mainAccount) {
+        const anyAccount = await req.prisma.bankAccount.findFirst({ where: { userId } });
+        if (!anyAccount) return res.status(404).json({ error: 'У пользователя нет счетов' });
         accountId = anyAccount.id;
+      } else {
+        accountId = mainAccount.id;
       }
     }
 
-    // Проверяем что счёт принадлежит пользователю
-    const account = await req.prisma.bankAccount.findFirst({
-      where: { id: accountId, userId },
-    });
+    const account = await req.prisma.bankAccount.findFirst({ where: { id: accountId, userId } });
     if (!account) return res.status(404).json({ error: 'Счёт не найден' });
 
     const numericAmount = parseFloat(amount);
@@ -233,57 +299,61 @@ router.post('/simulate-transaction', async (req, res) => {
       return res.status(400).json({ error: 'Укажите корректную сумму' });
     }
 
-    // TRANSFER_IN и TOPUP — входящие (деньги приходят на счёт)
     const isCredit = type === 'TRANSFER_IN' || type === 'TOPUP';
+    const txType = type || 'PURCHASE';
 
-    const transaction = await req.prisma.$transaction(async (tx) => {
-      // ИСПРАВЛЕНО: используем fromAccountId/toAccountId вместо accountId
+    const result = await req.prisma.$transaction(async (tx) => {
+      let updatedAccount;
+      if (!isCredit) {
+        const debitResult = await tx.bankAccount.updateMany({
+          where: { id: accountId, balance: { gte: numericAmount } },
+          data: { balance: { decrement: numericAmount } },
+        });
+        if (debitResult.count !== 1) throw new Error('INSUFFICIENT');
+        updatedAccount = await tx.bankAccount.findUnique({ where: { id: accountId } });
+      } else {
+        updatedAccount = await tx.bankAccount.update({
+          where: { id: accountId },
+          data: { balance: { increment: numericAmount } },
+        });
+      }
+
       const t = await tx.transaction.create({
         data: {
+          fromAccountId: accountId,
           userId,
-          // Входящие: счёт — получатель (toAccountId)
-          // Исходящие: счёт — отправитель (fromAccountId)
-          ...(isCredit
-            ? { toAccountId: accountId }
-            : { fromAccountId: accountId }
-          ),
           amount: numericAmount,
-          type,
-          status: 'COMPLETED',
+          type: txType,
+          status: 'completed',
           category: category || 'Покупки',
           merchant: merchant || 'Тестовый мерчант',
           merchantIcon: merchantIcon || 'store',
           description: 'Админ: симуляция транзакции',
         },
       });
-
-      // Обновляем баланс счёта
-      await tx.bankAccount.update({
-        where: { id: accountId },
-        data: {
-          balance: {
-            [isCredit ? 'increment' : 'decrement']: numericAmount,
-          },
-        },
-      });
-
-      return t;
+      return { transaction: t, account: updatedAccount };
     });
 
-    // Обработка дропа карты при покупке (не блокирующая)
-    if (!isCredit) {
-      processCardDrop(
-        req.prisma,
-        userId,
-        numericAmount,
-        category || 'Покупки',
-      ).catch(console.error);
+    let droppedCard = null;
+    if (!isCredit && txType === 'PURCHASE') {
+      try {
+        droppedCard = await processCardDrop(req.prisma, userId, result.transaction.id);
+      } catch (dropErr) {
+        console.error('Admin simulate card drop error (non-critical):', dropErr);
+      }
     }
 
-    res.json(transaction);
+    res.json({
+      transaction: result.transaction,
+      account: result.account,
+      droppedCard,
+    });
   } catch (err) {
+    if (err.message === 'INSUFFICIENT') {
+      return res.status(400).json({ error: 'Недостаточно средств на момент списания' });
+    }
     console.error('Simulate transaction error:', err);
-    res.status(500).json({ error: err.message || 'Ошибка сервера' });
+    res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 

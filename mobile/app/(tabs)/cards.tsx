@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal,
-  ActivityIndicator, Animated, Easing, Dimensions,
+  ActivityIndicator, Animated, Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -31,15 +31,10 @@ interface CollectionCard {
   isActive: boolean;
 }
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CARD_HORIZONTAL_PADDING = 16;
-const CARD_GAP = 10;
-const CARD_WIDTH = (SCREEN_WIDTH - CARD_HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
-
 const RARITY_GRADIENTS: Record<Rarity, [string, string, string]> = {
-  COMMON: ['#4b5563', '#374151', '#1f2937'],
-  RARE: ['#1d4ed8', '#2563eb', '#1e40af'],
-  EPIC: ['#7c3aed', '#6d28d9', '#4c1d95'],
+  COMMON:    ['#4b5563', '#374151', '#1f2937'],
+  RARE:      ['#1d4ed8', '#2563eb', '#1e40af'],
+  EPIC:      ['#7c3aed', '#6d28d9', '#4c1d95'],
   LEGENDARY: ['#b45309', '#d97706', '#92400e'],
 };
 
@@ -103,20 +98,20 @@ function ShopCardItem({ card, purchased, canAfford, onBuy }: ShopCardItemProps) 
         <View style={shopStyles.brandIconWrap}>
           <View style={[shopStyles.brandCircle, { borderColor: badgeColor }]}>
             {card.brandIcon ? (
-              <MaterialIcons name={toMaterialIconName(card.brandIcon) as any} size={28} color={badgeColor} />
+              <MaterialIcons name={toMaterialIconName(card.brandIcon) as any} size={32} color={badgeColor} />
             ) : (
               <Text style={[shopStyles.initialsText, { color: badgeColor }]}>{initials}</Text>
             )}
           </View>
         </View>
-        <Text style={shopStyles.cardName} numberOfLines={2}>{card.brandName ?? card.name}</Text>
+        <Text style={shopStyles.cardName} numberOfLines={1}>{card.brandName ?? card.name}</Text>
         <View style={shopStyles.cashbackRow}>
-          <MaterialIcons name="percent" size={11} color="#fff" />
+          <MaterialIcons name="percent" size={12} color="rgba(255,255,255,0.9)" />
           <Text style={shopStyles.cashbackText}>{card.cashbackPercent}% кэшбэк</Text>
         </View>
         {purchased ? (
           <View style={shopStyles.purchasedBadge}>
-            <MaterialIcons name="check-circle" size={13} color="#22c55e" />
+            <MaterialIcons name="check-circle" size={14} color="#22c55e" />
             <Text style={shopStyles.purchasedText}>Куплено</Text>
           </View>
         ) : (
@@ -126,7 +121,7 @@ function ShopCardItem({ card, purchased, canAfford, onBuy }: ShopCardItemProps) 
             disabled={!canAfford}
             activeOpacity={0.8}
           >
-            <Text style={shopStyles.buyBtnText} numberOfLines={1}>{price.toLocaleString('ru-RU')} MB</Text>
+            <Text style={shopStyles.buyBtnText}>{price.toLocaleString('ru-RU')} MB</Text>
           </TouchableOpacity>
         )}
       </LinearGradient>
@@ -136,115 +131,22 @@ function ShopCardItem({ card, purchased, canAfford, onBuy }: ShopCardItemProps) 
 }
 
 const shopStyles = StyleSheet.create({
-  cardWrap: {
-    width: CARD_WIDTH,
-    borderRadius: BorderRadius.base,
-    overflow: 'hidden',
-    ...Shadows.md,
-  },
-  cardGradient: {
-    padding: Spacing.md,
-    paddingTop: 36,
-    gap: 6,
-    minHeight: 220,
-    borderRadius: BorderRadius.base,
-    overflow: 'hidden',
-    alignItems: 'center',
-  },
-  rarityBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-  },
-  rarityBadgeText: {
-    fontSize: 7,
-    fontFamily: 'Manrope-ExtraBold',
-    color: '#fff',
-    letterSpacing: 0.5,
-  },
-  brandIconWrap: { alignItems: 'center', marginBottom: 4 },
-  brandCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  initialsText: { fontSize: 20, fontFamily: 'Manrope-ExtraBold' },
-  cardName: {
-    fontSize: Fonts.sizes.sm,
-    fontFamily: 'Manrope-ExtraBold',
-    color: '#fff',
-    textAlign: 'center',
-    width: '100%',
-    flexShrink: 1,
-    textShadowColor: 'rgba(0,0,0,0.55)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  cashbackRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(0,0,0,0.28)',
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    alignSelf: 'center',
-  },
-  cashbackText: {
-    fontSize: 10,
-    fontFamily: 'Manrope-Bold',
-    color: '#fff',
-  },
-  buyBtn: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: BorderRadius.full,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    marginTop: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
-    alignSelf: 'stretch',
-  },
-  buyBtnDisabled: {
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  buyBtnText: {
-    fontSize: Fonts.sizes.xs,
-    fontFamily: 'Manrope-ExtraBold',
-    color: '#fff',
-    textAlign: 'center',
-  },
-  purchasedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    marginTop: 4,
-    paddingVertical: 7,
-    backgroundColor: 'rgba(34,197,94,0.25)',
-    borderRadius: BorderRadius.full,
-    alignSelf: 'stretch',
-  },
-  purchasedText: {
-    fontSize: Fonts.sizes.xs,
-    fontFamily: 'Manrope-Bold',
-    color: '#22c55e',
-  },
-  purchasedOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    borderRadius: BorderRadius.base,
-  },
+  cardWrap: { width: '47%', borderRadius: BorderRadius.base, overflow: 'hidden', ...Shadows.md },
+  cardGradient: { padding: Spacing.md, gap: 6, minHeight: 210, borderRadius: BorderRadius.base, overflow: 'hidden' },
+  rarityBadge: { position: 'absolute', top: 8, right: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: BorderRadius.full },
+  rarityBadgeText: { fontSize: 7, fontFamily: 'Manrope-ExtraBold', color: '#fff', letterSpacing: 0.5 },
+  brandIconWrap: { alignItems: 'center', marginTop: 20, marginBottom: 4 },
+  brandCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  initialsText: { fontSize: 22, fontFamily: 'Manrope-ExtraBold' },
+  cardName: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-ExtraBold', color: '#fff', textAlign: 'center' },
+  cashbackRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
+  cashbackText: { fontSize: 10, fontFamily: 'Manrope-Bold', color: 'rgba(255,255,255,0.85)' },
+  buyBtn: { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: BorderRadius.full, paddingVertical: 8, alignItems: 'center', marginTop: 4, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
+  buyBtnDisabled: { backgroundColor: 'rgba(0,0,0,0.3)', borderColor: 'rgba(255,255,255,0.1)' },
+  buyBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#fff' },
+  purchasedBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 4, paddingVertical: 6, backgroundColor: 'rgba(34,197,94,0.2)', borderRadius: BorderRadius.full },
+  purchasedText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: '#22c55e' },
+  purchasedOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: BorderRadius.base },
 });
 
 // ─── ShopTab ──────────────────────────────────────────────────────────────────
@@ -268,6 +170,7 @@ function ShopTab({
   const [shopCards, setShopCards] = useState<CollectionCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(false);
+  // IDs of collectionCards purchased this session (derives "Куплено" badge)
   const [sessionPurchasedIds, setSessionPurchasedIds] = useState<Set<string>>(new Set());
   const [nextRefresh, setNextRefresh] = useState<Date>(() => {
     const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS); return d;
@@ -278,10 +181,11 @@ function ShopTab({
   const [successCard, setSuccessCard] = useState<CollectionCard | null>(null);
   const successAnim = useRef(new Animated.Value(0)).current;
 
+  // Load ALL collection cards from backend (all rarities)
   const loadShopCards = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await apiClient.getCollection();
+      const { data } = await apiClient.getCollection(); // no rarity filter → all
       setAllCards(data ?? []);
       rollFromPool(data ?? []);
     } catch {
@@ -299,6 +203,7 @@ function ShopTab({
     setSessionPurchasedIds(new Set());
   }
 
+  // Timer tick
   useEffect(() => {
     const tick = () => setTimerMs(Math.max(0, nextRefresh.getTime() - Date.now()));
     tick();
@@ -306,6 +211,7 @@ function ShopTab({
     return () => clearInterval(id);
   }, [nextRefresh]);
 
+  // Auto-refresh when timer expires
   useEffect(() => {
     if (timerMs === 0 && allCards.length > 0) {
       const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS);
@@ -324,14 +230,12 @@ function ShopTab({
       `Стоимость: ${FORCE_REFRESH_COST} MB. Текущие карты будут заменены.`,
       [
         { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Обновить', onPress: () => {
-            onPurchaseSuccess(userPoints - FORCE_REFRESH_COST);
-            const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS);
-            setNextRefresh(d);
-            rollFromPool(allCards);
-          }
-        },
+        { text: 'Обновить', onPress: () => {
+          onPurchaseSuccess(userPoints - FORCE_REFRESH_COST);
+          const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS);
+          setNextRefresh(d);
+          rollFromPool(allCards);
+        }},
       ]
     );
   };
@@ -344,8 +248,9 @@ function ShopTab({
     setBuying(true);
     try {
       const { data } = await apiClient.buyCard(confirmCard.id);
+      // data = { userCard, mbPoints, price }
       setSessionPurchasedIds((prev) => new Set([...prev, confirmCard.id]));
-      onPurchaseSuccess(data.mbPoints);
+      onPurchaseSuccess(data.mbPoints); // sync MB balance to parent
       setSuccessCard(confirmCard);
       successAnim.setValue(0);
       Animated.spring(successAnim, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }).start(
@@ -358,6 +263,7 @@ function ShopTab({
     }
   };
 
+  // A card is "purchased" if bought this session OR already in inventory
   const isPurchased = (card: CollectionCard) =>
     sessionPurchasedIds.has(card.id) || inventoryCollectionIds.has(card.id);
 
@@ -366,11 +272,11 @@ function ShopTab({
     : shopCards;
 
   const FILTERS: Array<{ key: Rarity | null; label: string; color: string }> = [
-    { key: null, label: 'Все', color: colors.primary },
-    { key: 'COMMON', label: 'Обычные', color: '#9ca3af' },
-    { key: 'RARE', label: 'Редкие', color: '#60a5fa' },
-    { key: 'EPIC', label: 'Эпические', color: '#a78bfa' },
-    { key: 'LEGENDARY', label: 'Легендарные', color: '#fbbf24' },
+    { key: null,        label: 'Все',          color: colors.primary },
+    { key: 'COMMON',    label: 'Обычные',       color: '#9ca3af' },
+    { key: 'RARE',      label: 'Редкие',        color: '#60a5fa' },
+    { key: 'EPIC',      label: 'Эпические',     color: '#a78bfa' },
+    { key: 'LEGENDARY', label: 'Легендарные',   color: '#fbbf24' },
   ];
 
   if (loading) {
@@ -395,7 +301,7 @@ function ShopTab({
 
       <View style={shopTabStyles.header}>
         <View>
-          <Text style={[shopTabStyles.headerTitle, { color: colors.onSurface }]}>Магазин карт</Text>
+          <Text style={shopTabStyles.headerTitle}>Магазин карт</Text>
           <Text style={[shopTabStyles.points, { color: colors.primary }]}>
             Баланс: {userPoints.toLocaleString('ru-RU')} MB
           </Text>
@@ -419,12 +325,7 @@ function ShopTab({
         </Text>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={shopTabStyles.filterScroll}
-        contentContainerStyle={{ paddingHorizontal: Spacing.base, gap: 8 }}
-      >
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={shopTabStyles.filterScroll} contentContainerStyle={{ paddingHorizontal: Spacing.base, gap: 8 }}>
         {FILTERS.map((f) => (
           <TouchableOpacity
             key={String(f.key)}
@@ -435,10 +336,7 @@ function ShopTab({
               filterRarity !== f.key && { borderColor: colors.outlineVariant },
             ]}
           >
-            <Text style={[
-              shopTabStyles.filterChipText,
-              { color: filterRarity === f.key ? '#fff' : colors.onSurfaceVariant },
-            ]}>
+            <Text style={[shopTabStyles.filterChipText, { color: filterRarity === f.key ? '#fff' : colors.onSurfaceVariant }]}>
               {f.label}
             </Text>
           </TouchableOpacity>
@@ -549,70 +447,23 @@ function ShopTab({
 }
 
 const shopTabStyles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: Spacing.base,
-    paddingTop: Spacing.base,
-    paddingBottom: Spacing.sm,
-  },
-  headerTitle: {
-    fontSize: Fonts.sizes.xl,
-    fontFamily: 'Manrope-ExtraBold',
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.base, paddingTop: Spacing.base, paddingBottom: Spacing.sm },
+  headerTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: '#fff' },
   points: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', marginTop: 2 },
-  refreshBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
+  refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 6 },
   refreshBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
-  timerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginHorizontal: Spacing.base,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginBottom: Spacing.sm,
-  },
+  timerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: Spacing.base, borderRadius: BorderRadius.sm, paddingHorizontal: 12, paddingVertical: 6, marginBottom: Spacing.sm },
   timerText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
   filterScroll: { marginBottom: Spacing.sm, flexGrow: 0 },
-  filterChip: {
-    borderWidth: 1,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    backgroundColor: 'transparent',
-  },
+  filterChip: { borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: 'transparent' },
   filterChipText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: CARD_HORIZONTAL_PADDING,
-    gap: CARD_GAP,
-    justifyContent: 'flex-start',
-  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.base, gap: Spacing.sm },
   emptyState: { width: '100%', alignItems: 'center', paddingVertical: 48, gap: 12 },
   emptyText: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: Spacing.xl },
   confirmBox: { borderRadius: BorderRadius.xl, overflow: 'hidden', ...Shadows.xl },
   confirmCardPreview: { padding: Spacing.xl, alignItems: 'center', gap: 10 },
-  confirmCardName: {
-    fontSize: Fonts.sizes.xl,
-    fontFamily: 'Manrope-ExtraBold',
-    color: '#fff',
-    textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
+  confirmCardName: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: '#fff', textAlign: 'center' },
   rarityPill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: BorderRadius.full },
   rarityPillText: { fontSize: 10, fontFamily: 'Manrope-ExtraBold', color: '#fff', textTransform: 'uppercase', letterSpacing: 1 },
   confirmTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', textAlign: 'center', paddingTop: Spacing.base },
@@ -668,6 +519,8 @@ export default function CardsScreen() {
 
   useEffect(() => { loadCards(); loadDecks(); loadQuests(); }, []);
 
+  // Set of collectionCard IDs already owned by the user — used by ShopTab
+  // to mark cards as already purchased even before this session
   const inventoryCollectionIds = useMemo<Set<string>>(
     () => new Set(cards.map((c: any) => c.collectionCardId as string)),
     [cards]
@@ -708,17 +561,15 @@ export default function CardsScreen() {
     if (!activeDeck) return;
     Alert.alert('Убрать из колоды?', `Убрать «${card.collectionCard.name}» из активной колоды?`, [
       { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Убрать', style: 'destructive', onPress: async () => {
-          setIsEquipping(true);
-          try {
-            await apiClient.updateDeck(activeDeck.id, { cardIds: getCurrentCardIds().filter((id) => id !== card.id) });
-            await loadDecks();
-          } catch (e: any) {
-            Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось убрать карту');
-          } finally { setIsEquipping(false); }
-        }
-      },
+      { text: 'Убрать', style: 'destructive', onPress: async () => {
+        setIsEquipping(true);
+        try {
+          await apiClient.updateDeck(activeDeck.id, { cardIds: getCurrentCardIds().filter((id) => id !== card.id) });
+          await loadDecks();
+        } catch (e: any) {
+          Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось убрать карту');
+        } finally { setIsEquipping(false); }
+      }},
     ]);
   };
 
@@ -740,19 +591,17 @@ export default function CardsScreen() {
       `Карта «${sacrificeSource.collectionCard.name}» будет уничтожена, а «${targetCard.collectionCard.name}» восстановит здоровье. Продолжить?`,
       [
         { text: 'Отмена', style: 'cancel', onPress: () => setSacrificeStep('idle') },
-        {
-          text: 'Пожертвовать', style: 'destructive', onPress: async () => {
-            setSacrificeStep('idle');
-            setIsSacrificing(true);
-            try {
-              const res = await apiClient.sacrificeCard(sacrificeSource.id, targetCard.id);
-              await loadCards(); await loadDecks();
-              Alert.alert('✅ Успешно!', `«${targetCard.collectionCard.name}» восстановила ${res.data.healAmount} HP → теперь ${res.data.newHealth}%`);
-            } catch (e: any) {
-              Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось провести жертвоприношение');
-            } finally { setIsSacrificing(false); setSacrificeSource(null); }
-          }
-        },
+        { text: 'Пожертвовать', style: 'destructive', onPress: async () => {
+          setSacrificeStep('idle');
+          setIsSacrificing(true);
+          try {
+            const res = await apiClient.sacrificeCard(sacrificeSource.id, targetCard.id);
+            await loadCards(); await loadDecks();
+            Alert.alert('✅ Успешно!', `«${targetCard.collectionCard.name}» восстановила ${res.data.healAmount} HP → теперь ${res.data.newHealth}%`);
+          } catch (e: any) {
+            Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось провести жертвоприношение');
+          } finally { setIsSacrificing(false); setSacrificeSource(null); }
+        }},
       ]
     );
   };
@@ -778,10 +627,11 @@ export default function CardsScreen() {
       }));
   }, [activeDeck]);
 
+  // Called by ShopTab after a successful purchase
   const handlePurchaseSuccess = useCallback((newMbPoints: number) => {
     setLocalPoints(newMbPoints);
-    loadCards();
-    loadUser();
+    loadCards();  // refresh inventory so the new card appears immediately
+    loadUser();   // sync user.mbPoints in global store
   }, []);
 
   return (

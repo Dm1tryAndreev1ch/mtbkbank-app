@@ -15,7 +15,6 @@ import { useThemeColor } from '../hooks/useThemeColor';
 
 const METHODS = [
   { id: 'phone', icon: 'phone-android', title: 'По номеру телефона', desc: 'Мгновенный перевод', color: '#0ea5e9' },
-  { id: 'card',  icon: 'credit-card',   title: 'По номеру карты',    desc: 'На карту любого банка', color: '#4F8EF7' },
   { id: 'own',   icon: 'swap-horiz',    title: 'Между своими счетами', desc: 'Внутренний перевод', color: '#9333EA' },
 ];
 
@@ -23,8 +22,11 @@ const AMOUNTS = [10, 50, 100, 500, 1000];
 
 export default function TransferScreen() {
   const params = useLocalSearchParams<{ to?: string; amount?: string; method?: string }>();
+  const allowedMethods = new Set(METHODS.map(m => m.id));
 
-  const [selected, setSelected] = useState<string | null>(params.method ?? null);
+  const [selected, setSelected] = useState<string | null>(
+    params.method && allowedMethods.has(params.method) ? params.method : null
+  );
   const [amount, setAmount] = useState(params.amount ?? '');
   const [recipient, setRecipient] = useState(params.to ?? '');
   const [loading, setLoading] = useState(false);
@@ -40,11 +42,6 @@ export default function TransferScreen() {
   // Second own account for "between own"
   const secondAcc = accounts.find((a: any) => a.id !== mainAcc?.id);
 
-  const formatCard = (v: string) => {
-    const d = v.replace(/\D/g, '').slice(0, 16);
-    return d.replace(/(\d{4})/g, '$1 ').trim();
-  };
-
   const formatPhone = (v: string) => {
     const d = v.replace(/\D/g, '').slice(0, 12);
     if (d.length <= 3) return `+${d}`;
@@ -58,8 +55,7 @@ export default function TransferScreen() {
     if (selected === 'own') return;
     const clean = recipient.replace(/[\s\-+]/g, '');
     const isPhone = /^\d{10,12}$/.test(clean);
-    const isCard  = /^\d{16}$/.test(clean);
-    if (!isPhone && !isCard) { setResolvedUser(null); setResolveError(''); return; }
+    if (!isPhone) { setResolvedUser(null); setResolveError(''); return; }
 
     setResolving(true);
     setResolveError('');
@@ -167,22 +163,6 @@ export default function TransferScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
             <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
-
-              {selected === 'card' && (
-                <Animated.View entering={FadeInDown}>
-                  <Text style={s.fieldLbl}>Номер карты получателя</Text>
-                  <TextInput
-                    style={s.input}
-                    value={recipient}
-                    onChangeText={v => { setRecipient(formatCard(v)); setResolvedUser(null); setResolveError(''); }}
-                    onBlur={handleResolve}
-                    placeholder="0000 0000 0000 0000"
-                    placeholderTextColor={colors.outlineVariant}
-                    keyboardType="numeric"
-                    maxLength={19}
-                  />
-                </Animated.View>
-              )}
 
               {selected === 'phone' && (
                 <Animated.View entering={FadeInDown}>
