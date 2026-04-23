@@ -23,7 +23,8 @@ router.get('/collection', async (req, res) => {
       orderBy: [{ rarity: 'asc' }, { name: 'asc' }],
     });
 
-    await setCached(cacheKey, cards, 3600);
+    // Reduced TTL from 3600 to 300s so new cards appear within 5 minutes
+    await setCached(cacheKey, cards, 300);
     res.json(cards);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -56,6 +57,21 @@ router.get('/inventory', async (req, res) => {
   }
 });
 
+// GET /api/cards/stats/rarities — must be ABOVE /:id to avoid being caught by the dynamic route
+router.get('/stats/rarities', async (req, res) => {
+  try {
+    const cards = await req.prisma.userCard.findMany({
+      where: { userId: req.userId },
+      include: { collectionCard: { select: { rarity: true } } },
+    });
+    const stats = { COMMON: 0, RARE: 0, EPIC: 0, LEGENDARY: 0 };
+    for (const c of cards) stats[c.collectionCard.rarity]++;
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // POST /api/cards/buy — purchase a card from the shop for MB points
 router.post('/buy', async (req, res) => {
   try {
@@ -69,6 +85,14 @@ router.post('/buy', async (req, res) => {
     });
     if (!collectionCard) {
       return res.status(404).json({ error: 'Карта не найдена или недоступна' });
+    }
+
+    // Guard against duplicate purchases
+    const alreadyOwned = await req.prisma.userCard.findFirst({
+      where: { userId: req.userId, collectionCardId },
+    });
+    if (alreadyOwned) {
+      return res.status(400).json({ error: 'Эта карта уже есть в вашем инвентаре' });
     }
 
     const DEFAULT_PRICES = { COMMON: 300, RARE: 800, EPIC: 1500, LEGENDARY: 3500 };
@@ -106,23 +130,6 @@ router.post('/buy', async (req, res) => {
   }
 });
 
-// GET /api/cards/:id
-router.get('/:id', async (req, res) => {
-  try {
-    const card = await req.prisma.userCard.findFirst({
-      where: { id: req.params.id, userId: req.userId },
-      include: {
-        collectionCard: true,
-        deckCards: { include: { deck: true } },
-      },
-    });
-    if (!card) return res.status(404).json({ error: 'Карта не найдена' });
-    res.json(card);
-  } catch (err) {
-    res.status(500).json({ error: 'Ошибка сервера' });
-  }
-});
-
 // POST /api/cards/sacrifice
 router.post('/sacrifice', async (req, res) => {
   try {
@@ -149,16 +156,18 @@ router.post('/convert', async (req, res) => {
   }
 });
 
-// GET /api/cards/stats/rarities
-router.get('/stats/rarities', async (req, res) => {
+// GET /api/cards/:id — MUST remain last to avoid catching static paths above
+router.get('/:id', async (req, res) => {
   try {
-    const cards = await req.prisma.userCard.findMany({
-      where: { userId: req.userId },
-      include: { collectionCard: { select: { rarity: true } } },
+    const card = await req.prisma.userCard.findFirst({
+      where: { id: req.params.id, userId: req.userId },
+      include: {
+        collectionCard: true,
+        deckCards: { include: { deck: true } },
+      },
     });
-    const stats = { COMMON: 0, RARE: 0, EPIC: 0, LEGENDARY: 0 };
-    for (const c of cards) stats[c.collectionCard.rarity]++;
-    res.json(stats);
+    if (!card) return res.status(404).json({ error: 'Карта не найдена' });
+    res.json(card);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
   }
