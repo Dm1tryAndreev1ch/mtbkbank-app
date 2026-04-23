@@ -1,72 +1,47 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { body, validationResult } = require('express-validator');
-const rateLimit = require('express-rate-limit');
+const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 
-// Guard: fail fast if JWT_SECRET is not set
-if (!process.env.JWT_SECRET) {
-  console.error('[FATAL] JWT_SECRET is not set. Refusing to start.');
-  process.exit(1);
+const ACCESS_TTL = '15m';
+const REFRESH_TTL = '30d';
+
+function signAccess(userId) {
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: ACCESS_TTL });
+}
+function signRefresh(userId) {
+  return jwt.sign({ userId }, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, { expiresIn: REFRESH_TTL });
 }
 
-// Rate limiting на логин и verify — защита от brute-force атак на PIN
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 минут
-  max: 10,                   // максимум 10 попыток за окно
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Слишком много попыток входа. Повторите через 15 минут.' },
-});
-
-// POST /api/auth/login — PIN auth
-router.post('/login', loginLimiter, [
-  body('phone').isString().notEmpty().withMessage('Телефон обязателен'),
-  body('pin').isString().isLength({ min: 4, max: 6 }).withMessage('ПИН-код должен быть 4-6 символов')
-], async (req, res) => {
+// POST /api/auth/login
+router.post('/login', async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
     const { phone, pin } = req.body;
+    if (!phone || !pin) return res.status(400).json({ error: 'Укажите телефон и PIN' });
 
     const user = await req.prisma.user.findUnique({ where: { phone } });
-    if (!user) {
-      return res.status(401).json({ error: 'Пользователь не найден' });
-    }
+    if (!user) return res.status(401).json({ error: 'Неверный телефон или PIN' });
+    if (user.status === 'BLOCKED') return res.status(403).json({ error: 'Аккаунт заблокирован' });
 
-    const validPin = await bcrypt.compare(pin, user.pin);
-    if (!validPin) {
-      return res.status(401).json({ error: 'Неверный ПИН-код' });
-    }
+    const ok = await bcrypt.compare(pin, user.pin);
+    if (!ok) return res.status(401).json({ error: 'Неверный телефон или PIN' });
 
-    const accessToken = jwt.sign(
-      { userId: user.id, isAdmin: user.isAdmin },
-      process.env.JWT_SECRET,
-      { expiresIn: '15m' }
-    );
+    const accessToken = signAccess(user.id);
+    const refreshToken = signRefresh(user.id);
 
-    const refreshToken = jwt.sign(
-      { userId: user.id, refresh: true },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
+    // FIX: persist refresh token for later revocation
+    await req.prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken },
+    });
 
     res.json({
-      token: accessToken,
       accessToken,
       refreshToken,
       user: {
-        id: user.id,
-        name: user.name,
-        phone: user.phone,
-        avatarUrl: user.avatarUrl,
-        mbPoints: user.mbPoints,
-        status: user.status,
-        isAdmin: user.isAdmin,
+        id: user.id, name: user.name, phone: user.phone,
+        mbPoints: user.mbPoints, status: user.status, isAdmin: user.isAdmin,
       },
     });
   } catch (err) {
@@ -75,47 +50,52 @@ router.post('/login', loginLimiter, [
   }
 });
 
-// POST /api/auth/verify — verify PIN (for sensitive operations)
-// FIX: loginLimiter применён к /verify — брутфорс PIN через этот эндпоинт теперь ограничен
-router.post('/verify', loginLimiter, [
-  body('phone').isString().notEmpty(),
-  body('pin').isString().notEmpty()
-], async (req, res) => {
+// POST /api/auth/refresh
+router.post('/refresh', async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ valid: false, errors: errors.array() });
+    const { refreshToken } = req.body;
+    if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
 
-    const { phone, pin } = req.body;
-    const user = await req.prisma.user.findUnique({ where: { phone } });
-    if (!user) return res.status(401).json({ valid: false });
+    let payload;
+    try {
+      payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'Недействительный refresh token' });
+    }
 
-    const validPin = await bcrypt.compare(pin, user.pin);
-    res.json({ valid: validPin });
+    // FIX: validate stored token to support revocation
+    const user = await req.prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, status: true, refreshToken: true },
+    });
+    if (!user || user.refreshToken !== refreshToken) {
+      return res.status(401).json({ error: 'Недействительный refresh token' });
+    }
+    if (user.status === 'BLOCKED') return res.status(403).json({ error: 'Аккаунт заблокирован' });
+
+    const newAccessToken = signAccess(user.id);
+    const newRefreshToken = signRefresh(user.id);
+
+    await req.prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: newRefreshToken },
+    });
+
+    res.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// POST /api/auth/refresh
-router.post('/refresh', async (req, res) => {
+// POST /api/auth/logout
+// FIX: ревокация refresh token при logout
+router.post('/logout', authMiddleware, async (req, res) => {
   try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) return res.status(401).json({ error: 'Refresh token required' });
-
-    jwt.verify(refreshToken, process.env.JWT_SECRET, async (err, decoded) => {
-      if (err || !decoded.refresh) return res.status(403).json({ error: 'Invalid refresh token' });
-
-      const user = await req.prisma.user.findUnique({ where: { id: decoded.userId } });
-      if (!user) return res.status(404).json({ error: 'User not found' });
-
-      const newAccessToken = jwt.sign(
-        { userId: user.id, isAdmin: user.isAdmin },
-        process.env.JWT_SECRET,
-        { expiresIn: '15m' }
-      );
-
-      res.json({ accessToken: newAccessToken });
+    await req.prisma.user.update({
+      where: { id: req.userId },
+      data: { refreshToken: null },
     });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка сервера' });
   }
