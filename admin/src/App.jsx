@@ -5,8 +5,8 @@ let TOKEN = localStorage.getItem('admin_token') || '';
 
 /**
  * VITE_API_ORIGIN — прямой URL API (см. .env.development).
- * `vite preview` и встроенные вкладки Preview часто не проксируют POST на /api → «Cannot POST /api/...».
- * Для production-сборки на localhost/127.0.0.1 без env подставляем API по умолчанию (порт см. backend PORT).
+ * `vite preview` / вкладка Preview часто не проксируют POST → «Cannot POST /api/...».
+ * На localhost/127.0.0.1 без env — прямой вызов API (порт см. backend PORT, по умолчанию 3000).
  */
 function withApiBase(path) {
   let p = path.startsWith('/') ? path : `/${path}`;
@@ -14,7 +14,7 @@ function withApiBase(path) {
     .trim()
     .replace(/\/+$/, '');
 
-  if (!base && typeof window !== 'undefined' && import.meta.env.PROD) {
+  if (!base && typeof window !== 'undefined') {
     const h = window.location.hostname;
     if (h === 'localhost' || h === '127.0.0.1') {
       base = 'http://127.0.0.1:3000';
