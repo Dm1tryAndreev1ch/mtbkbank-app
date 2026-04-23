@@ -3,7 +3,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const { PrismaClient } = require('@prisma/client');
 
 const authRoutes = require('./routes/auth');
@@ -24,18 +23,7 @@ const app = express();
 const prisma = new PrismaClient();
 
 app.use(helmet());
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Слишком много запросов, попробуйте позже' },
-});
-app.use(limiter);
-
 app.use(cors({ origin: true, credentials: true }));
-
 app.use(express.json());
 
 app.use((req, _res, next) => {
