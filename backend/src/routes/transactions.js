@@ -48,8 +48,13 @@ router.get('/analytics', async (req, res) => {
     else if (period === 'month') startDate = new Date(now.getFullYear(), now.getMonth(), 1);
     else startDate = new Date(now.getFullYear(), 0, 1);
 
+    // FIX: include PAYMENT and TRANSFER_OUT in addition to PURCHASE
     const transactions = await req.prisma.transaction.findMany({
-      where: { userId: req.userId, type: 'PURCHASE', createdAt: { gte: startDate } },
+      where: {
+        userId: req.userId,
+        type: { in: ['PURCHASE', 'PAYMENT', 'TRANSFER_OUT'] },
+        createdAt: { gte: startDate },
+      },
     });
 
     const categories = {};
