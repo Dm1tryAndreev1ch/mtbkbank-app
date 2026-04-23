@@ -4,16 +4,24 @@ const API = '/api/admin';
 let TOKEN = localStorage.getItem('admin_token') || '';
 
 /**
- * VITE_API_ORIGIN (see .env.development) = прямой URL API — надёжный логин (JSON), без HTML от прокси.
- * Иначе относительный /api… — через proxy Vite (ADMIN_BACKEND_URL в vite.config).
+ * VITE_API_ORIGIN — прямой URL API (см. .env.development).
+ * `vite preview` и встроенные вкладки Preview часто не проксируют POST на /api → «Cannot POST /api/...».
+ * Для production-сборки на localhost/127.0.0.1 без env подставляем API по умолчанию (порт см. backend PORT).
  */
 function withApiBase(path) {
   let p = path.startsWith('/') ? path : `/${path}`;
   let base = (import.meta.env.VITE_API_ORIGIN || import.meta.env.VITE_API_BASE_URL || '')
     .trim()
     .replace(/\/+$/, '');
+
+  if (!base && typeof window !== 'undefined' && import.meta.env.PROD) {
+    const h = window.location.hostname;
+    if (h === 'localhost' || h === '127.0.0.1') {
+      base = 'http://127.0.0.1:3000';
+    }
+  }
+
   if (!base) return p;
-  // http://host:3000/api + /api/... → убрать хвост /api, иначе 404 на /api/api/...
   if (p.startsWith('/api') && /\/api$/i.test(base)) {
     base = base.replace(/\/api$/i, '');
   }
