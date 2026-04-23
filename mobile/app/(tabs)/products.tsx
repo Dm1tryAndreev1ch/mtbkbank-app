@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, Alert
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -40,16 +40,6 @@ export default function ProductsScreen() {
     .filter((a: any) => a.currency === 'RUB')
     .reduce((sum: number, a: any) => sum + a.balance, 0);
 
-  const plans = [
-    { name: 'Premium Vault', icon: 'workspace-premium', status: 'Активен', period: 'до 24 мар 2026', color: colors.primary },
-    { name: 'Travel Plus', icon: 'flight', status: 'Активен', period: 'до 12 июн 2026', color: colors.tertiary },
-  ];
-
-  const installments = [
-    { name: 'MacBook Pro M3', merchant: 'М.Видео', paid: 8, total: 12, monthly: 14200, remaining: 56800, icon: 'laptop-mac' },
-    { name: 'iPhone 16 Pro', merchant: 'Apple Store', paid: 3, total: 24, monthly: 5400, remaining: 113400, icon: 'phone-iphone' },
-  ];
-
   return (
     <SafeAreaView style={s.container} edges={['top']}>
       <ScrollView
@@ -85,10 +75,6 @@ export default function ProductsScreen() {
         <View style={s.totalCard}>
           <Text style={s.totalLabel}>Общий баланс</Text>
           <Text style={s.totalValue}>{formatMoney(totalBalance)}</Text>
-          <View style={s.totalTrend}>
-            <MaterialIcons name="trending-up" size={16} color={colors.primary} />
-            <Text style={s.totalTrendText}>+2.4% за месяц</Text>
-          </View>
         </View>
 
         {/* Accounts */}
@@ -96,10 +82,9 @@ export default function ProductsScreen() {
           <Text style={s.sectionTitle}>Счета</Text>
           <View style={s.accountsList}>
             {accounts.map((acc: any) => (
-              <TouchableOpacity
+              <View
                 key={acc.id}
                 style={s.accountCard}
-                onPress={() => Alert.alert('Счет', 'Детали счета скоро появятся')}
               >
                 <View style={s.accountLeft}>
                   <View style={s.accountIcon}>
@@ -120,69 +105,10 @@ export default function ProductsScreen() {
                   <Text style={s.accountBalance}>
                     {formatMoney(acc.balance, acc.currency === 'USD' ? '$' : '₽')}
                   </Text>
-                  <MaterialIcons name="chevron-right" size={20} color={colors.outlineVariant} />
                 </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Active Plans */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Активные планы</Text>
-          <View style={s.plansGrid}>
-            {plans.map((plan, i) => (
-              <View key={i} style={s.planCard}>
-                <View style={[s.planIcon, { backgroundColor: `${plan.color}18` }]}>
-                  <MaterialIcons name={plan.icon as any} size={28} color={plan.color} />
-                </View>
-                <Text style={s.planName}>{plan.name}</Text>
-                <View style={s.planBadge}>
-                  <View style={s.planDot} />
-                  <Text style={s.planStatus}>{plan.status}</Text>
-                </View>
-                <Text style={s.planPeriod}>{plan.period}</Text>
               </View>
             ))}
           </View>
-        </View>
-
-        {/* Installments */}
-        <View style={s.section}>
-          <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Рассрочки</Text>
-            <TouchableOpacity onPress={() => Alert.alert('Рассрочки', 'Открытие всех рассрочек')}>
-              <Text style={s.viewAll}>Все</Text>
-            </TouchableOpacity>
-          </View>
-          {installments.map((inst, i) => {
-            const progress = inst.paid / inst.total;
-            return (
-              <View key={i} style={s.installmentCard}>
-                <View style={s.installmentHeader}>
-                  <View style={s.installmentLeft}>
-                    <View style={s.installmentIcon}>
-                      <MaterialIcons name={inst.icon as any} size={24} color={colors.onSurfaceVariant} />
-                    </View>
-                    <View>
-                      <Text style={s.installmentName}>{inst.name}</Text>
-                      <Text style={s.installmentMerchant}>{inst.merchant}</Text>
-                    </View>
-                  </View>
-                  <Text style={s.installmentMonthly}>₽ {inst.monthly.toLocaleString('ru-RU')}/мес</Text>
-                </View>
-                <View style={s.installmentProgress}>
-                  <View style={s.progressBarBg}>
-                    <View style={[s.progressBarFill, { width: `${progress * 100}%` }]} />
-                  </View>
-                  <View style={s.progressLabels}>
-                    <Text style={s.progressPaid}>{inst.paid} из {inst.total} платежей</Text>
-                    <Text style={s.progressRemaining}>Осталось ₽ {inst.remaining.toLocaleString('ru-RU')}</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -275,43 +201,16 @@ const mk = (C: any) =>
       letterSpacing: -1,
       marginTop: 4,
     },
-    totalTrend: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      marginTop: 8,
-      backgroundColor: `${C.primary}18`,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: BorderRadius.full,
-    },
-    totalTrendText: {
-      fontSize: Fonts.sizes.sm,
-      fontFamily: 'Manrope-Bold',
-      color: C.primary,
-    },
 
     // Sections
     section: {
       paddingHorizontal: Spacing.base,
       marginTop: Spacing['2xl'],
     },
-    sectionHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'flex-end',
-      marginBottom: Spacing.base,
-    },
     sectionTitle: {
       fontSize: Fonts.sizes.xl,
       fontFamily: 'Manrope-Bold',
       color: C.onSurface,
-      marginBottom: Spacing.base,
-    },
-    viewAll: {
-      fontSize: Fonts.sizes.sm,
-      fontFamily: 'Manrope-Bold',
-      color: C.primary,
       marginBottom: Spacing.base,
     },
 
@@ -353,108 +252,5 @@ const mk = (C: any) =>
       fontSize: Fonts.sizes.base,
       fontFamily: 'Manrope-ExtraBold',
       color: C.onSurface,
-    },
-
-    // Plans
-    plansGrid: { flexDirection: 'row', gap: Spacing.base },
-    planCard: {
-      flex: 1,
-      backgroundColor: C.surfaceContainerLowest,
-      borderRadius: BorderRadius.lg,
-      padding: Spacing.xl,
-      gap: Spacing.sm,
-      ...Shadows.sm,
-      borderWidth: 1,
-      borderColor: C.transparentBorder,
-    },
-    planIcon: {
-      width: 56,
-      height: 56,
-      borderRadius: 16,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    planName: {
-      fontSize: Fonts.sizes.base,
-      fontFamily: 'Manrope-Bold',
-      color: C.onSurface,
-    },
-    planBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    planDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22c55e' },
-    planStatus: {
-      fontSize: Fonts.sizes.sm,
-      fontFamily: 'Manrope-Bold',
-      color: '#22c55e',
-    },
-    planPeriod: {
-      fontSize: Fonts.sizes.sm,
-      fontFamily: 'Manrope-Medium',
-      color: C.onSurfaceVariant,
-    },
-
-    // Installments
-    installmentCard: {
-      backgroundColor: C.surfaceContainerLowest,
-      borderRadius: BorderRadius.base,
-      padding: Spacing.xl,
-      marginBottom: Spacing.base,
-      ...Shadows.sm,
-      borderWidth: 1,
-      borderColor: C.transparentBorder,
-    },
-    installmentHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: Spacing.base,
-    },
-    installmentLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base },
-    installmentIcon: {
-      width: 48,
-      height: 48,
-      borderRadius: 14,
-      backgroundColor: C.surfaceContainerHigh,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    installmentName: {
-      fontSize: Fonts.sizes.base,
-      fontFamily: 'Manrope-Bold',
-      color: C.onSurface,
-    },
-    installmentMerchant: {
-      fontSize: Fonts.sizes.sm,
-      fontFamily: 'Manrope-Medium',
-      color: C.onSurfaceVariant,
-      marginTop: 2,
-    },
-    installmentMonthly: {
-      fontSize: Fonts.sizes.md,
-      fontFamily: 'Manrope-Bold',
-      color: C.onSurfaceVariant,
-    },
-    installmentProgress: { gap: Spacing.sm },
-    progressBarBg: {
-      width: '100%',
-      height: 8,
-      backgroundColor: C.surfaceContainerHigh,
-      borderRadius: 4,
-      overflow: 'hidden',
-    },
-    progressBarFill: {
-      height: '100%',
-      backgroundColor: C.primary,
-      borderRadius: 4,
-    },
-    progressLabels: { flexDirection: 'row', justifyContent: 'space-between' },
-    progressPaid: {
-      fontSize: Fonts.sizes.sm,
-      fontFamily: 'Manrope-Bold',
-      color: C.primary,
-    },
-    progressRemaining: {
-      fontSize: Fonts.sizes.sm,
-      fontFamily: 'Manrope-Medium',
-      color: C.onSurfaceVariant,
     },
   });

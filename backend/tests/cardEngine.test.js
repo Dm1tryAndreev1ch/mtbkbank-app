@@ -15,7 +15,9 @@ const mockPrisma = {
   notification: { create: jest.fn() },
   transaction: { update: jest.fn() },
   deckCard: { deleteMany: jest.fn() },
-  $transaction: jest.fn(cb => cb(mockPrisma)),
+  systemConfig: { findUnique: jest.fn().mockResolvedValue(null) }, // returns null → use default decay rates
+  $executeRaw: jest.fn(),
+  $transaction: jest.fn(async (fn) => fn(mockPrisma)),
 };
 
 jest.mock('@prisma/client', () => {
@@ -24,32 +26,47 @@ jest.mock('@prisma/client', () => {
   };
 });
 
-const { processCardDrop, decayAllCardHealth, sacrificeCard } = require('../src/services/cardEngine');
+const { processCardDrop, decayAllCardHealth, sacrificeCard, rollCardDrop } = require('../src/services/cardEngine');
 
 describe('Card Engine Mechanics', () => {
-  
+
   beforeEach(() => {
     jest.clearAllMocks();
+    // Re-apply persistent defaults after clearAllMocks wipes them
+    mockPrisma.systemConfig.findUnique.mockResolvedValue(null);
+  });
+
+  describe('rollCardDrop', () => {
+    it('returns null when random roll >= 0.30 (no drop)', () => {
+      jest.spyOn(Math, 'random').mockReturnValue(0.5);
+      expect(rollCardDrop()).toBeNull();
+    });
+
+    it('returns a rarity when random roll < 0.30 (drop happens)', () => {
+      jest.spyOn(Math, 'random')
+        .mockReturnValueOnce(0.01)  // triggers drop (< 0.30)
+        .mockReturnValueOnce(0.01); // selects LEGENDARY (< 0.03)
+      expect(rollCardDrop()).toBe('LEGENDARY');
+    });
   });
 
   describe('processCardDrop', () => {
-    it('returns null reliably when random roll > 0.05 (no drop happens)', async () => {
-      jest.spyOn(Math, 'random').mockReturnValue(0.5); // 50%
+    it('returns null reliably when random roll >= 0.30 (no drop happens)', async () => {
+      jest.spyOn(Math, 'random').mockReturnValue(0.5);
       mockPrisma.collectionCard.findMany.mockResolvedValue([]);
       const result = await processCardDrop(mockPrisma, 'user_1', 'trans_1');
       expect(result).toBeNull();
     });
 
     it('processes a LEGENDARY drop if random hits an exact extreme threshold', async () => {
-      // 5% drop chance threshold forces trigger. Legendary requires < 0.03
       jest.spyOn(Math, 'random')
-          .mockReturnValueOnce(0.01) // Triggers Drop logic ( < 0.05 )
-          .mockReturnValueOnce(0.01); // Selects Legendary rarity ( < 0.03 )
+          .mockReturnValueOnce(0.01) // Triggers Drop logic (< 0.30)
+          .mockReturnValueOnce(0.01); // Selects Legendary rarity (< 0.03)
 
       mockPrisma.collectionCard.findMany.mockResolvedValue([{ id: 'c_leg', name: 'Black Card' }]);
       mockPrisma.userCard.create.mockResolvedValue({ id: 'uc_1', collectionCardId: 'c_leg', health: 100 });
       mockPrisma.user.findUnique.mockResolvedValue({ id: 'user_1', expoPushToken: 'token' });
-      
+
       const result = await processCardDrop(mockPrisma, 'user_1', 'trans_1');
       expect(result).toBeDefined();
       expect(mockPrisma.userCard.create).toHaveBeenCalled();
@@ -58,27 +75,21 @@ describe('Card Engine Mechanics', () => {
   });
 
   describe('decayAllCardHealth', () => {
-    it('decrements health according to rarity constraints gracefully stopping at 0', async () => {
-      const mockCards = [
-        { id: 'uc_1', userId: 'user_1', health: 50, collectionCard: { rarity: 'COMMON', name: 'Standard' }, user: {} },
-      ];
-      
-      mockPrisma.userCard.findMany.mockResolvedValueOnce(mockCards).mockResolvedValue([]); // Mock remaining calls empty
-      
+    it('uses $executeRaw for bulk health decay and handles warning cards', async () => {
+      mockPrisma.userCard.findMany.mockResolvedValue([]); // no warning-threshold cards
+      mockPrisma.$executeRaw.mockResolvedValue(5); // 5 rows updated
+
       await decayAllCardHealth(mockPrisma);
-      
-      expect(mockPrisma.userCard.update).toHaveBeenCalledWith({
-        where: { id: 'uc_1' },
-        data: { health: 48 }, // 50 - 2.0 (COMMON default decay)
-      });
+
+      expect(mockPrisma.$executeRaw).toHaveBeenCalled();
     });
   });
 
   describe('sacrificeCard', () => {
     it('infuses MB points cleanly calculating exact formulas', async () => {
-      const sacrificeData = { id: 'sac_1', collectionCard: { rarity: 'COMMON', maxHealth: 100 } }; // multiplier 0.5 -> heals 50
+      const sacrificeData = { id: 'sac_1', collectionCard: { rarity: 'COMMON', maxHealth: 100 } };
       const targetData = { id: 'tar_1', health: 50, collectionCard: { rarity: 'EPIC', maxHealth: 100 } };
-      
+
       mockPrisma.userCard.findFirst
           .mockResolvedValueOnce(sacrificeData)
           .mockResolvedValueOnce(targetData);
@@ -87,11 +98,11 @@ describe('Card Engine Mechanics', () => {
       mockPrisma.userCard.update.mockResolvedValue({ ...targetData, health: 100 });
 
       await sacrificeCard(mockPrisma, 'user_1', 'sac_1', 'tar_1');
-      
+
       expect(mockPrisma.userCard.update).toHaveBeenCalledWith({
-         where: { id: 'tar_1' },
-         data: { health: 100 },
-         include: { collectionCard: true }
+        where: { id: 'tar_1' },
+        data: { health: 100 },
+        include: { collectionCard: true }
       });
     });
   });

@@ -90,9 +90,20 @@ router.get('/cards', async (req, res) => {
 });
 
 // POST /api/admin/cards
+// FIX: whitelist полей — mass assignment устранён
 router.post('/cards', async (req, res) => {
   try {
-    const card = await req.prisma.collectionCard.create({ data: req.body });
+    const {
+      name, description, rarity, brandName, brandLogo, imageUrl,
+      cashbackPercent, maxHealth, dropRate, isActive,
+    } = req.body;
+    const card = await req.prisma.collectionCard.create({
+      data: {
+        name, description, rarity, brandName, brandLogo, imageUrl,
+        cashbackPercent, maxHealth, dropRate,
+        isActive: isActive !== undefined ? isActive : true,
+      },
+    });
     res.json(card);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка создания карты' });
@@ -100,11 +111,28 @@ router.post('/cards', async (req, res) => {
 });
 
 // PUT /api/admin/cards/:id
+// FIX: whitelist полей — mass assignment устранён
 router.put('/cards/:id', async (req, res) => {
   try {
+    const {
+      name, description, rarity, brandName, brandLogo, imageUrl,
+      cashbackPercent, maxHealth, dropRate, isActive,
+    } = req.body;
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description;
+    if (rarity !== undefined) data.rarity = rarity;
+    if (brandName !== undefined) data.brandName = brandName;
+    if (brandLogo !== undefined) data.brandLogo = brandLogo;
+    if (imageUrl !== undefined) data.imageUrl = imageUrl;
+    if (cashbackPercent !== undefined) data.cashbackPercent = cashbackPercent;
+    if (maxHealth !== undefined) data.maxHealth = maxHealth;
+    if (dropRate !== undefined) data.dropRate = dropRate;
+    if (isActive !== undefined) data.isActive = isActive;
+
     const card = await req.prisma.collectionCard.update({
       where: { id: req.params.id },
-      data: req.body,
+      data,
     });
     res.json(card);
   } catch (err) {
@@ -265,9 +293,13 @@ router.get('/quests', async (req, res) => {
 });
 
 // POST /api/admin/quests
+// FIX: whitelist полей — mass assignment устранён
 router.post('/quests', async (req, res) => {
   try {
-    const quest = await req.prisma.quest.create({ data: req.body });
+    const { title, description, type, target, reward, isActive } = req.body;
+    const quest = await req.prisma.quest.create({
+      data: { title, description, type, target, reward, isActive },
+    });
     res.json(quest);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка создания квеста' });
@@ -275,11 +307,21 @@ router.post('/quests', async (req, res) => {
 });
 
 // PUT /api/admin/quests/:id
+// FIX: whitelist полей — mass assignment устранён
 router.put('/quests/:id', async (req, res) => {
   try {
+    const { title, description, type, target, reward, isActive } = req.body;
+    const data = {};
+    if (title !== undefined) data.title = title;
+    if (description !== undefined) data.description = description;
+    if (type !== undefined) data.type = type;
+    if (target !== undefined) data.target = target;
+    if (reward !== undefined) data.reward = reward;
+    if (isActive !== undefined) data.isActive = isActive;
+
     const quest = await req.prisma.quest.update({
       where: { id: req.params.id },
-      data: req.body,
+      data,
     });
     res.json(quest);
   } catch (err) {
@@ -439,6 +481,8 @@ router.get('/dashboard/extended', async (req, res) => {
 router.get('/transactions', async (req, res) => {
   try {
     const { limit = 50, offset = 0, type, category, userId, search, dateFrom, dateTo, amountMin, amountMax } = req.query;
+    // FIX: cap limit
+    const safeLimit = Math.min(parseInt(limit) || 50, 200);
 
     const where = {};
     if (type) where.type = type;
@@ -466,8 +510,8 @@ router.get('/transactions', async (req, res) => {
       req.prisma.transaction.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        take: parseInt(limit),
-        skip: parseInt(offset),
+        take: safeLimit,
+        skip: parseInt(offset) || 0,
         include: {
           user: { select: { id: true, name: true, phone: true } },
           fromAccount: { select: { id: true, name: true, balance: true } },
@@ -477,7 +521,7 @@ router.get('/transactions', async (req, res) => {
       req.prisma.transaction.count({ where }),
     ]);
 
-    res.json({ transactions, total, limit: parseInt(limit), offset: parseInt(offset) });
+    res.json({ transactions, total, limit: safeLimit, offset: parseInt(offset) || 0 });
   } catch (err) {
     console.error('Admin transactions error:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -505,8 +549,9 @@ router.get('/transactions/:id', async (req, res) => {
 // POST /api/admin/transactions/adjust
 router.post('/transactions/adjust', async (req, res) => {
   try {
-    const { userId, accountId, amount, reason, type = 'refund' } = req.body;
-    if (!userId || !amount || !reason) {
+    const { userId, accountId, amount: rawAmount, reason, type = 'refund' } = req.body;
+    const amount = parseFloat(rawAmount);
+    if (!userId || isNaN(amount) || !reason) {
       return res.status(400).json({ error: 'Укажите userId, amount и reason' });
     }
 
@@ -621,9 +666,11 @@ router.get('/accounts', async (req, res) => {
 // PUT /api/admin/accounts/:id/balance
 router.put('/accounts/:id/balance', async (req, res) => {
   try {
-    const { amount, reason } = req.body;
-    if (amount === undefined || !reason) {
-      return res.status(400).json({ error: 'Укажите amount и reason' });
+    const { amount: rawAmount, reason } = req.body;
+    // FIX: явный parseFloat + проверка на NaN; Math.abs исключает негативные корректировки без reason
+    const amount = parseFloat(rawAmount);
+    if (isNaN(amount) || !reason) {
+      return res.status(400).json({ error: 'Укажите корректный amount и reason' });
     }
 
     const account = await req.prisma.bankAccount.findUnique({
@@ -631,20 +678,20 @@ router.put('/accounts/:id/balance', async (req, res) => {
     });
     if (!account) return res.status(404).json({ error: 'Счёт не найден' });
 
-    const adjustAmount = parseFloat(amount);
-    const isPositive = adjustAmount >= 0;
+    const adjustAmount = Math.abs(amount);
+    const isPositive = amount >= 0;
 
     const [updatedAccount, transaction] = await req.prisma.$transaction([
       req.prisma.bankAccount.update({
         where: { id: req.params.id },
-        data: { balance: isPositive ? { increment: Math.abs(adjustAmount) } : { decrement: Math.abs(adjustAmount) } },
+        data: { balance: isPositive ? { increment: adjustAmount } : { decrement: adjustAmount } },
       }),
       req.prisma.transaction.create({
         data: {
           userId: account.userId,
           toAccountId: isPositive ? req.params.id : undefined,
           fromAccountId: isPositive ? undefined : req.params.id,
-          amount: Math.abs(adjustAmount),
+          amount: adjustAmount,
           type: 'ADMIN_ADJUSTMENT',
           category: 'Корректировка баланса',
           merchant: `Администратор: ${reason}`,

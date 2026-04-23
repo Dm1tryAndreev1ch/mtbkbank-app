@@ -16,7 +16,7 @@ import Animated2, { FadeIn } from 'react-native-reanimated';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import { LinearGradient } from 'expo-linear-gradient';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type Rarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
@@ -33,7 +33,7 @@ interface CollectionCard {
   isActive: boolean;
 }
 
-// ─── Rarity helpers ───────────────────────────────────────────────────────────
+// ─── Rarity helpers ──────────────────────────────────────────────────────────
 
 const RARITY_GRADIENTS: Record<Rarity, [string, string, string]> = {
   COMMON:    ['#4b5563', '#374151', '#1f2937'],
@@ -103,13 +103,9 @@ function ShopCardItem({ card, purchased, canAfford, onBuy }: ShopCardItemProps) 
     <View style={shopStyles.cardWrap}>
       <LinearGradient colors={gradient} style={shopStyles.cardGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
         {isLegendary && <LegendaryGlow />}
-
-        {/* Rarity badge */}
         <View style={[shopStyles.rarityBadge, { backgroundColor: badgeColor }]}>
           <Text style={shopStyles.rarityBadgeText}>{getRarityName(card.rarity).toUpperCase()}</Text>
         </View>
-
-        {/* Brand icon / initials */}
         <View style={shopStyles.brandIconWrap}>
           <View style={[shopStyles.brandCircle, { borderColor: badgeColor }]}>
             {card.brandIcon ? (
@@ -119,17 +115,11 @@ function ShopCardItem({ card, purchased, canAfford, onBuy }: ShopCardItemProps) 
             )}
           </View>
         </View>
-
-        {/* Name */}
         <Text style={shopStyles.cardName} numberOfLines={1}>{card.brandName ?? card.name}</Text>
-
-        {/* Cashback */}
         <View style={shopStyles.cashbackRow}>
           <MaterialIcons name="percent" size={12} color="rgba(255,255,255,0.9)" />
           <Text style={shopStyles.cashbackText}>{card.cashbackPercent}% кэшбэк</Text>
         </View>
-
-        {/* Price + Buy */}
         {purchased ? (
           <View style={shopStyles.purchasedBadge}>
             <MaterialIcons name="check-circle" size={14} color="#22c55e" />
@@ -146,7 +136,6 @@ function ShopCardItem({ card, purchased, canAfford, onBuy }: ShopCardItemProps) 
           </TouchableOpacity>
         )}
       </LinearGradient>
-
       {purchased && <View style={shopStyles.purchasedOverlay} />}
     </View>
   );
@@ -215,7 +204,6 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
   const [successCard, setSuccessCard] = useState<CollectionCard | null>(null);
   const successAnim = useRef(new Animated.Value(0)).current;
 
-  // Load EPIC + LEGENDARY cards from backend
   const loadShopCards = useCallback(async () => {
     setLoading(true);
     try {
@@ -241,7 +229,6 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
     setPurchasedIds([]);
   }
 
-  // Timer tick
   useEffect(() => {
     const tick = () => setTimerMs(Math.max(0, nextRefresh.getTime() - Date.now()));
     tick();
@@ -249,7 +236,6 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
     return () => clearInterval(id);
   }, [nextRefresh]);
 
-  // Auto-refresh when timer hits 0
   useEffect(() => {
     if (timerMs === 0 && allCards.length > 0) {
       const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS);
@@ -316,7 +302,6 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Header */}
       <View style={shopTabStyles.header}>
         <View>
           <Text style={shopTabStyles.headerTitle}>Магазин карт</Text>
@@ -336,7 +321,6 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
         </TouchableOpacity>
       </View>
 
-      {/* Timer */}
       <View style={[shopTabStyles.timerRow, { backgroundColor: colors.surfaceContainerHigh }]}>
         <MaterialIcons name="schedule" size={14} color={colors.onSurfaceVariant} />
         <Text style={[shopTabStyles.timerText, { color: colors.onSurfaceVariant }]}>
@@ -344,7 +328,6 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
         </Text>
       </View>
 
-      {/* Filters */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={shopTabStyles.filterScroll} contentContainerStyle={{ paddingHorizontal: Spacing.base, gap: 8 }}>
         {FILTERS.map((f) => (
           <TouchableOpacity
@@ -364,7 +347,6 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
         ))}
       </ScrollView>
 
-      {/* Cards grid */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={shopTabStyles.grid}>
         {filteredCards.length === 0 ? (
           <View style={shopTabStyles.emptyState}>
@@ -412,7 +394,7 @@ function ShopTab({ userPoints, onPointsChange, colors }: {
                 </LinearGradient>
                 <Text style={[shopTabStyles.confirmTitle, { color: colors.onSurface }]}>Купить карту?</Text>
                 <Text style={[shopTabStyles.confirmBonus, { color: colors.onSurfaceVariant }]}>
-                  {confirmCard.cashbackPercent}% кэшбэк
+                  {confirmCard.cashbackPercent}% кэшбэк у {confirmCard.brandName ?? confirmCard.name}
                 </Text>
                 <Text style={[shopTabStyles.confirmPrice, { color: colors.primary }]}>
                   {price.toLocaleString('ru-RU')} MB
@@ -653,6 +635,20 @@ export default function CardsScreen() {
   const filteredCards = filter ? cards.filter((c: any) => c.collectionCard.rarity === filter) : cards;
   const availableCards = cards.filter((c: any) => !equippedCardIds.has(c.id));
 
+  // Per-brand cashback chips from active deck
+  const deckCashbackChips = useMemo(() => {
+    if (!activeDeck?.deckCards?.length) return [];
+    return [...(activeDeck.deckCards as any[])]
+      .sort((a, b) => a.slotIndex - b.slotIndex)
+      .filter((dc) => dc.userCard?.collectionCard)
+      .map((dc) => ({
+        id: dc.userCard.id,
+        brand: dc.userCard.collectionCard.brandName ?? dc.userCard.collectionCard.name,
+        percent: dc.userCard.collectionCard.cashbackPercent,
+        rarity: dc.userCard.collectionCard.rarity,
+      }));
+  }, [activeDeck]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* ── Top header ── */}
@@ -702,16 +698,36 @@ export default function CardsScreen() {
       {/* ── DECK TAB ── */}
       {activeTab === 'deck' && (
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+
           {/* Active Deck */}
           {activeDeck ? (
             <Animated2.View entering={FadeIn} style={styles.deckSection}>
-              <View style={styles.deckHeader}>
-                <Text style={styles.deckName}>{activeDeck.name}</Text>
-                <View style={styles.cashbackBadge}>
-                  <MaterialIcons name="percent" size={14} color={colors.primary} />
-                  <Text style={styles.cashbackText}>{activeDeck.totalCashback?.toFixed(1) || 0}% Общий Cashback</Text>
-                </View>
-              </View>
+              {/* Deck name */}
+              <Text style={styles.deckName}>{activeDeck.name}</Text>
+
+              {/* Per-brand cashback chips */}
+              {deckCashbackChips.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.cashbackChipsRow}
+                  contentContainerStyle={{ gap: 8, paddingRight: 4 }}
+                >
+                  {deckCashbackChips.map((chip) => {
+                    const rarityColor = getRarityCol(chip.rarity);
+                    return (
+                      <View key={chip.id} style={[styles.cashbackChip, { borderColor: rarityColor, backgroundColor: rarityColor + '18' }]}>
+                        <Text style={[styles.cashbackChipBrand, { color: rarityColor }]} numberOfLines={1}>
+                          {chip.brand}
+                        </Text>
+                        <Text style={[styles.cashbackChipPct, { color: rarityColor }]}>
+                          {chip.percent}%
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              )}
 
               {(isEquipping || isSacrificing) && (
                 <View style={styles.deckLoadingOverlay}>
@@ -974,7 +990,7 @@ export default function CardsScreen() {
                 <View style={styles.detailStatsBlock}>
                   <View style={styles.detailStat}>
                     <MaterialIcons name="percent" size={18} color={colors.primary} />
-                    <Text style={styles.detailStatText}> {selectedCard.collectionCard.cashbackPercent}% Cashback</Text>
+                    <Text style={styles.detailStatText}> {selectedCard.collectionCard.cashbackPercent}% у {selectedCard.collectionCard.brandName ?? selectedCard.collectionCard.name}</Text>
                   </View>
                   <View style={styles.detailStat}>
                     <MaterialIcons name="favorite" size={18} color={selectedCard.health > 50 ? '#22c55e' : colors.error} />
@@ -1033,11 +1049,21 @@ const getStyles = (Colors: any) => StyleSheet.create({
   tabSwitcher: { flexDirection: 'row', marginHorizontal: Spacing.base, marginBottom: Spacing.base, backgroundColor: Colors.surfaceContainerHigh, borderRadius: BorderRadius.full, padding: 4 },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: BorderRadius.full },
   tabBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold' },
+
+  // Deck
   deckSection: { marginHorizontal: Spacing.base, marginTop: Spacing.sm, backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.xl, ...Shadows.md, borderWidth: 1, borderColor: Colors.transparentBorder },
-  deckHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.base },
-  deckName: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface },
-  cashbackBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(79,142,247,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: BorderRadius.full },
-  cashbackText: { fontFamily: 'Manrope-ExtraBold', color: Colors.primary, fontSize: Fonts.sizes.xs },
+  deckName: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface, marginBottom: Spacing.sm },
+
+  // Per-brand cashback chips
+  cashbackChipsRow: { marginBottom: Spacing.base, flexGrow: 0 },
+  cashbackChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderRadius: BorderRadius.full,
+    paddingHorizontal: 12, paddingVertical: 5,
+  },
+  cashbackChipBrand: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', maxWidth: 90 },
+  cashbackChipPct: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold' },
+
   deckLoadingOverlay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: Spacing.sm },
   deckLoadingText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant },
   deckGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, justifyContent: 'center' },
@@ -1052,6 +1078,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
   healthBarContainer: { width: '90%', height: 4, backgroundColor: Colors.surfaceContainerHigh, borderRadius: 2, overflow: 'hidden', marginBottom: 2 },
   healthBarFill: { height: '100%', borderRadius: 2 },
   emptySlotText: { fontSize: 10, color: Colors.outlineVariant, fontFamily: 'Manrope-Medium', textAlign: 'center' },
+
   section: { paddingHorizontal: Spacing.base, marginTop: Spacing.xl },
   sectionTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface, marginBottom: Spacing.base, letterSpacing: -0.3 },
   questScroll: { marginHorizontal: -Spacing.base, paddingHorizontal: Spacing.base },
@@ -1111,7 +1138,7 @@ const getStyles = (Colors: any) => StyleSheet.create({
   detailIconWrap: { width: 100, height: 100, borderRadius: 50, backgroundColor: Colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.lg },
   detailTitle: { fontSize: 22, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface, textAlign: 'center' },
   detailDesc: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, marginTop: 8 },
-  detailStatsBlock: { flexDirection: 'row', gap: Spacing.xl, marginVertical: Spacing.xl },
+  detailStatsBlock: { flexDirection: 'row', gap: Spacing.xl, marginVertical: Spacing.xl, flexWrap: 'wrap', justifyContent: 'center' },
   detailStat: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerHigh, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
   detailStatText: { fontFamily: 'Manrope-Bold', color: Colors.onSurface, fontSize: Fonts.sizes.sm },
   actionButtonsCol: { width: '100%', gap: Spacing.sm },

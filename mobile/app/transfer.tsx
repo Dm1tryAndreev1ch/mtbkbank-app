@@ -1,8 +1,12 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Alert,
+  ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform,
+  Keyboard, TouchableWithoutFeedback,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useStore } from '../stores/useStore';
 import * as api from '../services/api';
@@ -10,28 +14,31 @@ import { Fonts, Spacing, BorderRadius, Shadows, formatMoney } from '../constants
 import { useThemeColor } from '../hooks/useThemeColor';
 
 const METHODS = [
-  { id: 'card', icon: 'credit-card', title: 'По номеру карты', desc: 'На карту любого банка', color: '#4F8EF7' },
   { id: 'phone', icon: 'phone-android', title: 'По номеру телефона', desc: 'Мгновенный перевод', color: '#0ea5e9' },
-  { id: 'own', icon: 'swap-horiz', title: 'Между своими счетами', desc: 'Внутренний перевод', color: '#9333EA' },
-];
-
-const RECENT = [
-  { name: 'Анна М.', initials: 'АМ', color: '#9333EA', detail: '+375 29 •••-••-12' },
-  { name: 'Максим Л.', initials: 'МЛ', color: '#4F8EF7', detail: '•••• 4582' },
-  { name: 'Елена К.', initials: 'ЕК', color: '#ec4899', detail: '+375 33 •••-••-78' },
+  { id: 'card',  icon: 'credit-card',   title: 'По номеру карты',    desc: 'На карту любого банка', color: '#4F8EF7' },
+  { id: 'own',   icon: 'swap-horiz',    title: 'Между своими счетами', desc: 'Внутренний перевод', color: '#9333EA' },
 ];
 
 const AMOUNTS = [10, 50, 100, 500, 1000];
 
 export default function TransferScreen() {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [amount, setAmount] = useState('');
-  const [recipient, setRecipient] = useState('');
+  const params = useLocalSearchParams<{ to?: string; amount?: string; method?: string }>();
+
+  const [selected, setSelected] = useState<string | null>(params.method ?? null);
+  const [amount, setAmount] = useState(params.amount ?? '');
+  const [recipient, setRecipient] = useState(params.to ?? '');
   const [loading, setLoading] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [resolvedUser, setResolvedUser] = useState<{ name: string; accountId: string } | null>(null);
+  const [resolveError, setResolveError] = useState('');
+
   const { accounts, loadAccounts, loadTransactions } = useStore();
   const colors = useThemeColor();
   const s = useMemo(() => mk(colors), [colors]);
+
   const mainAcc = accounts.find((a: any) => a.type === 'main') || accounts[0];
+  // Second own account for "between own"
+  const secondAcc = accounts.find((a: any) => a.id !== mainAcc?.id);
 
   const formatCard = (v: string) => {
     const d = v.replace(/\D/g, '').slice(0, 16);
@@ -46,18 +53,70 @@ export default function TransferScreen() {
     return `+${d.slice(0, 3)} ${d.slice(3, 5)} ${d.slice(5, 8)}-${d.slice(8)}`;
   };
 
+  // Resolve recipient when field loses focus or has enough digits
+  const handleResolve = useCallback(async () => {
+    if (selected === 'own') return;
+    const clean = recipient.replace(/[\s\-+]/g, '');
+    const isPhone = /^\d{10,12}$/.test(clean);
+    const isCard  = /^\d{16}$/.test(clean);
+    if (!isPhone && !isCard) { setResolvedUser(null); setResolveError(''); return; }
+
+    setResolving(true);
+    setResolveError('');
+    setResolvedUser(null);
+    try {
+      const { data } = await api.resolveRecipient(clean);
+      setResolvedUser({ name: data.user.name, accountId: data.accountId });
+    } catch (e: any) {
+      setResolveError(e?.response?.data?.error || 'Получатель не найден');
+    } finally {
+      setResolving(false);
+    }
+  }, [recipient, selected]);
+
   const handleTransfer = async () => {
     const amt = Number(amount);
-    if (!amt || amt <= 0) { Alert.alert('Ошибка', 'Введите сумму'); return; }
-    if (selected !== 'own' && !recipient.trim()) { Alert.alert('Ошибка', 'Укажите получателя'); return; }
-    if (!mainAcc) { Alert.alert('Ошибка', 'Нет счёта'); return; }
+    if (!amt || amt <= 0) { Alert.alert('Ошибка', 'Введите корректную сумму'); return; }
+    if (!mainAcc) { Alert.alert('Ошибка', 'Нет доступных счетов'); return; }
+
+    if (selected === 'own') {
+      if (!secondAcc) { Alert.alert('Ошибка', 'Нет второго счёта для перевода'); return; }
+      setLoading(true);
+      try {
+        await api.transferOwn({
+          fromAccountId: mainAcc.id,
+          toAccountId: secondAcc.id,
+          amount: amt,
+        });
+        await Promise.all([loadAccounts(), loadTransactions()]);
+        Alert.alert('Готово', `Переведено ${formatMoney(amt)} между счетами`, [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      } catch (e: any) {
+        Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось выполнить перевод');
+      } finally { setLoading(false); }
+      return;
+    }
+
+    if (!recipient.trim()) { Alert.alert('Ошибка', 'Укажите получателя'); return; }
+
+    // If user resolved — use accountId directly; otherwise send recipient string
     setLoading(true);
     try {
-      await api.makeTransfer({ fromAccountId: mainAcc.id, amount: amt, recipient: recipient.replace(/\s/g, '') });
-      await Promise.all([loadAccounts(), loadTransactions({ limit: 5 })]);
-      Alert.alert('Успешно', `Перевод ${formatMoney(amt)} выполнен`, [{ text: 'OK', onPress: () => router.back() }]);
-    } catch {
-      Alert.alert('Успешно', `Перевод ${formatMoney(amt)} выполнен (демо)`, [{ text: 'OK', onPress: () => router.back() }]);
+      const payload: any = { fromAccountId: mainAcc.id, amount: amt };
+      if (resolvedUser) {
+        payload.toAccountId = resolvedUser.accountId;
+      } else {
+        payload.recipient = recipient.replace(/[\s\-]/g, '');
+      }
+
+      await api.makeTransfer(payload);
+      await Promise.all([loadAccounts(), loadTransactions()]);
+      Alert.alert('Успешно', `Перевод ${formatMoney(amt)} выполнен`, [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    } catch (e: any) {
+      Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось выполнить перевод');
     } finally { setLoading(false); }
   };
 
@@ -87,7 +146,11 @@ export default function TransferScreen() {
           <Text style={s.secTitle}>СПОСОБ ПЕРЕВОДА</Text>
           {METHODS.map((m, i) => (
             <Animated.View entering={FadeInDown.delay(i * 80)} key={m.id}>
-              <TouchableOpacity style={s.methodRow} onPress={() => setSelected(m.id)}>
+              <TouchableOpacity style={s.methodRow} onPress={() => {
+                setSelected(m.id);
+                setResolvedUser(null);
+                setResolveError('');
+              }}>
                 <View style={[s.methodIco, { backgroundColor: `${m.color}18` }]}>
                   <MaterialIcons name={m.icon as any} size={26} color={m.color} />
                 </View>
@@ -99,76 +162,93 @@ export default function TransferScreen() {
               </TouchableOpacity>
             </Animated.View>
           ))}
-          <Text style={[s.secTitle, { marginTop: Spacing.xl }]}>НЕДАВНИЕ ПОЛУЧАТЕЛИ</Text>
-          {RECENT.map((r, i) => (
-            <Animated.View entering={FadeInDown.delay(300 + i * 80)} key={i}>
-              <TouchableOpacity style={s.recentRow} onPress={() => { setSelected(r.detail.startsWith('+') ? 'phone' : 'card'); setRecipient(r.detail); }}>
-                <View style={[s.avatar, { backgroundColor: r.color }]}>
-                  <Text style={s.avatarT}>{r.initials}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.recentName}>{r.name}</Text>
-                  <Text style={s.recentDetail}>{r.detail}</Text>
-                </View>
-                <MaterialIcons name="arrow-forward-ios" size={14} color={colors.outlineVariant} />
-              </TouchableOpacity>
-            </Animated.View>
-          ))}
         </ScrollView>
       ) : (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
             <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
+
               {selected === 'card' && (
                 <Animated.View entering={FadeInDown}>
                   <Text style={s.fieldLbl}>Номер карты получателя</Text>
                   <TextInput
                     style={s.input}
                     value={recipient}
-                    onChangeText={v => setRecipient(formatCard(v))}
+                    onChangeText={v => { setRecipient(formatCard(v)); setResolvedUser(null); setResolveError(''); }}
+                    onBlur={handleResolve}
                     placeholder="0000 0000 0000 0000"
                     placeholderTextColor={colors.outlineVariant}
                     keyboardType="numeric"
                     maxLength={19}
-                    returnKeyType="next"
                   />
                 </Animated.View>
               )}
+
               {selected === 'phone' && (
                 <Animated.View entering={FadeInDown}>
                   <Text style={s.fieldLbl}>Номер телефона</Text>
                   <TextInput
                     style={s.input}
                     value={recipient}
-                    onChangeText={v => setRecipient(formatPhone(v))}
+                    onChangeText={v => { setRecipient(formatPhone(v)); setResolvedUser(null); setResolveError(''); }}
+                    onBlur={handleResolve}
                     placeholder="+375 XX XXX-XX-XX"
                     placeholderTextColor={colors.outlineVariant}
                     keyboardType="phone-pad"
                     maxLength={17}
-                    returnKeyType="next"
                   />
                 </Animated.View>
               )}
+
+              {/* Recipient resolve status */}
+              {selected !== 'own' && (
+                <>
+                  {resolving && (
+                    <View style={s.resolveRow}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      <Text style={s.resolveText}>Поиск получателя...</Text>
+                    </View>
+                  )}
+                  {resolvedUser && !resolving && (
+                    <View style={[s.resolveRow, s.resolveOk]}>
+                      <MaterialIcons name="check-circle" size={18} color="#22c55e" />
+                      <Text style={[s.resolveText, { color: '#22c55e' }]}>Найден: {resolvedUser.name}</Text>
+                    </View>
+                  )}
+                  {resolveError && !resolving && (
+                    <View style={[s.resolveRow, s.resolveErr]}>
+                      <MaterialIcons name="error-outline" size={18} color={colors.error} />
+                      <Text style={[s.resolveText, { color: colors.error }]}>{resolveError}</Text>
+                    </View>
+                  )}
+                </>
+              )}
+
               {selected === 'own' && (
                 <Animated.View entering={FadeInDown}>
                   <Text style={s.fieldLbl}>Счёт списания</Text>
                   <View style={s.accRow}>
                     <MaterialIcons name="credit-card" size={20} color={colors.primary} />
-                    <Text style={s.accTxt}>Основной •••• {mainAcc?.bankCards?.[0]?.maskedNumber?.slice(-4) || '0000'}</Text>
+                    <Text style={s.accTxt}>
+                      Основной · {formatMoney(mainAcc?.balance ?? 0)}
+                    </Text>
                   </View>
                   <Text style={s.fieldLbl}>Счёт зачисления</Text>
                   <View style={s.accRow}>
                     <MaterialIcons name="savings" size={20} color={'#9333EA'} />
-                    <Text style={s.accTxt}>Накопительный счёт</Text>
+                    <Text style={s.accTxt}>
+                      {secondAcc ? `${secondAcc.name ?? 'Накопительный'} · ${formatMoney(secondAcc.balance)}` : 'Нет второго счёта'}
+                    </Text>
                   </View>
                 </Animated.View>
               )}
+
               <Text style={s.fieldLbl}>Сумма перевода</Text>
               <TextInput
                 style={[s.input, s.inputBig]}
                 value={amount}
                 onChangeText={setAmount}
-                placeholder="0.00 ₽"
+                placeholder="0.00"
                 placeholderTextColor={colors.outlineVariant}
                 keyboardType="numeric"
                 returnKeyType="done"
@@ -177,12 +257,20 @@ export default function TransferScreen() {
               <View style={s.chips}>
                 {AMOUNTS.map(a => (
                   <TouchableOpacity key={a} style={[s.chip, amount === String(a) && s.chipA]} onPress={() => setAmount(String(a))}>
-                    <Text style={[s.chipT, amount === String(a) && s.chipTA]}>{a} ₽</Text>
+                    <Text style={[s.chipT, amount === String(a) && s.chipTA]}>{a}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-              <TouchableOpacity style={[s.btn, loading && { opacity: 0.7 }]} onPress={handleTransfer} disabled={loading}>
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.btnT}>Перевести</Text>}
+
+              <TouchableOpacity
+                style={[s.btn, (loading || (selected !== 'own' && !!resolveError)) && { opacity: 0.6 }]}
+                onPress={handleTransfer}
+                disabled={loading || (selected !== 'own' && !!resolveError)}
+              >
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={s.btnT}>Перевести</Text>
+                }
               </TouchableOpacity>
             </ScrollView>
           </TouchableWithoutFeedback>
@@ -194,35 +282,77 @@ export default function TransferScreen() {
 
 const mk = (C: any) => StyleSheet.create({
   root: { flex: 1, backgroundColor: C.background },
-  hdr: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: C.transparentBorder },
+  hdr: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: C.transparentBorder,
+  },
   back: { padding: 8 },
   hdrt: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-Bold', color: C.onSurface },
   list: { padding: Spacing.xl, paddingBottom: 80 },
-  balCard: { backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.xl, marginBottom: Spacing.xl, borderWidth: 1, borderColor: C.transparentBorder, ...Shadows.sm },
+  balCard: {
+    backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.lg,
+    padding: Spacing.xl, marginBottom: Spacing.xl,
+    borderWidth: 1, borderColor: C.transparentBorder, ...Shadows.sm,
+  },
   balLabel: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant },
   balVal: { fontSize: Fonts.sizes['2xl'], fontFamily: 'Manrope-ExtraBold', color: C.onSurface, marginTop: 4 },
-  secTitle: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant, letterSpacing: 2, marginBottom: Spacing.base },
-  methodRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.base, marginBottom: Spacing.sm, borderWidth: 1, borderColor: C.transparentBorder, ...Shadows.sm },
+  secTitle: {
+    fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant,
+    letterSpacing: 2, marginBottom: Spacing.base,
+  },
+  methodRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.lg,
+    padding: Spacing.base, marginBottom: Spacing.sm,
+    borderWidth: 1, borderColor: C.transparentBorder, ...Shadows.sm,
+  },
   methodIco: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   methodTxt: { flex: 1, marginLeft: Spacing.base },
   methodTitle: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: C.onSurface },
   methodDesc: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant, marginTop: 2 },
-  recentRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base, backgroundColor: C.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.base, marginBottom: Spacing.sm, borderWidth: 1, borderColor: C.transparentBorder },
-  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  avatarT: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#fff' },
-  recentName: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: C.onSurface },
-  recentDetail: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant, marginTop: 2 },
   form: { padding: Spacing.xl, paddingBottom: 80 },
-  fieldLbl: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant, marginBottom: 8, marginTop: Spacing.base },
-  input: { backgroundColor: C.surfaceContainerLowest, color: C.onSurface, fontFamily: 'Manrope-Medium', fontSize: Fonts.sizes.base, padding: Spacing.base, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: C.transparentBorder },
-  inputBig: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', textAlign: 'center', paddingVertical: Spacing.lg },
-  accRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.base, backgroundColor: C.surfaceContainerLowest, padding: Spacing.base, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: C.transparentBorder },
+  fieldLbl: {
+    fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant,
+    marginBottom: 8, marginTop: Spacing.base,
+  },
+  input: {
+    backgroundColor: C.surfaceContainerLowest, color: C.onSurface,
+    fontFamily: 'Manrope-Medium', fontSize: Fonts.sizes.base,
+    padding: Spacing.base, borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: C.transparentBorder,
+  },
+  inputBig: {
+    fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold',
+    textAlign: 'center', paddingVertical: Spacing.lg,
+  },
+  resolveRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginTop: 8, paddingHorizontal: 4,
+  },
+  resolveOk: {},
+  resolveErr: {},
+  resolveText: {
+    fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: C.onSurfaceVariant,
+  },
+  accRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.base,
+    backgroundColor: C.surfaceContainerLowest, padding: Spacing.base,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: C.transparentBorder,
+  },
   accTxt: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: C.onSurface },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.base },
-  chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: BorderRadius.full, backgroundColor: C.surfaceContainerHigh },
+  chip: {
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: BorderRadius.full, backgroundColor: C.surfaceContainerHigh,
+  },
   chipA: { backgroundColor: C.primary },
   chipT: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant },
   chipTA: { color: C.onPrimary },
-  btn: { backgroundColor: C.primary, borderRadius: BorderRadius.base, paddingVertical: Spacing.base, alignItems: 'center', marginTop: Spacing.xl, ...Shadows.primary },
+  btn: {
+    backgroundColor: C.primary, borderRadius: BorderRadius.base,
+    paddingVertical: Spacing.base, alignItems: 'center',
+    marginTop: Spacing.xl, ...Shadows.primary,
+  },
   btnT: { color: C.onPrimary, fontFamily: 'Manrope-ExtraBold', fontSize: Fonts.sizes.md },
 });

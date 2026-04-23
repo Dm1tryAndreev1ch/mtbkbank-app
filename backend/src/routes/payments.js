@@ -3,6 +3,8 @@ const { authMiddleware } = require('../middleware/auth');
 const { processCardDrop } = require('../services/cardEngine');
 const router = express.Router();
 
+const MAX_PAYMENT_AMOUNT = 1_000_000;
+
 router.use(authMiddleware);
 
 // GET /api/payments/categories
@@ -30,10 +32,15 @@ router.get('/categories', async (req, res) => {
 // POST /api/payments — make a payment
 router.post('/', async (req, res) => {
   try {
-    const { accountId, amount, category, merchant, merchantIcon, description, scheduledAt } = req.body;
+    const { accountId, category, merchant, merchantIcon, description, scheduledAt } = req.body;
+    // FIX: явный parseFloat + проверка на NaN и верхний лимит
+    const amount = parseFloat(req.body.amount);
 
-    if (!accountId || !amount || amount <= 0) {
-      return res.status(400).json({ error: 'Укажите счёт и сумму' });
+    if (!accountId || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Укажите счёт и корректную сумму' });
+    }
+    if (amount > MAX_PAYMENT_AMOUNT) {
+      return res.status(400).json({ error: `Максимальная сумма одного платежа — ${MAX_PAYMENT_AMOUNT}` });
     }
 
     const account = await req.prisma.bankAccount.findFirst({
@@ -60,35 +67,35 @@ router.post('/', async (req, res) => {
       return res.json({ transaction, scheduled: true });
     }
 
-    if (account.balance < amount) {
-      return res.status(400).json({ error: 'Недостаточно средств' });
-    }
-
-    // Execute atomic validation locking exact decimal values against rapid taps
+    // Проверка баланса происходит ВНУТРИ транзакции до decrement (TOCTOU устранён)
     const result = await req.prisma.$transaction(async (tx) => {
-       const uAcc = await tx.bankAccount.update({
-         where: { id: accountId },
-         data: { balance: { decrement: amount } },
-       });
-       
-       if (uAcc.balance < 0) {
-          throw new Error('Недостаточно средств на момент оплаты');
-       }
+      const currentAccount = await tx.bankAccount.findUnique({
+        where: { id: accountId },
+      });
 
-       const trans = await tx.transaction.create({
-         data: {
-           userId: req.userId,
-           fromAccountId: accountId,
-           amount,
-           type: 'PURCHASE',
-           category: category || 'Оплата',
-           merchant: merchant || 'Платёж',
-           merchantIcon: merchantIcon || 'payments',
-           description,
-         },
-       });
+      if (currentAccount.balance < amount) {
+        throw new Error('Недостаточно средств на момент оплаты');
+      }
 
-       return { updatedAccount: uAcc, transaction: trans };
+      const uAcc = await tx.bankAccount.update({
+        where: { id: accountId },
+        data: { balance: { decrement: amount } },
+      });
+
+      const trans = await tx.transaction.create({
+        data: {
+          userId: req.userId,
+          fromAccountId: accountId,
+          amount,
+          type: 'PURCHASE',
+          category: category || 'Оплата',
+          merchant: merchant || 'Платёж',
+          merchantIcon: merchantIcon || 'payments',
+          description,
+        },
+      });
+
+      return { updatedAccount: uAcc, transaction: trans };
     });
 
     const { updatedAccount, transaction } = result;
@@ -101,8 +108,13 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Try card drop
-    const droppedCard = await processCardDrop(req.prisma, req.userId, transaction.id);
+    // processCardDrop обёрнут в try/catch — сбой дропа не ломает ответ платежа
+    let droppedCard = null;
+    try {
+      droppedCard = await processCardDrop(req.prisma, req.userId, transaction.id);
+    } catch (dropErr) {
+      console.error('Card drop error (non-critical):', dropErr);
+    }
 
     res.json({
       account: updatedAccount,
@@ -116,7 +128,7 @@ router.post('/', async (req, res) => {
     });
   } catch (err) {
     if (err.message === 'Недостаточно средств на момент оплаты') {
-       return res.status(400).json({ error: err.message });
+      return res.status(400).json({ error: err.message });
     }
     console.error('Payment error:', err);
     res.status(500).json({ error: 'Ошибка сервера' });

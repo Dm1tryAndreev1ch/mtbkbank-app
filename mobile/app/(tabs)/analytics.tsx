@@ -46,15 +46,7 @@ export default function AnalyticsScreen() {
     api.getAnalytics(p)
       .then(({ data }) => { setAnalytics(data); setLoading(false); })
       .catch(() => {
-        setAnalytics({
-          totalSpent: 45200,
-          breakdown: [
-            { category: 'Супермаркеты', amount: 15000 },
-            { category: 'Переводы', amount: 12000 },
-            { category: 'Рестораны', amount: 8200 },
-            { category: 'Развлечения', amount: 10000 },
-          ],
-        });
+        setAnalytics(null);
         setLoading(false);
       });
   }, []);
@@ -71,9 +63,7 @@ export default function AnalyticsScreen() {
 
   const breakdown: any[] = analytics?.breakdown || [];
 
-  // chart width = screenWidth - card horizontal margins (base*2) - card padding (base*2)
   const chartWidth = screenWidth - Spacing.base * 4;
-  // paddingLeft centers the pie: half of (chartWidth - pieSize) where pieSize ≈ 200 * 0.8 = 160
   const piePaddingLeft = String(Math.max(0, Math.round((chartWidth - 160) / 2)));
 
   const chartData = breakdown.map((cat, index) => ({
@@ -117,15 +107,12 @@ export default function AnalyticsScreen() {
 
         {/* Chart Card */}
         <View style={styles.chartCard}>
-
-          {/* Total spent */}
           <Text style={styles.totalLabel} allowFontScaling={false}>Всего потрачено</Text>
           {loading
             ? <SkeletonPulse style={{ width: 160, height: 38, borderRadius: 8, marginTop: 6, marginBottom: 4, alignSelf: 'center' }} colors={colors} />
             : <Text style={styles.totalAmount} allowFontScaling={false} adjustsFontSizeToFit numberOfLines={1}>₽ {analytics ? Math.round(analytics.totalSpent).toLocaleString('ru-RU') : '0'}</Text>
           }
 
-          {/* Pie chart */}
           {loading ? (
             <SkeletonPulse style={{ width: 200, height: 200, borderRadius: 100, marginVertical: 16, alignSelf: 'center' }} colors={colors} />
           ) : chartData.length > 0 ? (
@@ -151,7 +138,6 @@ export default function AnalyticsScreen() {
             <Text style={styles.emptyChart}>Нет данных за этот период</Text>
           )}
 
-          {/* Legend */}
           <View style={styles.legendDivider} />
           <Text style={styles.legendTitle} allowFontScaling={false}>Категории</Text>
 
@@ -161,7 +147,7 @@ export default function AnalyticsScreen() {
                   <SkeletonPulse key={i} style={styles.legendItem} colors={colors} />
                 ))
               : breakdown.map((cat, i) => {
-                  const pct = analytics.totalSpent > 0
+                  const pct = analytics?.totalSpent > 0
                     ? (cat.amount / analytics.totalSpent) * 100
                     : 0;
                   return (
@@ -177,7 +163,6 @@ export default function AnalyticsScreen() {
                 })
             }
           </View>
-
         </View>
 
         {/* Subscriptions */}
@@ -220,8 +205,13 @@ export default function AnalyticsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle} allowFontScaling={false}>Лимиты трат</Text>
-            <TouchableOpacity onPress={() => router.push('/account')}>
-              <MaterialIcons name="settings" size={20} color={colors.onSurfaceVariant} />
+            <TouchableOpacity
+              style={styles.gearBtn}
+              onPress={() => router.push('/limits')}
+              accessibilityLabel="Настроить лимиты"
+            >
+              <MaterialIcons name="settings" size={20} color={colors.primary} />
+              <Text style={[styles.gearLabel, { color: colors.primary }]}>Настроить</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.limitsCard}>
@@ -288,20 +278,11 @@ const getStyles = (C: any) => StyleSheet.create({
   legendDivider: { height: 1, backgroundColor: C.transparentBorder, marginVertical: Spacing.base },
   legendTitle: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: C.onSurfaceVariant, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: Spacing.sm },
 
-  legendGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  legendGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   legendItem: {
-    flexBasis: '47%',
-    flexGrow: 0,
-    flexShrink: 0,
+    flexBasis: '47%', flexGrow: 0, flexShrink: 0,
     backgroundColor: C.surfaceContainerHigh,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.base,
-    gap: 2,
-    minHeight: 72,
+    padding: Spacing.sm, borderRadius: BorderRadius.base, gap: 2, minHeight: 72,
   },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
   legendDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
@@ -310,9 +291,17 @@ const getStyles = (C: any) => StyleSheet.create({
   legendPct: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: C.primary },
 
   section: { paddingHorizontal: Spacing.base, marginTop: Spacing.xl },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: Spacing.base },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.base },
   sectionTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', letterSpacing: -0.3, color: C.onSurface },
   sectionBadge: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: C.primary, textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  gearBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: `${C.primary}14`,
+  },
+  gearLabel: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
 
   subsList: { gap: Spacing.sm },
   subItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: C.surfaceContainerLowest, padding: Spacing.base, borderRadius: BorderRadius.base, borderWidth: 1, borderColor: C.transparentBorder, gap: Spacing.sm },

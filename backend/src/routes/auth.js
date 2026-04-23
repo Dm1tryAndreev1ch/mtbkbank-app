@@ -2,10 +2,26 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
+// Guard: fail fast if JWT_SECRET is not set
+if (!process.env.JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET is not set. Refusing to start.');
+  process.exit(1);
+}
+
+// Rate limiting на логин и verify — защита от brute-force атак на PIN
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 минут
+  max: 10,                   // максимум 10 попыток за окно
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много попыток входа. Повторите через 15 минут.' },
+});
+
 // POST /api/auth/login — PIN auth
-router.post('/login', [
+router.post('/login', loginLimiter, [
   body('phone').isString().notEmpty().withMessage('Телефон обязателен'),
   body('pin').isString().isLength({ min: 4, max: 6 }).withMessage('ПИН-код должен быть 4-6 символов')
 ], async (req, res) => {
@@ -30,7 +46,7 @@ router.post('/login', [
     const accessToken = jwt.sign(
       { userId: user.id, isAdmin: user.isAdmin },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '15m' }
     );
 
     const refreshToken = jwt.sign(
@@ -40,7 +56,7 @@ router.post('/login', [
     );
 
     res.json({
-      token: accessToken, // for backwards compatibility on frontend
+      token: accessToken,
       accessToken,
       refreshToken,
       user: {
@@ -60,7 +76,8 @@ router.post('/login', [
 });
 
 // POST /api/auth/verify — verify PIN (for sensitive operations)
-router.post('/verify', [
+// FIX: loginLimiter применён к /verify — брутфорс PIN через этот эндпоинт теперь ограничен
+router.post('/verify', loginLimiter, [
   body('phone').isString().notEmpty(),
   body('pin').isString().notEmpty()
 ], async (req, res) => {
@@ -94,7 +111,7 @@ router.post('/refresh', async (req, res) => {
       const newAccessToken = jwt.sign(
         { userId: user.id, isAdmin: user.isAdmin },
         process.env.JWT_SECRET,
-        { expiresIn: '1h' }
+        { expiresIn: '15m' }
       );
 
       res.json({ accessToken: newAccessToken });

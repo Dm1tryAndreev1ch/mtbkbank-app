@@ -20,13 +20,11 @@ const api = axios.create({
 // Attach token to every request
 api.interceptors.request.use(async (config) => {
   const token = await SecureStore.getItemAsync('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Refresh Token Interceptor Sequence
+// Refresh Token Interceptor
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -38,14 +36,12 @@ api.interceptors.response.use(
         if (refreshToken) {
           const res = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
           if (res.data.accessToken) {
-             await SecureStore.setItemAsync('token', res.data.accessToken);
-             originalRequest.headers.Authorization = `Bearer ${res.data.accessToken}`;
-             return api(originalRequest);
+            await SecureStore.setItemAsync('token', res.data.accessToken);
+            originalRequest.headers.Authorization = `Bearer ${res.data.accessToken}`;
+            return api(originalRequest);
           }
         }
-      } catch (e) {
-         // Refresh token failed radically
-      }
+      } catch {}
     }
     return Promise.reject(error);
   }
@@ -54,10 +50,9 @@ api.interceptors.response.use(
 // Auth
 export const login = (phone: string, pin: string) =>
   api.post('/auth/login', { phone, pin }).then(async (res) => {
-      // Upon explicit Login grab both keys
-      if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
-      if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
-      return res;
+    if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
+    if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
+    return res;
   });
 
 // User
@@ -75,7 +70,27 @@ export const topupAccount = (id: string, amount: number) =>
 export const getTransactions = (params?: any) => api.get('/transactions', { params });
 export const getAnalytics = (period?: string) =>
   api.get('/transactions/analytics', { params: { period } });
-export const makeTransfer = (data: any) => api.post('/transactions/transfer', data);
+
+/** Transfer to another user by phone / card number */
+export const makeTransfer = (data: {
+  fromAccountId: string;
+  recipient?: string;      // phone or card number
+  toAccountId?: string;    // OR direct accountId
+  amount: number;
+  description?: string;
+}) => api.post('/transactions/transfer', data);
+
+/** Transfer between own accounts */
+export const transferOwn = (data: {
+  fromAccountId: string;
+  toAccountId: string;
+  amount: number;
+  description?: string;
+}) => api.post('/transactions/transfer-own', data);
+
+/** Resolve phone / card number → { user, accountId } */
+export const resolveRecipient = (value: string) =>
+  api.get('/transactions/resolve-recipient', { params: { value } });
 
 // Payments
 export const getPaymentCategories = () => api.get('/payments/categories');
@@ -116,8 +131,14 @@ export const claimQuest = (id: string) => api.post(`/quests/${id}/claim`);
 
 // Subscriptions
 export const getSubscriptions = () => api.get('/subscriptions');
+export const createSubscription = (data: {
+  name: string; amount: number; currency?: string;
+  icon?: string; category?: string; nextPayment: string;
+}) => api.post('/subscriptions', data);
 export const toggleSubscription = (id: string, isActive: boolean) =>
   api.put(`/subscriptions/${id}`, { isActive });
+export const deleteSubscription = (id: string) =>
+  api.delete(`/subscriptions/${id}`);
 
 // Limits
 export const getLimits = () => api.get('/limits');
@@ -128,7 +149,7 @@ export const updateLimit = (id: string, limitAmount: number) =>
 export const getNotifications = () => api.get('/notifications');
 export const markNotificationRead = (id: string) =>
   api.put(`/notifications/${id}/read`);
-export const registerPushToken = (token: string) => 
+export const registerPushToken = (token: string) =>
   api.post('/notifications/register-push-token', { token });
 
 export default api;
