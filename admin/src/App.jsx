@@ -143,7 +143,8 @@ function UsersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({ name: '', phone: '', pin: '1234', mbPoints: 0, status: 'STANDARD' });
 
-  const load = () => apiFetch(`${API}/users`).then(setUsers).catch(() => {});
+  // FIX: API returns { users, total, limit, offset } — extract .users array
+  const load = () => apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch(() => {});
   useEffect(() => { load(); }, []);
 
   const handleSave = async () => {
@@ -322,7 +323,10 @@ function SimulatePage() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { apiFetch(`${API}/users`).then(setUsers).catch(() => {}); }, []);
+  // FIX: API returns { users, total, limit, offset } — extract .users array
+  useEffect(() => {
+    apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch(() => {});
+  }, []);
 
   const loadAccounts = async (userId) => {
     setForm(f => ({ ...f, userId, accountId: '' }));
