@@ -3,6 +3,14 @@ import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+/** Только localhost / IPv4 — иначе Expo tunnel (exp.direct и т.п.) даёт 404 на :3000. */
+function isUsableDevApiHost(host: string): boolean {
+  if (!host) return false;
+  const h = host.toLowerCase();
+  if (h === 'localhost' || h === '127.0.0.1') return true;
+  return /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(host);
+}
+
 function getApiBase(): string {
   const fromEnv =
     process.env.EXPO_PUBLIC_API_URL ||
@@ -17,7 +25,9 @@ function getApiBase(): string {
     (Constants.manifest as any)?.debuggerHost;
   if (hostUri) {
     const host = hostUri.split(':')[0];
-    return `http://${host}:3000/api`;
+    if (isUsableDevApiHost(host)) {
+      return `http://${host}:3000/api`;
+    }
   }
   // Android emulator
   if (Platform.OS === 'android') return 'http://10.0.2.2:3000/api';
@@ -27,18 +37,19 @@ function getApiBase(): string {
   return 'http://192.168.1.100:3000/api';
 }
 
+const API_BASE = getApiBase();
+
 function isPublicAuthPath(url?: string): boolean {
   if (!url) return false;
-  const u = url.replace(/^\//, '');
-  return (
-    u === 'auth/login' ||
-    u === 'auth/register' ||
-    u.startsWith('auth/login?') ||
-    u.startsWith('auth/register?')
-  );
+  return /\/auth\/(login|register)(\?|$)/i.test(url);
 }
 
-const API_BASE = getApiBase();
+/** Абсолютный URL — axios игнорирует baseURL, нет двойных/обрезанных путей. */
+function absoluteApiUrl(path: string): string {
+  const base = String(API_BASE).replace(/\/+$/, '');
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${p}`;
+}
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -61,14 +72,14 @@ api.interceptors.response.use(
     const originalRequest = error.config;
     if (error.response?.status === 401 && !originalRequest._retry) {
       const reqUrl = originalRequest.url || '';
-      if (reqUrl.includes('auth/register') || reqUrl.includes('auth/login')) {
+      if (/\/auth\/(register|login)(\?|$)/i.test(reqUrl)) {
         return Promise.reject(error);
       }
       originalRequest._retry = true;
       try {
         const refreshToken = await SecureStore.getItemAsync('refreshToken');
         if (refreshToken) {
-          const res = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
+          const res = await axios.post(absoluteApiUrl('/auth/refresh'), { refreshToken });
           if (res.data.accessToken) {
             await SecureStore.setItemAsync('token', res.data.accessToken);
             if (res.data.refreshToken) {
@@ -86,7 +97,7 @@ api.interceptors.response.use(
 
 // Auth
 export const login = (phone: string, pin: string) =>
-  api.post('/auth/login', { phone, pin }).then(async (res) => {
+  api.post(absoluteApiUrl('/auth/login'), { phone, pin }).then(async (res) => {
     if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
     if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
     return res;
@@ -107,7 +118,7 @@ export const register = async (body: RegisterPayload) => {
   try {
     await SecureStore.deleteItemAsync('refreshToken');
   } catch {}
-  return api.post('/auth/register', body).then(async (res) => {
+  return api.post(absoluteApiUrl('/auth/register'), body).then(async (res) => {
     try {
       if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
       if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);

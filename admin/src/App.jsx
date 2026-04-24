@@ -126,59 +126,73 @@ function DashboardPage() {
     apiFetch(`${API}/dashboard/extended`).then(setExtended).catch(() => {});
   }, []);
 
-  if (!stats) return <p>Загрузка...</p>;
+  if (!stats) {
+    return (
+      <div className="admin-page">
+        <div className="page-header">
+          <h1 className="page-title">Дашборд</h1>
+          <p className="page-subtitle">Загрузка данных…</p>
+        </div>
+        <div className="admin-page-scroll">
+          <p style={{ padding: 8, color: 'var(--on-surface-variant)' }}>Загрузка…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <>
+    <div className="admin-page">
       <div className="page-header">
         <h1 className="page-title">Дашборд</h1>
         <p className="page-subtitle">Обзор системы MT-Банк</p>
       </div>
-      <div className="stats-grid">
-        <div className="stat-card"><div className="stat-label">Пользователи</div><div className="stat-value">{stats.totalUsers}</div></div>
-        <div className="stat-card"><div className="stat-label">Карт в обороте</div><div className="stat-value">{stats.totalCards}</div></div>
-        <div className="stat-card"><div className="stat-label">MB баллов</div><div className="stat-value" style={{ color: 'var(--primary)' }}>{stats.totalMBInCirculation?.toLocaleString()}</div></div>
-        <div className="stat-card"><div className="stat-label">Транзакций</div><div className="stat-value">{stats.totalTransactions}</div></div>
-        {extended && <div className="stat-card"><div className="stat-label">Общий баланс</div><div className="stat-value" style={{ color: 'var(--success)' }}>₽ {extended.totalBalance?.toLocaleString('ru-RU')}</div></div>}
-      </div>
-      
-      {extended && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, marginBottom: 32 }}>
-          <div className="table-container">
-            <div className="table-header"><span className="table-title">Последние операции</span></div>
-            <table>
-              <thead><tr><th>Пользователь</th><th>Тип</th><th>Сумма</th></tr></thead>
-              <tbody>
-                {extended.recentTransactions.slice(0, 5).map(t => (
-                  <tr key={t.id}>
-                    <td><div style={{fontWeight: 700}}>{t.user?.name}</div><div style={{fontSize: 12, color: 'var(--on-surface-variant)'}}>{t.merchant}</div></td>
-                    <td><span className={`badge badge-standard`}>{t.type}</span></td>
-                    <td style={{ fontWeight: 700, color: t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? 'var(--success)' : 'inherit' }}>
-                      {t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? '+' : '-'} {t.amount} ₽
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="table-container">
-            <div className="table-header"><span className="table-title">Распределение по редкости карт</span></div>
-            <table>
-              <thead><tr><th>Редкость</th><th>Количество</th><th>Доля</th></tr></thead>
-              <tbody>
-                {Object.entries(stats.rarityDistribution || {}).map(([rarity, count]) => (
-                  <tr key={rarity}>
-                    <td><span className={`badge badge-${rarity.toLowerCase()}`}>{rarity}</span></td>
-                    <td>{count}</td>
-                    <td>{stats.totalCards > 0 ? Math.round((count / stats.totalCards) * 100) : 0}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="admin-page-scroll">
+        <div className="stats-grid">
+          <div className="stat-card"><div className="stat-label">Пользователи</div><div className="stat-value">{stats.totalUsers}</div></div>
+          <div className="stat-card"><div className="stat-label">Карт в обороте</div><div className="stat-value">{stats.totalCards}</div></div>
+          <div className="stat-card"><div className="stat-label">MB баллов</div><div className="stat-value" style={{ color: 'var(--primary)' }}>{stats.totalMBInCirculation?.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Транзакций</div><div className="stat-value">{stats.totalTransactions}</div></div>
+          {extended && <div className="stat-card"><div className="stat-label">Общий баланс</div><div className="stat-value" style={{ color: 'var(--success)' }}>₽ {extended.totalBalance?.toLocaleString('ru-RU')}</div></div>}
         </div>
-      )}
-    </>
+
+        {extended && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, marginTop: 32, marginBottom: 16 }}>
+            <div className="table-container">
+              <div className="table-header"><span className="table-title">Последние операции</span></div>
+              <table>
+                <thead><tr><th>Пользователь</th><th>Тип</th><th>Сумма</th></tr></thead>
+                <tbody>
+                  {extended.recentTransactions.slice(0, 5).map(t => (
+                    <tr key={t.id}>
+                      <td><div style={{fontWeight: 700}}>{t.user?.name}</div><div style={{fontSize: 12, color: 'var(--on-surface-variant)'}}>{t.merchant}</div></td>
+                      <td><span className={`badge badge-standard`}>{t.type}</span></td>
+                      <td style={{ fontWeight: 700, color: t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? 'var(--success)' : 'inherit' }}>
+                        {t.type === 'TRANSFER_IN' || t.type === 'TOPUP' ? '+' : '-'} {t.amount} ₽
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="table-container">
+              <div className="table-header"><span className="table-title">Распределение по редкости карт</span></div>
+              <table>
+                <thead><tr><th>Редкость</th><th>Количество</th><th>Доля</th></tr></thead>
+                <tbody>
+                  {Object.entries(stats.rarityDistribution || {}).map(([rarity, count]) => (
+                    <tr key={rarity}>
+                      <td><span className={`badge badge-${rarity.toLowerCase()}`}>{rarity}</span></td>
+                      <td>{count}</td>
+                      <td>{stats.totalCards > 0 ? Math.round((count / stats.totalCards) * 100) : 0}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -214,32 +228,36 @@ function UsersPage() {
 
   return (
     <>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div><h1 className="page-title">Пользователи</h1><p className="page-subtitle">Управление аккаунтами</p></div>
-        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-          <span className="material-icons-outlined" style={{ fontSize: 18 }}>add</span> Создать
-        </button>
-      </div>
-      <div className="table-container">
-        <table>
-          <thead><tr><th>Имя</th><th>Телефон</th><th>MB Баллы</th><th>Статус</th><th>Карты</th><th>Действия</th></tr></thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id}>
-                <td style={{ fontWeight: 700 }}>{u.name}</td>
-                <td>{u.phone}</td>
-                <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{u.mbPoints?.toLocaleString()}</td>
-                <td><span className={`badge badge-${u.status?.toLowerCase()}`}>{u.status}</span></td>
-                <td>{u._count?.userCards || 0}</td>
-                <td>
-                  <button className="btn btn-sm btn-primary" onClick={() => { setEditing(u.id); setForm({ name: u.name, mbPoints: u.mbPoints, status: u.status }); }}>
-                    Изменить
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="admin-page">
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
+          <div><h1 className="page-title">Пользователи</h1><p className="page-subtitle">Управление аккаунтами</p></div>
+          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+            <span className="material-icons-outlined" style={{ fontSize: 18 }}>add</span> Создать
+          </button>
+        </div>
+        <div className="admin-page-scroll">
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Имя</th><th>Телефон</th><th>MB Баллы</th><th>Статус</th><th>Карты</th><th>Действия</th></tr></thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td style={{ fontWeight: 700 }}>{u.name}</td>
+                    <td>{u.phone}</td>
+                    <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{u.mbPoints?.toLocaleString()}</td>
+                    <td><span className={`badge badge-${u.status?.toLowerCase()}`}>{u.status}</span></td>
+                    <td>{u._count?.userCards || 0}</td>
+                    <td>
+                      <button className="btn btn-sm btn-primary" onClick={() => { setEditing(u.id); setForm({ name: u.name, mbPoints: u.mbPoints, status: u.status }); }}>
+                        Изменить
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {editing && (
@@ -307,30 +325,34 @@ function CardsPage() {
 
   return (
     <>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div><h1 className="page-title">Шаблоны карт</h1><p className="page-subtitle">Управление коллекционными картами</p></div>
-        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-          <span className="material-icons-outlined" style={{ fontSize: 18 }}>add</span> Создать карту
-        </button>
-      </div>
-      <div className="table-container">
-        <table>
-          <thead><tr><th>Имя</th><th>Бренд</th><th>Редкость</th><th>Кэшбэк</th><th>MB</th><th>Здоровье</th><th>Статус</th><th>Действия</th></tr></thead>
-          <tbody>
-            {cards.map(c => (
-              <tr key={c.id}>
-                <td style={{ fontWeight: 700 }}>{c.name}</td>
-                <td>{c.brandName}</td>
-                <td><span className={`badge badge-${c.rarity.toLowerCase()}`}>{c.rarity}</span></td>
-                <td style={{ fontWeight: 700 }}>{c.cashbackPercent}%</td>
-                <td>{c.mbValue}</td>
-                <td>{c.maxHealth}</td>
-                <td>{c.isActive ? <span style={{ color: 'var(--success)' }}>●</span> : <span style={{ color: 'var(--error)' }}>●</span>}</td>
-                <td><button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id)}>Удалить</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="admin-page">
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
+          <div><h1 className="page-title">Шаблоны карт</h1><p className="page-subtitle">Управление коллекционными картами</p></div>
+          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+            <span className="material-icons-outlined" style={{ fontSize: 18 }}>add</span> Создать карту
+          </button>
+        </div>
+        <div className="admin-page-scroll">
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Имя</th><th>Бренд</th><th>Редкость</th><th>Кэшбэк</th><th>MB</th><th>Здоровье</th><th>Статус</th><th>Действия</th></tr></thead>
+              <tbody>
+                {cards.map(c => (
+                  <tr key={c.id}>
+                    <td style={{ fontWeight: 700 }}>{c.name}</td>
+                    <td>{c.brandName}</td>
+                    <td><span className={`badge badge-${c.rarity.toLowerCase()}`}>{c.rarity}</span></td>
+                    <td style={{ fontWeight: 700 }}>{c.cashbackPercent}%</td>
+                    <td>{c.mbValue}</td>
+                    <td>{c.maxHealth}</td>
+                    <td>{c.isActive ? <span style={{ color: 'var(--success)' }}>●</span> : <span style={{ color: 'var(--error)' }}>●</span>}</td>
+                    <td><button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id)}>Удалить</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {showCreate && (
@@ -414,12 +436,13 @@ function SimulatePage() {
   };
 
   return (
-    <>
+    <div className="admin-page">
       <div className="page-header">
         <h1 className="page-title">Симуляция транзакций</h1>
         <p className="page-subtitle">Создайте тестовую транзакцию для проверки дропа карт и переводов</p>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
+      <div className="admin-page-scroll">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
         <div className="table-container" style={{ padding: 32 }}>
           <h3 style={{ marginBottom: 24, fontWeight: 700 }}>Параметры транзакции</h3>
           <form onSubmit={handleSimulate}>
@@ -481,8 +504,9 @@ function SimulatePage() {
             </div>
           )}
         </div>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -527,13 +551,13 @@ export default function App() {
   if (!user) return <LoginPage onLogin={setUser} />;
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <aside style={{ width: 240, background: 'var(--surface-card)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', padding: '24px 0' }}>
-        <div style={{ padding: '0 20px 24px' }}>
+    <div className="admin-shell">
+      <aside className="admin-aside">
+        <div style={{ padding: '0 20px 24px', flexShrink: 0 }}>
           <div style={{ fontSize: 20, fontWeight: 800 }}>MT-Банк</div>
           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--primary)', letterSpacing: 2, marginTop: 2 }}>ADMIN PANEL</div>
         </div>
-        <nav style={{ flex: 1 }}>
+        <nav className="admin-aside-nav">
           {NAV_ITEMS.map(item => (
             <button
               key={item.key}
@@ -552,7 +576,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)' }}>
+        <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{user.name}</div>
           <div style={{ fontSize: 11, color: 'var(--on-surface-variant)', marginBottom: 12 }}>{user.phone}</div>
           <button
@@ -584,7 +608,7 @@ export default function App() {
           }}>Выйти</button>
         </div>
       </aside>
-      <main style={{ flex: 1, padding: 32, overflowY: 'auto' }}>
+      <main className="admin-main">
         {page === 'dashboard' && <DashboardPage />}
         {page === 'users'     && <UsersPage />}
         {page === 'cards'     && <CardsPage />}

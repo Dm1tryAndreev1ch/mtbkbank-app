@@ -193,6 +193,8 @@ router.get('/login', (_req, res) => {
   res.status(405).json({ error: 'Используйте POST с JSON: { "phone", "pin" }' });
 });
 router.post('/login', loginHandler);
+/** Дублирует app.post('/api/auth/register') — если клиент/прокси бьёт только в смонтированный роутер. */
+router.post('/register', registerHandler);
 
 // POST /api/auth/refresh
 router.post('/refresh', async (req, res) => {

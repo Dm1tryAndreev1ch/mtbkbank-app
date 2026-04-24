@@ -143,6 +143,13 @@ export const useStore = create<AppState>()(
                   'Нет связи с сервером. Проверьте, что backend запущен (порт 3000), телефон в той же Wi‑Fi сети, либо задайте EXPO_PUBLIC_API_URL в .env в папке mobile.',
               };
             }
+            if (e.response?.status === 404) {
+              return {
+                ok: false,
+                error:
+                  'API не найден (404). Задайте в mobile/.env переменную EXPO_PUBLIC_API_URL с адресом ПК, где запущен backend (например http://192.168.1.5:3000), перезапустите Expo.',
+              };
+            }
             if (e.response?.status) {
               return { ok: false, error: `Ошибка сервера (${e.response.status})` };
             }
