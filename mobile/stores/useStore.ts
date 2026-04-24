@@ -147,7 +147,7 @@ export const useStore = create<AppState>()(
               return {
                 ok: false,
                 error:
-                  'API не найден (404). Задайте в mobile/.env переменную EXPO_PUBLIC_API_URL с адресом ПК, где запущен backend (например http://192.168.1.5:3000), перезапустите Expo.',
+                  'Сервер ответил 404 (часто указан неверный адрес API). В консоли Metro должна быть строка [MTBank API] base URL: … Убедитесь, что там IP вашего ПК и порт 3000 (не 8081). При туннеле Expo создайте mobile/.env: EXPO_PUBLIC_API_URL=http://ВАШ_IP:3000 и перезапустите npx expo start -c.',
               };
             }
             if (e.response?.status) {
