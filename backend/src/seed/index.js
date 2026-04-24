@@ -106,7 +106,7 @@ async function main() {
   });
 
   // Admin account
-  await prisma.bankAccount.create({
+  const adminAccount = await prisma.bankAccount.create({
     data: {
       userId: admin.id,
       name: 'Главный счёт',
@@ -136,6 +136,26 @@ async function main() {
       maskedNumber: '**** **** **** 8829',
       type: 'VISA',
       tier: 'Black',
+    },
+  });
+
+  await prisma.bankCard.create({
+    data: {
+      userId: user2.id,
+      accountId: user2Account.id,
+      maskedNumber: '**** **** **** 5512',
+      type: 'VISA',
+      tier: 'Standard',
+    },
+  });
+
+  await prisma.bankCard.create({
+    data: {
+      userId: admin.id,
+      accountId: adminAccount.id,
+      maskedNumber: '**** **** **** 9001',
+      type: 'Mastercard',
+      tier: 'Platinum',
     },
   });
 

@@ -45,6 +45,7 @@ interface AppState {
   loadSubscriptions: () => Promise<void>;
   loadLimits: () => Promise<void>;
   loadNotifications: () => Promise<void>;
+  markNotificationRead: (id: string) => Promise<void>;
   loadAll: () => Promise<void>;
 
   // Settings
@@ -178,6 +179,13 @@ export const useStore = create<AppState>()(
         try {
           const { data } = await api.getNotifications();
           set({ notifications: data.notifications, unreadCount: data.unreadCount });
+        } catch {}
+      },
+
+      markNotificationRead: async (id: string) => {
+        try {
+          await api.markNotificationRead(id);
+          await get().loadNotifications();
         } catch {}
       },
 

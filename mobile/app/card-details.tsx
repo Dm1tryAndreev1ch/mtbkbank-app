@@ -15,6 +15,13 @@ import { useStore } from '../stores/useStore';
 import { useThemeColor } from '../hooks/useThemeColor';
 import { Fonts, Spacing, BorderRadius, Shadows, formatMoney } from '../constants/theme';
 
+function maskCardLine(masked?: string | null): string {
+  const digits = String(masked ?? '').replace(/\D/g, '');
+  if (!digits) return '•••• •••• •••• ——';
+  const last4 = digits.slice(-4).padStart(4, '0');
+  return `•••• •••• •••• ${last4}`;
+}
+
 const DESIGNS = [
   { id: 'default', name: 'Premium (Default)', colors: ['#4F8EF7', '#2c72d9'] },
   { id: 'dark', name: 'Sovereign Wealth', colors: ['#2a2a2a', '#0e0e0e'] },
@@ -84,20 +91,20 @@ export default function CardDetailsScreen() {
             </View>
 
             <View style={s.cardMain}>
-              <Text style={s.cardNumber}>
-                {mainCard?.maskedNumber || '•••• •••• •••• 4021'}
-              </Text>
-              <View style={s.cardFooter}>
-                <View>
+              <Text style={s.cardNumber}>{maskCardLine(mainCard?.maskedNumber)}</Text>
+              <View style={s.cardFooterRow}>
+                <View style={s.cardFooterCol}>
                   <Text style={s.cardInfoLabel}>CARD HOLDER</Text>
                   <Text style={s.cardInfoValue}>
                     {user?.name?.toUpperCase() || 'ALEXANDER S.'}
                   </Text>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
+                <View style={[s.cardFooterCol, s.cardFooterColEnd]}>
                   <Text style={s.cardInfoLabel}>EXPIRES</Text>
                   <Text style={s.cardInfoValue}>09/27</Text>
                 </View>
+              </View>
+              <View style={s.mastercardLogoWrap} pointerEvents="none">
                 <View style={s.mastercardLogo}>
                   <View style={s.mcCircle1} />
                   <View style={s.mcCircle2} />
@@ -428,7 +435,10 @@ const mk = (C: any) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    cardMain: {},
+    cardMain: {
+      position: 'relative',
+      minHeight: 88,
+    },
     cardNumber: {
       fontSize: 22,
       fontFamily: 'Manrope-Bold',
@@ -436,9 +446,17 @@ const mk = (C: any) =>
       color: '#fff',
       marginBottom: Spacing.base,
     },
-    cardFooter: {
+    cardFooterRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
+      alignItems: 'flex-end',
+      paddingRight: 52,
+    },
+    cardFooterCol: {
+      flexShrink: 1,
+      maxWidth: '48%',
+    },
+    cardFooterColEnd: {
       alignItems: 'flex-end',
     },
     cardInfoLabel: {
@@ -451,14 +469,15 @@ const mk = (C: any) =>
       color: '#fff',
       fontFamily: 'Manrope-SemiBold',
     },
-    mastercardLogo: {
-      width: 40,
-      height: 24,
-      flexDirection: 'row',
-      alignItems: 'center',
+    mastercardLogoWrap: {
       position: 'absolute',
       right: 0,
       bottom: 0,
+    },
+    mastercardLogo: {
+      width: 44,
+      height: 28,
+      position: 'relative',
     },
     mcCircle1: {
       width: 24,
