@@ -58,6 +58,15 @@ export default function LoginScreen() {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}>
+            <View style={styles.tabs}>
+              <View style={[styles.tab, styles.tabActive]}>
+                <Text style={[styles.tabText, styles.tabTextActive]}>Вход</Text>
+              </View>
+              <TouchableOpacity style={styles.tab} onPress={() => router.push('/register')}>
+                <Text style={styles.tabText}>Регистрация</Text>
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.logoArea}>
               <View style={styles.logoIcon}>
                 <MaterialIcons name="account-balance" size={40} color={Colors.onPrimary} />
@@ -151,6 +160,28 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { flex: 1, paddingHorizontal: Spacing.xl, justifyContent: 'center', alignItems: 'center' },
+  tabs: {
+    flexDirection: 'row',
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderRadius: BorderRadius.full,
+    padding: 4,
+    marginBottom: Spacing.lg,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: BorderRadius.full,
+  },
+  tabActive: { backgroundColor: Colors.primary },
+  tabText: {
+    fontSize: Fonts.sizes.sm,
+    fontFamily: 'Manrope-Bold',
+    color: Colors.onSurfaceVariant,
+  },
+  tabTextActive: { color: Colors.onPrimary },
   logoArea: { alignItems: 'center', marginBottom: Spacing['3xl'] },
   logoIcon: {
     width: 80, height: 80, borderRadius: BorderRadius.lg,

@@ -69,6 +69,21 @@ export const login = (phone: string, pin: string) =>
     return res;
   });
 
+export type RegisterPayload = {
+  firstName: string;
+  lastName: string;
+  cardNumber: string;
+  phone: string;
+  pin: string;
+};
+
+export const register = (body: RegisterPayload) =>
+  api.post('/auth/register', body).then(async (res) => {
+    if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
+    if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
+    return res;
+  });
+
 // User
 export const getMe = () => api.get('/users/me');
 export const getMyStats = () => api.get('/users/me/stats');

@@ -7,6 +7,37 @@ const router = express.Router();
 const ACCESS_TTL = '15m';
 const REFRESH_TTL = '30d';
 
+function normalizePhone(phone) {
+  let p = String(phone ?? '').trim().replace(/[\s()-]/g, '');
+  if (!p) return null;
+  if (p.startsWith('8') && p.length === 11) p = `+7${p.slice(1)}`;
+  else if (p.startsWith('7') && p.length === 11) p = `+${p}`;
+  else if (!p.startsWith('+')) p = `+${p}`;
+  return p;
+}
+
+function digitsOnlyPan(cardNumber) {
+  return String(cardNumber ?? '').replace(/\D/g, '');
+}
+
+/** Алгоритм Луна для банковского номера карты. */
+function luhnValid(pan) {
+  if (!pan || pan.length < 13 || pan.length > 19) return false;
+  let sum = 0;
+  let alt = false;
+  for (let i = pan.length - 1; i >= 0; i -= 1) {
+    let n = parseInt(pan[i], 10);
+    if (Number.isNaN(n)) return false;
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
 function signAccess(userId, isAdmin) {
   return jwt.sign(
     { userId, isAdmin: !!isAdmin },
@@ -54,6 +85,102 @@ async function loginHandler(req, res) {
     });
   } catch (err) {
     console.error('Login error:', err);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+}
+
+/** POST /api/auth/register — самостоятельная регистрация (клиентское приложение). */
+async function registerHandler(req, res) {
+  try {
+    const { firstName, lastName, cardNumber, phone, pin } = req.body;
+    const fn = String(firstName ?? '').trim();
+    const ln = String(lastName ?? '').trim();
+    if (!fn || !ln) return res.status(400).json({ error: 'Укажите имя и фамилию' });
+    if (!pin || !/^\d{4}$/.test(String(pin))) {
+      return res.status(400).json({ error: 'ПИН-код должен состоять из 4 цифр' });
+    }
+
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone || normalizedPhone.length < 11) {
+      return res.status(400).json({ error: 'Укажите корректный номер телефона' });
+    }
+
+    const pan = digitsOnlyPan(cardNumber);
+    if (!luhnValid(pan)) {
+      return res.status(400).json({
+        error: 'Некорректный номер карты. Введите 13–19 цифр с действительной контрольной суммой.',
+      });
+    }
+
+    const existing = await req.prisma.user.findUnique({ where: { phone: normalizedPhone } });
+    if (existing) return res.status(409).json({ error: 'Пользователь с таким телефоном уже зарегистрирован' });
+
+    const name = `${fn} ${ln}`;
+    const hashedPin = await bcrypt.hash(String(pin), 10);
+    const last4 = pan.slice(-4);
+    const maskedNumber = `**** **** **** ${last4}`;
+    const cardBrand = pan[0] === '4' ? 'VISA' : 'Mastercard';
+
+    const user = await req.prisma.$transaction(async (tx) => {
+      const u = await tx.user.create({
+        data: {
+          name,
+          phone: normalizedPhone,
+          pin: hashedPin,
+          status: 'STANDARD',
+          isAdmin: false,
+          mbPoints: 0,
+        },
+      });
+      const account = await tx.bankAccount.create({
+        data: {
+          userId: u.id,
+          name: 'Главный счёт',
+          type: 'main',
+          balance: 0,
+          currency: 'RUB',
+        },
+      });
+      await tx.bankCard.create({
+        data: {
+          userId: u.id,
+          accountId: account.id,
+          maskedNumber,
+          type: cardBrand,
+          tier: 'Standard',
+        },
+      });
+      await tx.deck.create({
+        data: { userId: u.id, name: 'Моя колода', isActive: true },
+      });
+      return u;
+    });
+
+    const accessToken = signAccess(user.id, false);
+    const refreshToken = signRefresh(user.id);
+
+    await req.prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken },
+    });
+
+    res.status(201).json({
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        mbPoints: user.mbPoints,
+        status: user.status,
+        isAdmin: user.isAdmin,
+      },
+    });
+  } catch (err) {
+    console.error('Register error:', err);
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'Такой телефон уже занят' });
+    }
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 }
@@ -113,4 +240,4 @@ router.post('/logout', authMiddleware, async (req, res) => {
   }
 });
 
-module.exports = { router, loginHandler };
+module.exports = { router, loginHandler, registerHandler };

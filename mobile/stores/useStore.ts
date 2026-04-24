@@ -32,6 +32,13 @@ interface AppState {
 
   // Auth
   login: (phone: string, pin: string) => Promise<boolean>;
+  register: (payload: {
+    firstName: string;
+    lastName: string;
+    cardNumber: string;
+    phone: string;
+    pin: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => Promise<void>;
   loadToken: () => Promise<boolean>;
 
@@ -105,6 +112,26 @@ export const useStore = create<AppState>()(
         } catch {
           set({ isLoading: false });
           return false;
+        }
+      },
+
+      register: async (payload) => {
+        try {
+          set({ isLoading: true });
+          const { data } = await api.register(payload);
+          const token = data.accessToken || data.token;
+          if (!token) {
+            set({ isLoading: false });
+            return { ok: false, error: 'Сервер не вернул токен' };
+          }
+          set({ token, user: data.user, isLoading: false });
+          return { ok: true };
+        } catch (e: unknown) {
+          set({ isLoading: false });
+          const msg =
+            (e as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+            'Не удалось зарегистрироваться';
+          return { ok: false, error: String(msg) };
         }
       },
 

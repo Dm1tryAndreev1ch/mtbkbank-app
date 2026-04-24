@@ -494,9 +494,25 @@ const NAV_ITEMS = [
   { key: 'simulate',  label: 'Симуляция', icon: 'play_circle' },
 ];
 
+function readStoredTheme() {
+  try {
+    return localStorage.getItem('admin_theme') === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState('dashboard');
+  const [theme, setTheme] = useState(readStoredTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      localStorage.setItem('admin_theme', theme);
+    } catch {}
+  }, [theme]);
 
   // Validate stored token on mount
   useEffect(() => {
@@ -539,6 +555,17 @@ export default function App() {
         <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)' }}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{user.name}</div>
           <div style={{ fontSize: 11, color: 'var(--on-surface-variant)', marginBottom: 12 }}>{user.phone}</div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ width: '100%', marginBottom: 8, justifyContent: 'center' }}
+            onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+          >
+            <span className="material-icons-outlined" style={{ fontSize: 18 }}>
+              {theme === 'dark' ? 'light-mode' : 'dark-mode'}
+            </span>
+            {theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+          </button>
           <button className="btn btn-sm" style={{ width: '100%' }} onClick={() => {
             TOKEN = '';
             localStorage.removeItem('admin_token');

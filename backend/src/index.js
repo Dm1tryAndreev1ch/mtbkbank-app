@@ -5,7 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const { PrismaClient } = require('@prisma/client');
 
-const { router: authRoutes, loginHandler } = require('./routes/auth');
+const { router: authRoutes, loginHandler, registerHandler } = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const accountRoutes = require('./routes/accounts');
 const transactionRoutes = require('./routes/transactions');
@@ -36,6 +36,7 @@ app.use((req, _res, next) => {
 
 // Явная регистрация логина на корне app (надёжнее вложенного роутера в части сред / прокси)
 app.post('/api/auth/login', loginHandler);
+app.post('/api/auth/register', registerHandler);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/accounts', accountRoutes);
