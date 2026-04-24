@@ -557,14 +557,25 @@ export default function App() {
           <div style={{ fontSize: 11, color: 'var(--on-surface-variant)', marginBottom: 12 }}>{user.phone}</div>
           <button
             type="button"
-            className="btn btn-sm"
-            style={{ width: '100%', marginBottom: 8, justifyContent: 'center' }}
+            className="theme-toggle-hit"
             onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+            aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
           >
-            <span className="material-icons-outlined" style={{ fontSize: 18 }}>
-              {theme === 'dark' ? 'light-mode' : 'dark-mode'}
+            <span
+              className={`material-icons-outlined theme-toggle-icon theme-toggle-sun ${
+                theme === 'light' ? 'theme-toggle-icon--in' : 'theme-toggle-icon--out'
+              }`}
+            >
+              wb_sunny
             </span>
-            {theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+            <span
+              className={`material-icons-outlined theme-toggle-icon theme-toggle-moon ${
+                theme === 'dark' ? 'theme-toggle-icon--in' : 'theme-toggle-icon--out'
+              }`}
+            >
+              dark_mode
+            </span>
           </button>
           <button className="btn btn-sm" style={{ width: '100%' }} onClick={() => {
             TOKEN = '';

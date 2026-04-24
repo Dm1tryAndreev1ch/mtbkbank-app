@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 import * as SecureStore from 'expo-secure-store';
+import axios from 'axios';
 import * as api from '../services/api';
 
 interface User {
@@ -128,10 +129,26 @@ export const useStore = create<AppState>()(
           return { ok: true };
         } catch (e: unknown) {
           set({ isLoading: false });
-          const msg =
-            (e as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-            'Не удалось зарегистрироваться';
-          return { ok: false, error: String(msg) };
+          if (axios.isAxiosError(e)) {
+            const data = e.response?.data;
+            const serverMsg =
+              typeof data === 'object' && data && 'error' in data
+                ? String((data as { error: string }).error)
+                : undefined;
+            if (serverMsg) return { ok: false, error: serverMsg };
+            if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
+              return {
+                ok: false,
+                error:
+                  'Нет связи с сервером. Проверьте, что backend запущен (порт 3000), телефон в той же Wi‑Fi сети, либо задайте EXPO_PUBLIC_API_URL в .env в папке mobile.',
+              };
+            }
+            if (e.response?.status) {
+              return { ok: false, error: `Ошибка сервера (${e.response.status})` };
+            }
+            return { ok: false, error: e.message || 'Не удалось зарегистрироваться' };
+          }
+          return { ok: false, error: 'Не удалось зарегистрироваться' };
         }
       },
 

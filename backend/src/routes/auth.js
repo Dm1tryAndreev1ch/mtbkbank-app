@@ -101,8 +101,11 @@ async function registerHandler(req, res) {
     }
 
     const normalizedPhone = normalizePhone(phone);
-    if (!normalizedPhone || normalizedPhone.length < 11) {
-      return res.status(400).json({ error: 'Укажите корректный номер телефона' });
+    const phoneDigits = normalizedPhone ? normalizedPhone.replace(/\D/g, '') : '';
+    if (!normalizedPhone || phoneDigits.length < 11 || phoneDigits.length > 15) {
+      return res.status(400).json({
+        error: 'Укажите корректный номер телефона с кодом страны (например +79001234567)',
+      });
     }
 
     const pan = digitsOnlyPan(cardNumber);

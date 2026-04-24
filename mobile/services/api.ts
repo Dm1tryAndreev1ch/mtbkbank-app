@@ -4,6 +4,13 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 function getApiBase(): string {
+  const fromEnv =
+    process.env.EXPO_PUBLIC_API_URL ||
+    (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl;
+  if (fromEnv && typeof fromEnv === 'string') {
+    const u = fromEnv.trim().replace(/\/+$/, '');
+    return u.endsWith('/api') ? u : `${u}/api`;
+  }
   // Expo Go + Dev Client: hostUri = "192.168.x.x:8081"
   const hostUri =
     Constants.expoConfig?.hostUri ??
@@ -16,8 +23,19 @@ function getApiBase(): string {
   if (Platform.OS === 'android') return 'http://10.0.2.2:3000/api';
   // iOS simulator
   if (Platform.OS === 'ios') return 'http://localhost:3000/api';
-  // Fallback — replace with your machine's LAN IP if needed
+  // Fallback — задайте EXPO_PUBLIC_API_URL в .env (корень mobile), если устройство не в той же сети
   return 'http://192.168.1.100:3000/api';
+}
+
+function isPublicAuthPath(url?: string): boolean {
+  if (!url) return false;
+  const u = url.replace(/^\//, '');
+  return (
+    u === 'auth/login' ||
+    u === 'auth/register' ||
+    u.startsWith('auth/login?') ||
+    u.startsWith('auth/register?')
+  );
 }
 
 const API_BASE = getApiBase();
@@ -28,8 +46,9 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach token to every request
+// Токен не подставляем на публичные auth-запросы (старый JWT мог ломать регистрацию / логин)
 api.interceptors.request.use(async (config) => {
+  if (isPublicAuthPath(config.url)) return config;
   const token = await SecureStore.getItemAsync('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
@@ -41,6 +60,10 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     if (error.response?.status === 401 && !originalRequest._retry) {
+      const reqUrl = originalRequest.url || '';
+      if (reqUrl.includes('auth/register') || reqUrl.includes('auth/login')) {
+        return Promise.reject(error);
+      }
       originalRequest._retry = true;
       try {
         const refreshToken = await SecureStore.getItemAsync('refreshToken');
@@ -77,12 +100,23 @@ export type RegisterPayload = {
   pin: string;
 };
 
-export const register = (body: RegisterPayload) =>
-  api.post('/auth/register', body).then(async (res) => {
-    if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
-    if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
+export const register = async (body: RegisterPayload) => {
+  try {
+    await SecureStore.deleteItemAsync('token');
+  } catch {}
+  try {
+    await SecureStore.deleteItemAsync('refreshToken');
+  } catch {}
+  return api.post('/auth/register', body).then(async (res) => {
+    try {
+      if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
+      if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
+    } catch {
+      /* токены в памяти store всё равно выставим; при ошибке SecureStore пользователь увидит сообщение */
+    }
     return res;
   });
+};
 
 // User
 export const getMe = () => api.get('/users/me');
