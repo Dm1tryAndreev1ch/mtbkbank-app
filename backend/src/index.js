@@ -149,60 +149,74 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 // PLAN 04: Sentry.setupExpressErrorHandler(app);
 // PLAN 07: app.use(errorNormalizer);
 
-const httpServer = app.listen(env.PORT, () => {
-  logger.info({ port: env.PORT, env: env.NODE_ENV }, 'server_started');
-  logger.info(
-    { tickMs: env.ACTIVE_DECK_HP_TICK_MS },
-    `Active deck HP tick every ${env.ACTIVE_DECK_HP_TICK_MS}ms (env ACTIVE_DECK_HP_TICK_MS)`
-  );
-
-  ensureAllUsersHaveActiveDeck(prisma)
-    .then((n) => {
-      if (n > 0) {
-        logger.info(
-          { userCount: n },
-          `[decks] у ${n} пользователей создана или активирована колода по умолчанию`
-        );
-      }
-    })
-    .catch((err) => logger.error({ err }, '[decks] ensure failed'));
-});
-
 /**
- * HP drains on the server on this interval even when the mobile app is closed,
- * as long as this Node process is running (not tied to a client).
- * Override: ACTIVE_DECK_HP_TICK_MS in .env (default 60000 = 60s, min 1000).
- *
- * PLAN 04 will replace the .catch with hpTickReporter.reportHpTickError so Sentry
- * is notified when a tick fails (currently we just log).
+ * Boot the listener + cron + close-with-grace ONLY when this file is executed
+ * directly (`node src/index.js`, `npm start`, child-spawn from
+ * graceful-shutdown.test.js). When supertest does `require('../src/index')`
+ * for HTTP integration tests, we skip listener/cron/shutdown registration so
+ * the test can drive the app through supertest's ephemeral port without the
+ * real listener fighting for env.PORT.
  */
-const hpTickHandle = setInterval(() => {
-  tickActiveDeckCardHealth(prisma).catch((err) =>
-    logger.error({ err, event: 'hp-tick-error' }, '[active-deck-hp] tick failed')
-  );
-}, env.ACTIVE_DECK_HP_TICK_MS);
+function bootRuntime() {
+  const httpServer = app.listen(env.PORT, () => {
+    logger.info({ port: env.PORT, env: env.NODE_ENV }, 'server_started');
+    logger.info(
+      { tickMs: env.ACTIVE_DECK_HP_TICK_MS },
+      `Active deck HP tick every ${env.ACTIVE_DECK_HP_TICK_MS}ms (env ACTIVE_DECK_HP_TICK_MS)`
+    );
 
-closeWithGrace({ delay: 10000 }, async ({ err, signal }) => {
-  if (err) logger.error({ err }, 'shutdown_with_error');
-  else logger.info({ signal }, 'shutdown_start');
+    ensureAllUsersHaveActiveDeck(prisma)
+      .then((n) => {
+        if (n > 0) {
+          logger.info(
+            { userCount: n },
+            `[decks] у ${n} пользователей создана или активирована колода по умолчанию`
+          );
+        }
+      })
+      .catch((err) => logger.error({ err }, '[decks] ensure failed'));
+  });
 
-  await new Promise((resolve) => httpServer.close(resolve));
-  clearInterval(hpTickHandle);
+  /**
+   * HP drains on the server on this interval even when the mobile app is closed,
+   * as long as this Node process is running (not tied to a client).
+   * Override: ACTIVE_DECK_HP_TICK_MS in .env (default 60000 = 60s, min 1000).
+   *
+   * PLAN 04 will replace the .catch with hpTickReporter.reportHpTickError so Sentry
+   * is notified when a tick fails (currently we just log).
+   */
+  const hpTickHandle = setInterval(() => {
+    tickActiveDeckCardHealth(prisma).catch((err) =>
+      logger.error({ err, event: 'hp-tick-error' }, '[active-deck-hp] tick failed')
+    );
+  }, env.ACTIVE_DECK_HP_TICK_MS);
 
-  try {
-    await prisma.$disconnect();
-  } catch (e) {
-    logger.warn({ err: e }, 'prisma_disconnect_failed');
-  }
+  closeWithGrace({ delay: 10000 }, async ({ err, signal }) => {
+    if (err) logger.error({ err }, 'shutdown_with_error');
+    else logger.info({ signal }, 'shutdown_start');
 
-  try {
-    const { redisClient } = require('./cache');
-    if (redisClient && redisClient.isReady) await redisClient.quit();
-  } catch (e) {
-    logger.warn({ err: e }, 'redis_quit_failed');
-  }
+    await new Promise((resolve) => httpServer.close(resolve));
+    clearInterval(hpTickHandle);
 
-  logger.info('shutdown_complete');
-});
+    try {
+      await prisma.$disconnect();
+    } catch (e) {
+      logger.warn({ err: e }, 'prisma_disconnect_failed');
+    }
+
+    try {
+      const { redisClient } = require('./cache');
+      if (redisClient && redisClient.isReady) await redisClient.quit();
+    } catch (e) {
+      logger.warn({ err: e }, 'redis_quit_failed');
+    }
+
+    logger.info('shutdown_complete');
+  });
+}
+
+if (require.main === module) {
+  bootRuntime();
+}
 
 module.exports = app;
