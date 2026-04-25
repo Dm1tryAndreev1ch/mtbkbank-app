@@ -15,6 +15,18 @@
 #
 # NOTE: We use `git grep -nP` (PCRE) so `\s` / `\b` work portably across macOS + Linux.
 # POSIX `git grep -E` on macOS does not support `\s` / `\b`.
+#
+# === Phase-2 staging notice (added by plan 02-00) ===
+# This script ALSO ships 5 Phase-2 gates that are deliberately STAGED RED until
+# their respective fix-plans land. Until then, `regression-guard.sh` will exit 1
+# at the new section below — that is INTENTIONAL, the same staging strategy used
+# by Phase 1 plan 99 (see .planning/STATE.md). Plan 02-99 (verify) gates green-on-all-5
+# as a phase-completion check. The 5 staged gates and the plans that flip them green:
+#   - STAGED — JWT_REFRESH_SECRET || JWT_SECRET fallback        → green after Plan 02-10
+#   - STAGED — Test phone +79001234567 outside seed             → green after Plans 02-08 + 02-12
+#   - STAGED — Test cred hint 'ПИН: 1234'                       → green after Plans 02-08 + 02-12
+#   - STAGED — SecureStore call outside services/tokenStore.ts  → green after Plans 02-04, 02-05, 02-07, 02-09
+#   - STAGED — setTimeout in mobile/app/login.tsx               → green after Plan 02-08
 
 set -euo pipefail
 
@@ -53,6 +65,42 @@ check "Empty catch {} in mobile"     'catch\s*(\([^)]*\))?\s*\{\s*\}'           
 
 # 5. console.* in backend src (after Phase-1 console migration in plan 01)
 check "console.* in backend/src"    '\bconsole\.(log|error|warn|info)\b'                 'backend/src/'
+
+echo "=== Phase-2 regression-guard ==="
+
+# Phase 2 — D-22: JWT_REFRESH_SECRET || JWT_SECRET fallback in backend.
+# STAGED: this gate goes RED on first run; turns GREEN after Plan 02-10 lands.
+check "JWT_REFRESH_SECRET || JWT_SECRET fallback" \
+  'JWT_REFRESH_SECRET\s*\|\|\s*process\.env\.JWT_SECRET' \
+  'backend/src/'
+
+# Phase 2 — D-15: hardcoded test phone +79001234567 outside backend/src/seed/.
+# STAGED: turns GREEN after Plan 02-08 (mobile login.tsx) + Plan 02-12 (admin App.jsx).
+# Use `git ls-files | grep -v` subshell substitution (NOT `git grep -- ':!path'`)
+# because the exclusion syntax differs across git versions (macOS git ships an
+# older PCRE). Trailing `|| true` prevents `set -e` killing the script on empty grep.
+check "Test phone +79001234567 outside seed" \
+  '\+79001234567' \
+  'mobile/' 'admin/' \
+  $(git ls-files 'backend/src/' | grep -v '^backend/src/seed/' || true)
+
+# Phase 2 — D-15: hint string «ПИН: 1234» (or «ПИН 1234») on any client surface.
+# STAGED: turns GREEN after Plan 02-08 (mobile login.tsx) + Plan 02-12 (admin App.jsx).
+check "Test cred hint 'ПИН: 1234'" \
+  'ПИН[:\s]*1234' \
+  'mobile/' 'admin/'
+
+# Phase 2 — D-25 belt+suspenders: SecureStore call outside services/tokenStore.ts.
+# STAGED: turns GREEN after Plans 02-04 (api.ts) + 02-05 (useStore.ts) + 02-07 (BiometricGuard.tsx) + 02-09 (app/index.tsx slim).
+check "SecureStore outside tokenStore" \
+  'SecureStore\.(getItem|setItem|deleteItem)Async' \
+  $(git ls-files 'mobile/' | grep -v '^mobile/services/tokenStore\.ts$' || true)
+
+# Phase 2 — D-25 belt+suspenders: setTimeout inside mobile/app/login.tsx.
+# STAGED: turns GREEN after Plan 02-08 lands.
+check "setTimeout in mobile/app/login.tsx" \
+  '\bsetTimeout\b' \
+  'mobile/app/login.tsx'
 
 if [[ $FAIL -ne 0 ]]; then
   echo ""
