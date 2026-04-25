@@ -1,3 +1,8 @@
+// Must be first — Sentry must init before React Native bridges and Expo Router mount.
+// eslint-disable-next-line import/first
+import '../services/sentry';
+import * as Sentry from '@sentry/react-native';
+
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import {
   useFonts,
@@ -16,7 +21,7 @@ import BiometricGuard from '../components/BiometricGuard';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function RootLayout() {
   const [loaded] = useFonts({
     Manrope: Manrope_400Regular,
     'Manrope-Medium': Manrope_500Medium,
@@ -43,3 +48,5 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);

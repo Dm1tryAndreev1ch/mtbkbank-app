@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { NativeModules, Platform } from 'react-native';
+import * as Sentry from '@sentry/react-native';
 
 /** Только localhost / IPv4 — туннели *.exp.direct и т.п. на :3000 не подходят. */
 function isUsableDevApiHost(host: string): boolean {
@@ -138,6 +139,10 @@ export const login = async (phone: string, pin: string) => {
   const res = await api.post(absoluteApiUrl('/auth/login'), { phone, pin });
   if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
   if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
+  // Phase 1 OBS-03: attribute subsequent Sentry events to the authenticated user.
+  // Phase 2 REL-01 will move this into tokenStore.setTokens().
+  const userId = res.data?.user?.id;
+  if (userId) Sentry.setUser({ id: String(userId) });
   return res;
 };
 
