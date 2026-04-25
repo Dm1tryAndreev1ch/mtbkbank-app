@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import * as Sentry from '@sentry/react';
 
 const API = '/api/admin';
 
@@ -165,6 +166,20 @@ function DashboardPage() {
           <div className="stat-card"><div className="stat-label">Транзакций</div><div className="stat-value">{stats.totalTransactions}</div></div>
           {extended && <div className="stat-card"><div className="stat-label">Общий баланс</div><div className="stat-value" style={{ color: 'var(--success)' }}>₽ {extended.totalBalance?.toLocaleString('ru-RU')}</div></div>}
         </div>
+
+        {import.meta.env.DEV && (
+          <button
+            onClick={() => {
+              const id = Sentry.captureException(new Error('Phase-1 Sentry test (admin)'));
+              // eslint-disable-next-line no-console
+              console.log('[sentry-test-button] sent test event:', id);
+            }}
+            style={{ marginTop: 12, padding: '6px 12px', borderColor: '#a00', color: '#a00', background: 'transparent' }}
+            data-testid="sentry-test-button"
+          >
+            Throw test error (DEV)
+          </button>
+        )}
 
         {extended && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, marginTop: 32, marginBottom: 16 }}>
