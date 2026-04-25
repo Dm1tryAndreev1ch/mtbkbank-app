@@ -23,6 +23,19 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const supertest = require('supertest');
+
+// Pre-seed env vars BEFORE requiring the app — supertest tests boot the full chain
+// (envalid, pino-http, healthRoutes, errorNormalizer) by requiring backend/src/index.js.
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/test';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt';
+process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-jwt-refresh';
+process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+process.env.ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:8081';
+process.env.SENTRY_DSN = process.env.SENTRY_DSN || '';
+
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
@@ -101,12 +114,99 @@ describe('Phase-1 regression guard — console.log migration (plan 01-01 complet
   });
 });
 
-describe('Phase-1 regression guard — dynamic CORS / boot / middleware (filled by plan 01-99)', () => {
-  // Plan 01-99 fills these bodies once plans 01-01..01-08 have landed.
-  test.todo('CORS rejects Origin: * (boot app, hit /healthz with bad Origin, no ACAO header)');
-  test.todo('CORS accepts allow-listed origin (boot app, hit /healthz, ACAO matches)');
-  test.todo('Backend boot fails non-zero when JWT_SECRET is missing in NODE_ENV=production (spawnSync)');
-  test.todo('X-Request-Id echoed on every response and present in pino log line');
-  test.todo('404 returns {error: NOT_FOUND, message: Russian, requestId} JSON');
-  test.todo('AppError thrown from /__test__/sentry-error returns {error, message, requestId} JSON');
+describe('Phase-1 regression guard — dynamic CORS / boot / middleware (plan 01-99 complete)', () => {
+  let app;
+
+  beforeAll(() => {
+    jest.resetModules();
+    app = require('../src/index');
+  });
+
+  // ----- CORS -----
+
+  test('CORS rejects unknown origin (no Access-Control-Allow-Origin in response)', async () => {
+    const res = await supertest(app)
+      .get('/healthz')
+      .set('Origin', 'https://attacker.example');
+    // Express CORS sets the header ONLY when the origin is allowed.
+    // The request itself succeeds (200) because the route handler runs regardless of CORS;
+    // CORS is enforced by the BROWSER reading (or not reading) the ACAO header.
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  test('CORS accepts allow-listed origin (Access-Control-Allow-Origin echoed)', async () => {
+    const res = await supertest(app)
+      .get('/healthz')
+      .set('Origin', 'http://localhost:5173');
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+  });
+
+  // ----- Boot fail-fast (envalid) -----
+
+  test('Backend boot fails non-zero when JWT_SECRET missing in NODE_ENV=production (spawnSync)', () => {
+    const { spawnSync } = require('child_process');
+    const ENV_JS = path.join(__dirname, '..', 'src', 'env.js');
+
+    // Build a CLEAN env (NOT inherited from the test process) — production-strict but JWT_SECRET omitted.
+    const childEnv = {
+      PATH: process.env.PATH,
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgresql://x:y@z/d',
+      JWT_REFRESH_SECRET: 'test-refresh',
+      REDIS_URL: 'redis://localhost:6379',
+      ALLOWED_ORIGINS: 'http://example.com',
+      SENTRY_DSN: 'https://example@example.ingest.sentry.io/1',
+    };
+
+    const result = spawnSync(
+      process.execPath,
+      ['-e', `require(${JSON.stringify(ENV_JS)})`],
+      { env: childEnv, encoding: 'utf8', timeout: 8000 }
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toMatch(/JWT_SECRET/);
+  });
+
+  // ----- pino-http genReqId -----
+
+  test('X-Request-Id echoed on every response (UUID v4 shape)', async () => {
+    const res = await supertest(app).get('/healthz');
+    expect(res.status).toBe(200);
+    expect(res.headers['x-request-id']).toBeDefined();
+    expect(res.headers['x-request-id']).toMatch(UUID_V4_RE);
+  });
+
+  test('inbound X-Request-Id is honoured (pino-http passes it through unchanged)', async () => {
+    const incoming = '11111111-2222-4333-8444-555555555555';
+    const res = await supertest(app).get('/healthz').set('X-Request-Id', incoming);
+    expect(res.headers['x-request-id']).toBe(incoming);
+  });
+
+  // ----- 404 / notFoundHandler -----
+
+  test('404 unmounted path returns {error:"NOT_FOUND", message:"Ресурс не найден", requestId:<uuid>}', async () => {
+    const res = await supertest(app).get('/this-path-does-not-exist-anywhere');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('NOT_FOUND');
+    expect(res.body.message).toBe('Ресурс не найден');
+    expect(typeof res.body.requestId).toBe('string');
+    expect(res.body.requestId).toMatch(UUID_V4_RE);
+    expect(res.body.requestId).toBe(res.headers['x-request-id']);
+  });
+
+  // ----- AppError through the full chain -----
+
+  test('AppError from /__test__/sentry-error returns {error:"INTERNAL_ERROR", message:"Phase-1 test error", requestId:<uuid>}', async () => {
+    const res = await supertest(app).get('/__test__/sentry-error');
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('INTERNAL_ERROR');
+    expect(res.body.message).toBe('Phase-1 test error');
+    expect(typeof res.body.requestId).toBe('string');
+    expect(res.body.requestId).toMatch(UUID_V4_RE);
+    // Stack trace must NOT leak into the response body
+    const json = JSON.stringify(res.body);
+    expect(json).not.toMatch(/at\s+.*\.js:\d+:\d+/);
+    expect(res.body.stack).toBeUndefined();
+  });
 });
