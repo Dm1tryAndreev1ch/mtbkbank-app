@@ -2,9 +2,7 @@ name: MTBank CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
 
 # Отменяем предыдущий запуск для той же ветки при новом пуше
 concurrency:

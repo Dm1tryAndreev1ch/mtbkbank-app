@@ -11,6 +11,7 @@
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",
     "db:seed": "node src/seed/index.js",
+    "db:ensure-decks": "node src/scripts/ensure-active-decks.js",
     "db:reset": "npx prisma migrate reset --force && node src/seed/index.js"
   },
   "dependencies": {

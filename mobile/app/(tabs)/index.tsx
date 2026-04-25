@@ -17,9 +17,11 @@ import { Fonts, Spacing, BorderRadius, Shadows, formatMoney, toMaterialIconName,
 import { useThemeColor } from '../../hooks/useThemeColor';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CAROUSEL_ITEM_WIDTH = SCREEN_WIDTH * 0.72;
+const CAROUSEL_SNAP_GAP = 12;
+/** Ширина слайда акций — по контенту экрана, без конфликта с колодой (колода ниже, на всю ширину центрируется). */
+const CAROUSEL_ITEM_WIDTH = Math.round(SCREEN_WIDTH - Spacing.base * 2);
 const CAROUSEL_ITEM_HEIGHT = 120;
-const DECK_WIDGET_WIDTH = SCREEN_WIDTH * 0.24;
+const DECK_WIDGET_WIDTH = Math.min(220, Math.round(SCREEN_WIDTH * 0.52));
 
 // ─── Skeleton ────────────────────────────────────────────────────────────────
 const SkeletonPulse = ({ style, colors }: { style: any; colors: any }) => {
@@ -102,7 +104,8 @@ const PromoCarousel = ({ styles, colors }: { styles: any; colors: any }) => {
   }, [activeIndex]);
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / CAROUSEL_ITEM_WIDTH);
+    const step = CAROUSEL_ITEM_WIDTH + CAROUSEL_SNAP_GAP;
+    const idx = Math.round(e.nativeEvent.contentOffset.x / step);
     if (idx >= 0 && idx < PROMOS.length) setActiveIndex(idx);
   };
 
@@ -114,9 +117,9 @@ const PromoCarousel = ({ styles, colors }: { styles: any; colors: any }) => {
         keyExtractor={item => item.id}
         horizontal
         showsHorizontalScrollIndicator={false}
-        snapToInterval={CAROUSEL_ITEM_WIDTH + 12}
+        snapToInterval={CAROUSEL_ITEM_WIDTH + CAROUSEL_SNAP_GAP}
         decelerationRate="fast"
-        contentContainerStyle={{ paddingLeft: Spacing.base, paddingRight: 8 }}
+        contentContainerStyle={{ paddingHorizontal: Spacing.base, paddingRight: Spacing.base }}
         onScroll={onScroll}
         scrollEventThrottle={16}
         renderItem={({ item }) => (
@@ -288,9 +291,10 @@ export default function HomeScreen() {
   const firstName = user?.name?.split(' ')[0] || 'Пользователь';
   const currentDesign = DESIGNS.find(d => d.id === cardDesign) || DESIGNS[0];
 
-  const maskCardNumber = (num?: string) => {
-    if (!num) return '•••• •••• •••• 0000';
-    const last4 = num.replace(/\s+/g, '').slice(-4) || '0000';
+  const maskCardNumber = (num?: string | null) => {
+    const digits = String(num ?? '').replace(/\D/g, '');
+    if (!digits) return '•••• •••• •••• ——';
+    const last4 = digits.slice(-4).padStart(4, '0');
     return `•••• •••• •••• ${last4}`;
   };
 
@@ -373,23 +377,18 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ── NEW: Promo Carousel + Deck Fan Widget ── */}
-        <View style={styles.promoRow}>
-          {/* Carousel takes ~72% width */}
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.sectionTitle, { paddingHorizontal: Spacing.base, marginBottom: Spacing.base }]}>
-              АКЦИИ
-            </Text>
-            <PromoCarousel styles={styles} colors={colors} />
-          </View>
-
-          {/* Deck widget takes ~24% width */}
-          <View style={styles.deckWidgetWrap}>
-            <Text style={[styles.sectionTitle, { marginBottom: Spacing.base, textAlign: 'center' }]}>
-              КОЛОДА
-            </Text>
-            <DeckFanWidget decks={decks} styles={styles} colors={colors} />
-          </View>
+        {/* Акции на всю ширину; колода отдельным блоком — без наложения на карусель */}
+        <View style={styles.promoBlock}>
+          <Text style={[styles.sectionTitle, { paddingHorizontal: Spacing.base, marginBottom: Spacing.base }]}>
+            АКЦИИ
+          </Text>
+          <PromoCarousel styles={styles} colors={colors} />
+        </View>
+        <View style={styles.deckBlock}>
+          <Text style={[styles.sectionTitle, { marginBottom: Spacing.base, textAlign: 'center' }]}>
+            КОЛОДА
+          </Text>
+          <DeckFanWidget decks={decks} styles={styles} colors={colors} />
         </View>
 
         {/* Recent Operations */}
@@ -654,19 +653,21 @@ const getStyles = (Colors: any) => StyleSheet.create({
     color: Colors.onSurface
   },
 
-  // ── Promo row ──────────────────────────────────────────────────────────────
-  promoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+  // ── Акции + колода (вертикально) ──────────────────────────────────────────
+  promoBlock: {
     marginTop: Spacing['2xl'],
-    paddingRight: Spacing.base,
+  },
+  deckBlock: {
+    marginTop: Spacing.xl,
+    paddingHorizontal: Spacing.base,
+    alignItems: 'center',
   },
 
   // Promo carousel card
   promoCard: {
     height: CAROUSEL_ITEM_HEIGHT,
     borderRadius: BorderRadius.base,
-    marginRight: 12,
+    marginRight: CAROUSEL_SNAP_GAP,
     overflow: 'hidden',
     justifyContent: 'center',
     ...Shadows.primary,
@@ -714,12 +715,6 @@ const getStyles = (Colors: any) => StyleSheet.create({
     width: 16
   },
 
-  // ── ИСПРАВЛЕНО: Deck widget ────────────────────────────────────────────────
-  deckWidgetWrap: {
-    width: DECK_WIDGET_WIDTH + 8, // небольшой запас
-    alignItems: 'center',
-    paddingTop: 2,
-  },
   deckWidget: {
     width: DECK_WIDGET_WIDTH,
     minHeight: CAROUSEL_ITEM_HEIGHT + 16, // увеличена высота

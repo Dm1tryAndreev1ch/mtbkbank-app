@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 import * as SecureStore from 'expo-secure-store';
+import axios from 'axios';
 import * as api from '../services/api';
 
 interface User {
@@ -32,6 +33,13 @@ interface AppState {
 
   // Auth
   login: (phone: string, pin: string) => Promise<boolean>;
+  register: (payload: {
+    firstName: string;
+    lastName: string;
+    cardNumber: string;
+    phone: string;
+    pin: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => Promise<void>;
   loadToken: () => Promise<boolean>;
 
@@ -45,6 +53,7 @@ interface AppState {
   loadSubscriptions: () => Promise<void>;
   loadLimits: () => Promise<void>;
   loadNotifications: () => Promise<void>;
+  markNotificationRead: (id: string) => Promise<void>;
   loadAll: () => Promise<void>;
 
   // Settings
@@ -104,6 +113,49 @@ export const useStore = create<AppState>()(
         } catch {
           set({ isLoading: false });
           return false;
+        }
+      },
+
+      register: async (payload) => {
+        try {
+          set({ isLoading: true });
+          const { data } = await api.register(payload);
+          const token = data.accessToken || data.token;
+          if (!token) {
+            set({ isLoading: false });
+            return { ok: false, error: 'Сервер не вернул токен' };
+          }
+          set({ token, user: data.user, isLoading: false });
+          return { ok: true };
+        } catch (e: unknown) {
+          set({ isLoading: false });
+          if (axios.isAxiosError(e)) {
+            const data = e.response?.data;
+            const serverMsg =
+              typeof data === 'object' && data && 'error' in data
+                ? String((data as { error: string }).error)
+                : undefined;
+            if (serverMsg) return { ok: false, error: serverMsg };
+            if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
+              return {
+                ok: false,
+                error:
+                  'Нет связи с сервером. Проверьте, что backend запущен (порт 3000), телефон в той же Wi‑Fi сети, либо задайте EXPO_PUBLIC_API_URL в .env в папке mobile.',
+              };
+            }
+            if (e.response?.status === 404) {
+              return {
+                ok: false,
+                error:
+                  'Сервер ответил 404 (часто указан неверный адрес API). В консоли Metro должна быть строка [MTBank API] base URL: … Убедитесь, что там IP вашего ПК и порт 3000 (не 8081). При туннеле Expo создайте mobile/.env: EXPO_PUBLIC_API_URL=http://ВАШ_IP:3000 и перезапустите npx expo start -c.',
+              };
+            }
+            if (e.response?.status) {
+              return { ok: false, error: `Ошибка сервера (${e.response.status})` };
+            }
+            return { ok: false, error: e.message || 'Не удалось зарегистрироваться' };
+          }
+          return { ok: false, error: 'Не удалось зарегистрироваться' };
         }
       },
 
@@ -178,6 +230,13 @@ export const useStore = create<AppState>()(
         try {
           const { data } = await api.getNotifications();
           set({ notifications: data.notifications, unreadCount: data.unreadCount });
+        } catch {}
+      },
+
+      markNotificationRead: async (id: string) => {
+        try {
+          await api.markNotificationRead(id);
+          await get().loadNotifications();
         } catch {}
       },
 

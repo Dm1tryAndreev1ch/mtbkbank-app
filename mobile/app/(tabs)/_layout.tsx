@@ -1,12 +1,40 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Tabs } from 'expo-router';
-import { View, StyleSheet, Platform } from 'react-native';
+import { AppState, AppStateStatus, View, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Shadows } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
+import { useStore } from '../../stores/useStore';
 
 export default function TabLayout() {
   const colors = useThemeColor();
+  const token = useStore((s) => s.token);
+  const loadNotifications = useStore((s) => s.loadNotifications);
+  const loadCards = useStore((s) => s.loadCards);
+  const loadDecks = useStore((s) => s.loadDecks);
+
+  useEffect(() => {
+    const onState = (next: AppStateStatus) => {
+      if (next !== 'active' || !token) return;
+      void loadNotifications();
+      void loadCards();
+      void loadDecks();
+    };
+    const sub = AppState.addEventListener('change', onState);
+    return () => sub.remove();
+  }, [token, loadNotifications, loadCards, loadDecks]);
+
+  /** Keep inventory and in-app notification badge in sync while the app is open (server ticks active-deck HP every minute). */
+  useEffect(() => {
+    if (!token) return;
+    const id = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
+      void loadNotifications();
+      void loadCards();
+      void loadDecks();
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [token, loadNotifications, loadCards, loadDecks]);
 
   return (
     <Tabs
