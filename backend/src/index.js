@@ -17,6 +17,7 @@ const { PrismaClient } = require('@prisma/client');
 
 const { env } = require('./env');             // envalid fail-fast (plan 02)
 const { logger } = require('./logger');       // pino factory (plan 01)
+const { errorNormalizer, notFoundHandler } = require('./errors/errorNormalizer'); // plan 07
 
 const { router: authRoutes, loginHandler, registerHandler } = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -148,13 +149,18 @@ app.get('/', (_req, res) => {
 // For now: keep the existing /health alias so deployments don't break.
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-// PLAN 07: app.use(notFoundHandler);
+// 404 handler — 3-arg, returns directly (Risk 8.6 mitigation), never calls next.
+// MUST come before Sentry.setupExpressErrorHandler so unmounted paths return the
+// Russian NOT_FOUND contract instead of falling through to the generic 500 path.
+app.use(notFoundHandler);
 // Sentry Express error handler — captures any error that bubbles past the routes; mounted
 // AFTER all routes/404 handler (per RESEARCH §5.6) and BEFORE the generic errorNormalizer
 // so Sentry sees the raw error shape before downstream sanitisation. `Sentry` is in scope
 // from the per-request middleware block above (do NOT re-require here).
 Sentry.setupExpressErrorHandler(app);
-// PLAN 07: app.use(errorNormalizer);
+// Final translator: thrown errors → JSON {error, message, requestId} (4-branch classifier).
+// Stack trace stays in pino logs; never serialized into the HTTP response body.
+app.use(errorNormalizer);
 
 /**
  * Boot the listener + cron + close-with-grace ONLY when this file is executed
