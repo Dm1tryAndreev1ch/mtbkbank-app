@@ -21,6 +21,15 @@ redisClient.on('reconnecting', () => logger.info('[redis] reconnecting'));
 
 redisClient.connect().catch(e => {
   logger.warn({ err: e }, '[redis] initial connection failed — cache disabled');
+  // PATTERNS.md line 242: emit a Sentry breadcrumb so any later captureException carries
+  // context that Redis was already down. Wrapped in try/catch because instrument.js may
+  // not be loaded in test contexts that mock cache via jest.mock('../cache').
+  try {
+    const { Sentry } = require('../instrument');
+    Sentry.addBreadcrumb({ category: 'redis', message: 'initial connection failed', level: 'warning' });
+  } catch {
+    // instrument.js may not be loaded in test contexts that mock cache; ignore.
+  }
 });
 
 async function getCached(key) {

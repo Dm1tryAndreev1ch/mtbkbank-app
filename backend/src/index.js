@@ -1,10 +1,8 @@
-// MUST be first — Sentry's @sentry/node@10 instruments via require()-interception.
-// instrument.js is created by plan 04. Until then, the try/catch no-ops cleanly.
-// PLAN 04 will swap this defensive try/catch for a hard `require('./instrument');` statement.
+// IMPORTANT: must be FIRST require — Sentry's @sentry/node@10 installs OpenTelemetry-style
+// instrumentation via require() interception. ANY require above this line means Express
+// (or whichever module loads first) misses its patches and HTTP transactions are absent.
 // eslint-disable-next-line import/first
-try { require('./instrument'); } catch (e) {
-  if (!/Cannot find module/.test(e.message)) throw e;
-}
+require('./instrument');
 require('dotenv').config(); // populate process.env from .env BEFORE envalid runs
 
 const express = require('express');
@@ -88,8 +86,13 @@ app.use((req, _res, next) => {
   next();
 });
 
-// PLAN 04: Sentry per-request scope tag goes here. Until then, no-op.
-// app.use((req, _res, next) => { Sentry.getCurrentScope().setTag('requestId', req.id); next(); });
+// Per-request Sentry scope tag — every event captured during the request carries the same requestId
+// so logs (X-Request-Id header) and Sentry events can be cross-referenced.
+const { Sentry } = require('./instrument');
+app.use((req, _res, next) => {
+  Sentry.getCurrentScope().setTag('requestId', req.id);
+  next();
+});
 
 // Rate limiting for auth endpoints — generous enough to never hit during normal use
 const loginLimiter = rateLimit({
@@ -146,7 +149,11 @@ app.get('/', (_req, res) => {
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 // PLAN 07: app.use(notFoundHandler);
-// PLAN 04: Sentry.setupExpressErrorHandler(app);
+// Sentry Express error handler — captures any error that bubbles past the routes; mounted
+// AFTER all routes/404 handler (per RESEARCH §5.6) and BEFORE the generic errorNormalizer
+// so Sentry sees the raw error shape before downstream sanitisation. `Sentry` is in scope
+// from the per-request middleware block above (do NOT re-require here).
+Sentry.setupExpressErrorHandler(app);
 // PLAN 07: app.use(errorNormalizer);
 
 /**
@@ -182,12 +189,14 @@ function bootRuntime() {
    * as long as this Node process is running (not tied to a client).
    * Override: ACTIVE_DECK_HP_TICK_MS in .env (default 60000 = 60s, min 1000).
    *
-   * PLAN 04 will replace the .catch with hpTickReporter.reportHpTickError so Sentry
-   * is notified when a tick fails (currently we just log).
+   * Errors route through hpTickReporter so Sentry captures are rate-limited (5 per
+   * 5min via Redis incr counter + ['hp-tick-error'] fingerprint) — a Redis flicker
+   * that fires 1440 ticks/day cannot exhaust the free-tier quota. logger.error always
+   * fires inside reportHpTickError regardless of capture decision (pino redact applies).
    */
   const hpTickHandle = setInterval(() => {
     tickActiveDeckCardHealth(prisma).catch((err) =>
-      logger.error({ err, event: 'hp-tick-error' }, '[active-deck-hp] tick failed')
+      require('./services/hpTickReporter').reportHpTickError(err, { tickIntervalMs: env.ACTIVE_DECK_HP_TICK_MS })
     );
   }, env.ACTIVE_DECK_HP_TICK_MS);
 
