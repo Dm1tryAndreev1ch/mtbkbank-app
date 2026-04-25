@@ -5,6 +5,9 @@ module.exports = {
   // __mocks__ subdir is for manual mocks of node_modules; not a test file dir.
   testPathIgnorePatterns: ['/node_modules/', '/__mocks__/'],
   setupFiles: ['<rootDir>/tests/setup.js'],
+  // Phase 2 Wave 0 — runs `prisma migrate deploy` once per test invocation
+  // against the docker-compose.test.yml DB before any worker spins up.
+  globalSetup: '<rootDir>/tests/global-setup.js',
   // Map ESM-only deps that supertest/integration tests load via the real app
   // graph. Plan 01-03 wires expo-server-sdk; later plans may add more.
   moduleNameMapper: {
