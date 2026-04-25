@@ -2,6 +2,7 @@ const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const { sacrificeCard, convertCardToPoints } = require('../services/cardEngine');
 const { getCached, setCached } = require('../cache');
+const { logger } = require('../logger');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -123,7 +124,7 @@ router.post('/buy', async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error('buy card error:', err);
+    (req.log ?? logger).error({ err }, 'buy card error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

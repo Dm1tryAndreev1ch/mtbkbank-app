@@ -1,6 +1,7 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const { getCached, setCached } = require('../cache');
+const { logger } = require('../logger');
 const router = express.Router();
 
 const MAX_TRANSFER_AMOUNT = 1_000_000;
@@ -142,7 +143,7 @@ router.get('/resolve-recipient', async (req, res) => {
       accountId: account.id,
     });
   } catch (err) {
-    console.error('Resolve recipient error:', err);
+    (req.log ?? logger).error({ err }, 'Resolve recipient error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -282,14 +283,14 @@ router.post('/transfer', async (req, res) => {
         body: `Вам поступил перевод ${amount} ${toAccount.currency}`,
         icon: 'account_balance_wallet',
       },
-    }).catch(err => console.error('Notification create error (non-critical):', err));
+    }).catch(err => (req.log ?? logger).error({ err }, 'Notification create error (non-critical)'));
 
     res.json({ success: true, transaction: result.transOut });
   } catch (err) {
     if (err.message === 'INSUFFICIENT') {
       return res.status(400).json({ error: 'Недостаточно средств на момент списания' });
     }
-    console.error('Transfer error:', err);
+    (req.log ?? logger).error({ err }, 'Transfer error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -355,7 +356,7 @@ router.post('/transfer-own', async (req, res) => {
     if (err.message === 'INSUFFICIENT') {
       return res.status(400).json({ error: 'Недостаточно средств на момент списания' });
     }
-    console.error('Transfer-own error:', err);
+    (req.log ?? logger).error({ err }, 'Transfer-own error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

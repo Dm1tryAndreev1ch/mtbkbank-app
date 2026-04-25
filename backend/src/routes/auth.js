@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { authMiddleware } = require('../middleware/auth');
+const { logger } = require('../logger');
 const router = express.Router();
 
 const ACCESS_TTL = '15m';
@@ -85,7 +86,7 @@ async function loginHandler(req, res) {
       },
     });
   } catch (err) {
-    console.error('Login error:', err);
+    (req.log ?? logger).error({ err }, 'Login error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 }
@@ -181,7 +182,7 @@ async function registerHandler(req, res) {
       },
     });
   } catch (err) {
-    console.error('Register error:', err);
+    (req.log ?? logger).error({ err }, 'Register error');
     if (err.code === 'P2002') {
       return res.status(409).json({ error: 'Такой телефон уже занят' });
     }

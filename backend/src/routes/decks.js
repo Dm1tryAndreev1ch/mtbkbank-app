@@ -2,6 +2,7 @@ const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const { calculateDeckCashback } = require('../services/cardEngine');
 const { getCached, setCached, invalidatePattern } = require('../cache');
+const { logger } = require('../logger');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -124,7 +125,7 @@ router.put('/:id', async (req, res) => {
     await invalidatePattern(`deck:cashback:${deck.id}`);
     res.json({ ...updated, totalCashback, cashbackBreakdown: breakdown });
   } catch (err) {
-    console.error('Deck update error:', err);
+    (req.log ?? logger).error({ err }, 'Deck update error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

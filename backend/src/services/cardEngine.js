@@ -1,6 +1,7 @@
 /**
  * Card Engine — core game mechanics for the card collection system.
  */
+const { logger } = require('../logger');
 
 // Rarity-based configuration
 const RARITY_CONFIG = {
@@ -251,11 +252,17 @@ async function tickActiveDeckCardHealth(prisma) {
     },
   });
 
+  let userCount = 0;
+  let droppedCount = 0;
+  let lowHpCount = 0;
+
   for (const deck of activeDecks) {
+    let userTouched = false;
     for (const dc of deck.deckCards) {
       const uc = dc.userCard;
       if (!uc || uc.health <= 0) continue;
 
+      userTouched = true;
       const oldHealth = uc.health;
       const newHealth = oldHealth - lossPerTick;
 
@@ -269,6 +276,7 @@ async function tickActiveDeckCardHealth(prisma) {
             icon: 'heart_broken',
           },
         });
+        droppedCount += 1;
         continue;
       }
 
@@ -287,9 +295,16 @@ async function tickActiveDeckCardHealth(prisma) {
             icon: 'warning',
           },
         });
+        lowHpCount += 1;
       }
     }
+    if (userTouched) userCount += 1;
   }
+
+  logger.info(
+    { event: 'hp-tick', userCount, droppedCount, lowHpCount },
+    'hp-tick complete'
+  );
 }
 
 /**

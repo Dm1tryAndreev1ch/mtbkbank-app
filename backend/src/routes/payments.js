@@ -1,6 +1,7 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const { processCardDrop } = require('../services/cardEngine');
+const { logger } = require('../logger');
 const router = express.Router();
 
 const MAX_PAYMENT_AMOUNT = 1_000_000;
@@ -109,7 +110,7 @@ router.post('/', async (req, res) => {
     try {
       droppedCard = await processCardDrop(req.prisma, req.userId, transaction.id);
     } catch (dropErr) {
-      console.error('Card drop error (non-critical):', dropErr);
+      (req.log ?? logger).error({ err: dropErr }, 'Card drop error (non-critical)');
     }
 
     res.json({
@@ -126,7 +127,7 @@ router.post('/', async (req, res) => {
     if (err.message === 'Недостаточно средств на момент оплаты') {
       return res.status(400).json({ error: err.message });
     }
-    console.error('Payment error:', err);
+    (req.log ?? logger).error({ err }, 'Payment error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

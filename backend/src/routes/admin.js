@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { processCardDrop } = require('../services/cardEngine');
+const { logger } = require('../logger');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -38,7 +39,7 @@ router.get('/dashboard', async (req, res) => {
       rarityDistribution,
     });
   } catch (err) {
-    console.error('Admin dashboard error:', err);
+    (req.log ?? logger).error({ err }, 'Admin dashboard error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -62,7 +63,7 @@ router.get('/dashboard/extended', async (req, res) => {
       recentTransactions,
     });
   } catch (err) {
-    console.error('Admin extended dashboard error:', err);
+    (req.log ?? logger).error({ err }, 'Admin extended dashboard error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -145,7 +146,7 @@ router.post('/users', async (req, res) => {
 
     res.json(user);
   } catch (err) {
-    console.error('Create user error:', err);
+    (req.log ?? logger).error({ err }, 'Create user error');
     res.status(500).json({ error: 'Ошибка создания пользователя' });
   }
 });
@@ -348,7 +349,7 @@ router.post('/simulate-transaction', async (req, res) => {
       try {
         droppedCard = await processCardDrop(req.prisma, userId, result.transaction.id);
       } catch (dropErr) {
-        console.error('Admin simulate card drop error (non-critical):', dropErr);
+        (req.log ?? logger).error({ err: dropErr }, 'Admin simulate card drop error (non-critical)');
       }
     }
 
@@ -361,7 +362,7 @@ router.post('/simulate-transaction', async (req, res) => {
     if (err.message === 'INSUFFICIENT') {
       return res.status(400).json({ error: 'Недостаточно средств на момент списания' });
     }
-    console.error('Simulate transaction error:', err);
+    (req.log ?? logger).error({ err }, 'Simulate transaction error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

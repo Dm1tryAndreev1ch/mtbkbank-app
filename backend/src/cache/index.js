@@ -1,4 +1,5 @@
 const { createClient } = require('redis');
+const { logger } = require('../logger');
 
 const redisClient = createClient({
   url: process.env.REDIS_URL || 'redis://localhost:6379'
@@ -8,18 +9,18 @@ let redisAvailable = false;
 
 redisClient.on('error', (err) => {
   if (redisAvailable) {
-    console.error('[redis] connection lost — cache will be bypassed:', err.message);
+    logger.error({ err }, '[redis] connection lost — cache will be bypassed');
     redisAvailable = false;
   }
 });
 redisClient.on('connect', () => {
-  console.log('[redis] connected');
+  logger.info('[redis] connected');
   redisAvailable = true;
 });
-redisClient.on('reconnecting', () => console.log('[redis] reconnecting…'));
+redisClient.on('reconnecting', () => logger.info('[redis] reconnecting'));
 
 redisClient.connect().catch(e => {
-  console.warn('[redis] initial connection failed — cache disabled:', e.message);
+  logger.warn({ err: e }, '[redis] initial connection failed — cache disabled');
 });
 
 async function getCached(key) {
@@ -28,7 +29,7 @@ async function getCached(key) {
     const data = await redisClient.get(key);
     return data ? JSON.parse(data) : null;
   } catch (error) {
-    console.warn(`Redis GET error for key ${key}:`, error.message);
+    logger.warn({ err: error, key }, 'Redis GET error');
     return null;
   }
 }
@@ -38,7 +39,7 @@ async function setCached(key, value, ttlSeconds) {
     if (!redisClient.isReady) return;
     await redisClient.setEx(key, ttlSeconds, JSON.stringify(value));
   } catch (error) {
-    console.warn(`Redis SET error for key ${key}:`, error.message);
+    logger.warn({ err: error, key }, 'Redis SET error');
   }
 }
 
@@ -50,7 +51,7 @@ async function invalidatePattern(pattern) {
       await redisClient.del(keys);
     }
   } catch (error) {
-    console.warn(`Redis INVALIDATE error for pattern ${pattern}:`, error.message);
+    logger.warn({ err: error, pattern }, 'Redis INVALIDATE error');
   }
 }
 

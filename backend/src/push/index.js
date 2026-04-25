@@ -1,4 +1,5 @@
 const { Expo } = require('expo-server-sdk');
+const { logger } = require('../logger');
 
 // Create a new Expo SDK client
 // optionally providing an access token if you have enabled push security
@@ -7,7 +8,10 @@ const expo = new Expo();
 async function sendPushNotification(expoPushToken, title, body, data = {}) {
   // Check that all your push tokens appear to be valid Expo push tokens
   if (!Expo.isExpoPushToken(expoPushToken)) {
-    console.error(`Push token ${expoPushToken} is not a valid Expo push token`);
+    logger.error(
+      { expoPushToken },
+      'Push token is not a valid Expo push token'
+    );
     return;
   }
 
@@ -23,10 +27,10 @@ async function sendPushNotification(expoPushToken, title, body, data = {}) {
     const chunks = expo.chunkPushNotifications(messages);
     for (let chunk of chunks) {
       const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-      console.log('Push ticket:', ticketChunk);
+      logger.info({ ticketChunk }, 'Push ticket received');
     }
   } catch (error) {
-    console.error('Error sending push notification:', error);
+    logger.error({ err: error }, 'Error sending push notification');
   }
 }
 

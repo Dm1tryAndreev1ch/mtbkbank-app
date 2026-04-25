@@ -1,5 +1,6 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
+const { logger } = require('../logger');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -87,7 +88,7 @@ router.get('/me/stats', async (req, res) => {
       activeCashback: Math.round(activeCashback * 10) / 10,
     });
   } catch (err) {
-    console.error('Stats error:', err);
+    (req.log ?? logger).error({ err }, 'Stats error');
     res.status(500).json({ error: '\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430' });
   }
 });

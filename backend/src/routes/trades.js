@@ -1,5 +1,6 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
+const { logger } = require('../logger');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -147,7 +148,7 @@ router.put('/:id/accept', async (req, res) => {
     if (err.message === 'INSUFFICIENT_MB') {
       return res.status(400).json({ error: 'У отправителя больше нет средств для этого обмена' });
     }
-    console.error('Trade accept error:', err);
+    (req.log ?? logger).error({ err }, 'Trade accept error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

@@ -1,10 +1,11 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const { logger } = require('../logger');
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Начинаем заполнение базы данных...');
+  logger.info('🌱 Начинаем заполнение базы данных...');
 
   // Clean existing data
   await prisma.notification.deleteMany();
@@ -23,7 +24,7 @@ async function main() {
   await prisma.systemConfig.deleteMany();
   await prisma.user.deleteMany();
 
-  console.log('✅ Очистка завершена');
+  logger.info('✅ Очистка завершена');
 
   // ==================== USERS ====================
   const pinHash = await bcrypt.hash('1234', 10);
@@ -61,7 +62,7 @@ async function main() {
     },
   });
 
-  console.log('✅ Пользователи созданы');
+  logger.info('✅ Пользователи созданы');
 
   // ==================== BANK ACCOUNTS ====================
   const mainAccount = await prisma.bankAccount.create({
@@ -116,7 +117,7 @@ async function main() {
     },
   });
 
-  console.log('✅ Счета созданы');
+  logger.info('✅ Счета созданы');
 
   // ==================== BANK CARDS ====================
   await prisma.bankCard.create({
@@ -159,7 +160,7 @@ async function main() {
     },
   });
 
-  console.log('✅ Банковские карты созданы');
+  logger.info('✅ Банковские карты созданы');
 
   // ==================== TRANSACTIONS ====================
   const transactions = [
@@ -179,7 +180,7 @@ async function main() {
     await prisma.transaction.create({ data: t });
   }
 
-  console.log('✅ Транзакции созданы');
+  logger.info('✅ Транзакции созданы');
 
   // ==================== COLLECTION CARDS ====================
   const collectionCards = [
@@ -209,7 +210,7 @@ async function main() {
     createdCards.push(created);
   }
 
-  console.log('✅ Шаблоны карт созданы');
+  logger.info('✅ Шаблоны карт созданы');
 
   // ==================== USER CARDS ====================
   const commons = createdCards.filter(c => c.rarity === 'COMMON');
@@ -244,7 +245,7 @@ async function main() {
     data: { userId: user2.id, collectionCardId: rares[0].id, health: 70, source: 'PURCHASE' },
   });
 
-  console.log('✅ Карты пользователей созданы');
+  logger.info('✅ Карты пользователей созданы');
 
   // ==================== DECKS ====================
   const deck1 = await prisma.deck.create({
@@ -266,7 +267,7 @@ async function main() {
     data: { userId: admin.id, name: 'Моя колода', isActive: true },
   });
 
-  console.log('✅ Колоды созданы');
+  logger.info('✅ Колоды созданы');
 
   // ==================== QUESTS ====================
   const quests = [
@@ -281,7 +282,7 @@ async function main() {
     await prisma.quest.create({ data: q });
   }
 
-  console.log('✅ Квесты созданы');
+  logger.info('✅ Квесты созданы');
 
   // ==================== SUBSCRIPTIONS ====================
   await prisma.subscription.create({
@@ -294,7 +295,7 @@ async function main() {
     data: { userId: user1.id, name: 'Яндекс Плюс', icon: 'subscriptions', amount: 299, nextPayment: new Date('2025-05-20'), isActive: true },
   });
 
-  console.log('✅ Подписки созданы');
+  logger.info('✅ Подписки созданы');
 
   // ==================== SPENDING LIMITS ====================
   await prisma.spendingLimit.create({
@@ -304,7 +305,7 @@ async function main() {
     data: { userId: user1.id, category: 'Кафе и Рестораны', limitAmount: 10000, spentAmount: 8400 },
   });
 
-  console.log('✅ Лимиты трат созданы');
+  logger.info('✅ Лимиты трат созданы');
 
   // ==================== SYSTEM CONFIG ====================
   await prisma.systemConfig.create({
@@ -320,7 +321,7 @@ async function main() {
     data: { key: 'mb_conversion_rates', value: JSON.stringify({ COMMON: 10, RARE: 50, EPIC: 200, LEGENDARY: 1000 }) },
   });
 
-  console.log('✅ Системные настройки созданы');
+  logger.info('✅ Системные настройки созданы');
 
   // ==================== NOTIFICATIONS ====================
   await prisma.notification.create({
@@ -332,17 +333,17 @@ async function main() {
     },
   });
 
-  console.log('✅ Уведомления созданы');
-  console.log('\n🎉 База данных заполнена успешно!');
-  console.log('\n📱 Тестовые пользователи:');
-  console.log('   Клиент:  +79001234567 / ПИН: 1234');
-  console.log('   Клиент2: +79009876543 / ПИН: 1234');
-  console.log('   Админ:   +79000000000 / ПИН: 0000');
+  logger.info('✅ Уведомления созданы');
+  logger.info('🎉 База данных заполнена успешно!');
+  logger.info('📱 Тестовые пользователи:');
+  logger.info('   Клиент:  +79001234567 / ПИН: 1234');
+  logger.info('   Клиент2: +79009876543 / ПИН: 1234');
+  logger.info('   Админ:   +79000000000 / ПИН: 0000');
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Ошибка заполнения:', e);
+    logger.error({ err: e }, '❌ Ошибка заполнения');
     process.exit(1);
   })
   .finally(async () => {

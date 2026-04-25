@@ -1,5 +1,6 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
+const { logger } = require('../logger');
 
 let io;
 const connectedUsers = new Map(); // userId -> socketId
@@ -33,12 +34,15 @@ function setupWebSockets(server) {
   });
 
   io.on('connection', (socket) => {
-    console.log(`🔌 Socket Connected: ${socket.id} (User: ${socket.user.id})`);
-    
+    logger.info(
+      { socketId: socket.id, userId: socket.user.id },
+      '🔌 Socket Connected'
+    );
+
     connectedUsers.set(socket.user.id, socket.id);
 
     socket.on('disconnect', () => {
-      console.log(`❌ Socket Disconnected: ${socket.id}`);
+      logger.info({ socketId: socket.id }, '❌ Socket Disconnected');
       connectedUsers.delete(socket.user.id);
     });
   });

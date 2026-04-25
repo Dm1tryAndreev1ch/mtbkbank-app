@@ -1,5 +1,6 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
+const { logger } = require('../logger');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -68,7 +69,7 @@ router.post('/:id/topup', async (req, res) => {
 
     res.json({ account: updatedAccount, transaction });
   } catch (err) {
-    console.error('Topup error:', err);
+    (req.log ?? logger).error({ err }, 'Topup error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

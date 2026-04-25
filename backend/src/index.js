@@ -21,6 +21,7 @@ const subscriptionRoutes = require('./routes/subscriptions');
 const adminRoutes = require('./routes/admin');
 const { tickActiveDeckCardHealth } = require('./services/cardEngine');
 const { ensureAllUsersHaveActiveDeck } = require('./services/ensureUserActiveDeck');
+const { logger } = require('./logger');
 
 const app = express();
 const prisma = new PrismaClient();
@@ -114,20 +115,28 @@ const ACTIVE_DECK_HP_TICK_MS = Math.max(
 );
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Active deck HP tick every ${ACTIVE_DECK_HP_TICK_MS}ms (env ACTIVE_DECK_HP_TICK_MS)`);
+  logger.info({ port: PORT }, `Server running on port ${PORT}`);
+  logger.info(
+    { tickMs: ACTIVE_DECK_HP_TICK_MS },
+    `Active deck HP tick every ${ACTIVE_DECK_HP_TICK_MS}ms (env ACTIVE_DECK_HP_TICK_MS)`
+  );
 
   setInterval(() => {
     tickActiveDeckCardHealth(prisma).catch((err) =>
-      console.error('[active-deck-hp]', err)
+      logger.error({ err }, '[active-deck-hp] tick failed')
     );
   }, ACTIVE_DECK_HP_TICK_MS);
 
   ensureAllUsersHaveActiveDeck(prisma)
     .then((n) => {
-      if (n > 0) console.log(`[decks] у ${n} пользователей создана или активирована колода по умолчанию`);
+      if (n > 0) {
+        logger.info(
+          { userCount: n },
+          `[decks] у ${n} пользователей создана или активирована колода по умолчанию`
+        );
+      }
     })
-    .catch((err) => console.error('[decks] ensure:', err.message));
+    .catch((err) => logger.error({ err }, '[decks] ensure failed'));
 });
 
 module.exports = app;
