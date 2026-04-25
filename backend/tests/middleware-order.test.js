@@ -31,8 +31,11 @@ beforeAll(() => {
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 describe('middleware order: pino-http + X-Request-Id', () => {
-  test('GET /health echoes X-Request-Id with a UUID v4', async () => {
-    const res = await supertest(app).get('/health');
+  // NOTE: plan 01-08 removed the temporary /health alias from plan 03 in favour of
+  // the canonical /healthz liveness endpoint. These tests probe the X-Request-Id
+  // middleware contract, which is endpoint-agnostic — repointed to /healthz.
+  test('GET /healthz echoes X-Request-Id with a UUID v4', async () => {
+    const res = await supertest(app).get('/healthz');
     expect(res.status).toBe(200);
     expect(res.headers['x-request-id']).toBeDefined();
     expect(res.headers['x-request-id']).toMatch(UUID_V4_RE);
@@ -40,14 +43,14 @@ describe('middleware order: pino-http + X-Request-Id', () => {
 
   test('inbound X-Request-Id header is honoured (not overwritten)', async () => {
     const incoming = '11111111-2222-4333-8444-555555555555';
-    const res = await supertest(app).get('/health').set('X-Request-Id', incoming);
+    const res = await supertest(app).get('/healthz').set('X-Request-Id', incoming);
     expect(res.status).toBe(200);
     expect(res.headers['x-request-id']).toBe(incoming);
   });
 
   test('different requests get different UUIDs', async () => {
-    const r1 = await supertest(app).get('/health');
-    const r2 = await supertest(app).get('/health');
+    const r1 = await supertest(app).get('/healthz');
+    const r2 = await supertest(app).get('/healthz');
     expect(r1.headers['x-request-id']).not.toBe(r2.headers['x-request-id']);
   });
 });

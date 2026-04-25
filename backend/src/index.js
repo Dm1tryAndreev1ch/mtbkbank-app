@@ -18,6 +18,7 @@ const { PrismaClient } = require('@prisma/client');
 const { env } = require('./env');             // envalid fail-fast (plan 02)
 const { logger } = require('./logger');       // pino factory (plan 01)
 const { errorNormalizer, notFoundHandler } = require('./errors/errorNormalizer'); // plan 07
+const healthRoutes = require('./routes/health'); // plan 08 — /healthz, /readyz, /version
 
 const { router: authRoutes, loginHandler, registerHandler } = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -144,10 +145,20 @@ app.get('/', (_req, res) => {
   });
 });
 
-// PLAN 08: app.use(healthRoutes);  // mounts /healthz, /readyz, /version (and removes the /health alias below)
-// PLAN 08: dev-only /__test__/sentry-error endpoint (NODE_ENV !== 'production')
-// For now: keep the existing /health alias so deployments don't break.
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+// Health endpoints — mounted at ROOT (NOT /api/) per RESEARCH §5.6 + PATTERNS divergence.
+// Replaces the temporary /health alias from plan 03; deployments must migrate to /healthz.
+app.use(healthRoutes);
+
+// Dev-only Sentry verification endpoint (D-03). NOT mounted in production.
+// Throws an AppError so the chain runs through Sentry.setupExpressErrorHandler →
+// errorNormalizer and produces a JSON {error,message,requestId} response while Sentry
+// captures the exception with the per-request requestId tag set above.
+if (env.NODE_ENV !== 'production') {
+  app.get('/__test__/sentry-error', (_req, _res, next) => {
+    const { AppError } = require('./errors/AppError');
+    next(new AppError('INTERNAL_ERROR', 500, 'Phase-1 test error'));
+  });
+}
 
 // 404 handler — 3-arg, returns directly (Risk 8.6 mitigation), never calls next.
 // MUST come before Sentry.setupExpressErrorHandler so unmounted paths return the
