@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const { PrismaClient } = require('@prisma/client');
 
+const rateLimit = require('express-rate-limit');
 const { router: authRoutes, loginHandler, registerHandler } = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const accountRoutes = require('./routes/accounts');
@@ -24,7 +25,22 @@ const { ensureAllUsersHaveActiveDeck } = require('./services/ensureUserActiveDec
 const app = express();
 const prisma = new PrismaClient();
 
-const corsOptions = { origin: true, credentials: true };
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    }
+  },
+  credentials: true,
+};
 app.use(cors(corsOptions));
 app.use(helmet());
 app.use(express.json());
@@ -34,9 +50,32 @@ app.use((req, _res, next) => {
   next();
 });
 
+// Rate limiting for auth endpoints — generous enough to never hit during normal use
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,                   // 10 attempts per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много попыток входа. Попробуйте через 15 минут.' },
+});
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,                    // 5 registrations per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много регистраций. Попробуйте позже.' },
+});
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30,                   // 30 refreshes per window (mobile auto-refreshes)
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много запросов. Попробуйте позже.' },
+});
+
 // Явная регистрация логина на корне app (надёжнее вложенного роутера в части сред / прокси)
-app.post('/api/auth/login', loginHandler);
-app.post('/api/auth/register', registerHandler);
+app.post('/api/auth/login', loginLimiter, loginHandler);
+app.post('/api/auth/register', registerLimiter, registerHandler);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/accounts', accountRoutes);

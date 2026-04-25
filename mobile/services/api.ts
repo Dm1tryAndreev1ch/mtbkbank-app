@@ -134,12 +134,12 @@ api.interceptors.response.use(
   }
 );
 
-export const login = (phone: string, pin: string) =>
-  api.post(absoluteApiUrl('/auth/login'), { phone, pin }).then(async (res) => {
-    if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
-    if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
-    return res;
-  });
+export const login = async (phone: string, pin: string) => {
+  const res = await api.post(absoluteApiUrl('/auth/login'), { phone, pin });
+  if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
+  if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
+  return res;
+};
 
 export type RegisterPayload = {
   firstName: string;

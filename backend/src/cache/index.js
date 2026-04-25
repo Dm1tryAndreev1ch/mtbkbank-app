@@ -4,12 +4,22 @@ const redisClient = createClient({
   url: process.env.REDIS_URL || 'redis://localhost:6379'
 });
 
-redisClient.on('error', (err) => console.log('Redis Client Error', err));
-redisClient.on('connect', () => console.log('Redis Client Connected'));
+let redisAvailable = false;
 
-// Connect asynchronously (we don't strictly await it so app can boot without crashing if redis is down)
+redisClient.on('error', (err) => {
+  if (redisAvailable) {
+    console.error('[redis] connection lost — cache will be bypassed:', err.message);
+    redisAvailable = false;
+  }
+});
+redisClient.on('connect', () => {
+  console.log('[redis] connected');
+  redisAvailable = true;
+});
+redisClient.on('reconnecting', () => console.log('[redis] reconnecting…'));
+
 redisClient.connect().catch(e => {
-  console.log('Redis connection error (cache will be bypassed):', e.message);
+  console.warn('[redis] initial connection failed — cache disabled:', e.message);
 });
 
 async function getCached(key) {

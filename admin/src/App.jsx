@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
 
 const API = '/api/admin';
-let TOKEN = localStorage.getItem('admin_token') || '';
+
+// Token stored in a module-level ref updated by React — avoids stale closures in apiFetch
+const tokenRef = { current: localStorage.getItem('admin_token') || '' };
+
+function setToken(value) {
+  tokenRef.current = value;
+  if (value) {
+    localStorage.setItem('admin_token', value);
+  } else {
+    localStorage.removeItem('admin_token');
+  }
+}
 
 /**
  * VITE_API_ORIGIN — прямой URL API (см. .env.development).
@@ -39,21 +50,22 @@ async function apiFetch(path, opts = {}) {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${TOKEN}`,
+      'Authorization': `Bearer ${tokenRef.current}`,
       ...opts.headers,
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const msg = String(err.error || `HTTP ${res.status}`).slice(0, 200);
+    throw new Error(msg);
   }
   return res.json();
 }
 
 // ===== LOGIN =====
 function LoginPage({ onLogin }) {
-  const [phone, setPhone] = useState('+79000000000');
+  const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
 
@@ -82,8 +94,7 @@ function LoginPage({ onLogin }) {
         return;
       }
       if (data.accessToken && data.user?.isAdmin) {
-        TOKEN = data.accessToken;
-        localStorage.setItem('admin_token', data.accessToken);
+        setToken(data.accessToken);
         onLogin(data.user);
       } else if (data.accessToken && !data.user?.isAdmin) {
         setError('Этот аккаунт не является администратором');
@@ -110,7 +121,7 @@ function LoginPage({ onLogin }) {
           <input className="form-input" type="password" maxLength={4} value={pin} onChange={e => setPin(e.target.value)} placeholder="****" />
         </div>
         <button className="btn btn-primary" style={{ width: '100%', marginTop: 8 }} type="submit">Войти</button>
-        <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--on-surface-variant)' }}>Админ: +79000000000 / ПИН: 0000</p>
+        <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--on-surface-variant)' }}>Войдите с учётными данными администратора</p>
       </form>
     </div>
   );
@@ -540,11 +551,10 @@ export default function App() {
 
   // Validate stored token on mount
   useEffect(() => {
-    if (!TOKEN) return;
+    if (!tokenRef.current) return;
     apiFetch(`${API}/dashboard`)
       .catch(() => {
-        TOKEN = '';
-        localStorage.removeItem('admin_token');
+        setToken('');
       });
   }, []);
 
@@ -602,8 +612,7 @@ export default function App() {
             </span>
           </button>
           <button className="btn btn-sm" style={{ width: '100%' }} onClick={() => {
-            TOKEN = '';
-            localStorage.removeItem('admin_token');
+            setToken('');
             setUser(null);
           }}>Выйти</button>
         </div>

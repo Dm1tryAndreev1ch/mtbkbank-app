@@ -30,6 +30,8 @@ interface AppState {
   limits: any[];
   notifications: any[];
   unreadCount: number;
+  error: string | null;
+  clearError: () => void;
 
   // Auth
   login: (phone: string, pin: string) => Promise<boolean>;
@@ -90,6 +92,8 @@ export const useStore = create<AppState>()(
       limits: [],
       notifications: [],
       unreadCount: 0,
+      error: null,
+      clearError: () => set({ error: null }),
       cardDesign: 'default',
 
       setCardDesign: async (design) => {
@@ -195,42 +199,50 @@ export const useStore = create<AppState>()(
       },
 
       loadUser: async () => {
-        try { const { data } = await api.getMe(); set({ user: data }); } catch {}
+        try { const { data } = await api.getMe(); set({ user: data }); }
+        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить профиль' }); }
       },
 
       loadAccounts: async () => {
-        try { const { data } = await api.getAccounts(); set({ accounts: data }); } catch {}
+        try { const { data } = await api.getAccounts(); set({ accounts: data }); }
+        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить счета' }); }
       },
 
       loadTransactions: async (params) => {
-        try { const { data } = await api.getTransactions(params); set({ transactions: data.transactions }); } catch {}
+        try { const { data } = await api.getTransactions(params); set({ transactions: data.transactions }); }
+        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить транзакции' }); }
       },
 
       loadCards: async (params) => {
-        try { const { data } = await api.getInventory(params); set({ cards: data }); } catch {}
+        try { const { data } = await api.getInventory(params); set({ cards: data }); }
+        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить карты' }); }
       },
 
       loadDecks: async () => {
-        try { const { data } = await api.getDecks(); set({ decks: data }); } catch {}
+        try { const { data } = await api.getDecks(); set({ decks: data }); }
+        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить колоды' }); }
       },
 
       loadQuests: async () => {
-        try { const { data } = await api.getDailyQuests(); set({ quests: data }); } catch {}
+        try { const { data } = await api.getDailyQuests(); set({ quests: data }); }
+        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить квесты' }); }
       },
 
       loadSubscriptions: async () => {
-        try { const { data } = await api.getSubscriptions(); set({ subscriptions: data }); } catch {}
+        try { const { data } = await api.getSubscriptions(); set({ subscriptions: data }); }
+        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить подписки' }); }
       },
 
       loadLimits: async () => {
-        try { const { data } = await api.getLimits(); set({ limits: data }); } catch {}
+        try { const { data } = await api.getLimits(); set({ limits: data }); }
+        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить лимиты' }); }
       },
 
       loadNotifications: async () => {
         try {
           const { data } = await api.getNotifications();
           set({ notifications: data.notifications, unreadCount: data.unreadCount });
-        } catch {}
+        } catch (e: any) { set({ error: e?.message || 'Не удалось загрузить уведомления' }); }
       },
 
       markNotificationRead: async (id: string) => {
@@ -242,6 +254,7 @@ export const useStore = create<AppState>()(
 
       loadAll: async () => {
         const state = get();
+        set({ error: null });
         await Promise.all([
           state.loadUser(),
           state.loadAccounts(),

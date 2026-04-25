@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 
@@ -192,12 +193,33 @@ router.options('/login', (_req, res) => res.sendStatus(204));
 router.get('/login', (_req, res) => {
   res.status(405).json({ error: 'Используйте POST с JSON: { "phone", "pin" }' });
 });
-router.post('/login', loginHandler);
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много попыток входа. Попробуйте через 15 минут.' },
+});
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много регистраций. Попробуйте позже.' },
+});
+router.post('/login', loginLimiter, loginHandler);
 /** Дублирует app.post('/api/auth/register') — если клиент/прокси бьёт только в смонтированный роутер. */
-router.post('/register', registerHandler);
+router.post('/register', registerLimiter, registerHandler);
 
-// POST /api/auth/refresh
-router.post('/refresh', async (req, res) => {
+// POST /api/auth/refresh — rate limited at router level
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много запросов. Попробуйте позже.' },
+});
+router.post('/refresh', refreshLimiter, async (req, res) => {
   try {
     const { refreshToken } = req.body;
     if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });

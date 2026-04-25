@@ -7,8 +7,10 @@ const connectedUsers = new Map(); // userId -> socketId
 function setupWebSockets(server) {
   io = new Server(server, {
     cors: {
-      origin: '*',
-      methods: ['GET', 'POST']
+      origin: (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000')
+        .split(',').map(o => o.trim()).filter(Boolean),
+      methods: ['GET', 'POST'],
+      credentials: true,
     }
   });
 
@@ -19,7 +21,10 @@ function setupWebSockets(server) {
       return next(new Error('Authentication error'));
     }
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+      if (!process.env.JWT_SECRET) {
+        return next(new Error('JWT_SECRET not configured'));
+      }
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
       socket.user = decoded; // { id, phone }
       next();
     } catch (err) {
