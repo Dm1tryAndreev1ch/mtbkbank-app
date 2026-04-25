@@ -15,6 +15,11 @@ class AppError extends Error {
     this.status = status;
     if (messageOverride) this.message = messageOverride;
     this.isAppError = true;
+    // Distinguish "operator-supplied override" from "constructor default-to-code".
+    // errorNormalizer uses this to prefer the Russian codebook entry over the bare code
+    // when no override was provided at the throw site (per plan must_haves: "When
+    // messageOverride is omitted, messages[code] resolves the Russian string").
+    this.hasMessageOverride = Boolean(messageOverride);
   }
 }
 
