@@ -11,6 +11,7 @@ import * as api from '../../services/api';
 import { Fonts, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 import { useThemeColor } from '../../hooks/useThemeColor';
+import DevSentryButton from '../../components/DevSentryButton';
 
 export default function AccountScreen() {
   const { user, loadUser, logout, unreadCount, theme, setTheme } = useStore();
@@ -229,6 +230,8 @@ export default function AccountScreen() {
         </TouchableOpacity>
 
         <Text style={styles.version}>MT-Банк v1.0.0 (Phase 2)</Text>
+
+        {__DEV__ && <DevSentryButton />}
       </ScrollView>
     </SafeAreaView>
   );
