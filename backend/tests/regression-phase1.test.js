@@ -91,8 +91,8 @@ describe('Phase-1 regression guard — staging pins (RED today, GREEN after Phas
   });
 });
 
-describe('Phase-1 regression guard — console.log migration (filled by plan 01-01)', () => {
-  test.failing('no console.log/error/warn/info in backend/src/ (plan 01-01 migrates them)', () => {
+describe('Phase-1 regression guard — console.log migration (plan 01-01 complete)', () => {
+  test('no console.log/error/warn/info in backend/src/ (plan 01-01 migrated them)', () => {
     const out = execSync(
       'git grep -lP "\\bconsole\\.(log|error|warn|info)\\b" -- backend/src/ || true',
       { cwd: REPO_ROOT, encoding: 'utf8' }
