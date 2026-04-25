@@ -55,7 +55,8 @@
         {
           "faceIDPermission": "Используется для быстрого и безопасного входа в MTBank"
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true
