@@ -1,0 +1,51 @@
+# gsd-phase: 02-reliability-foundation-critical-mobile-boot (Wave 0, Plan 02-00)
+# docker-compose.test.yml — fresh PG16 + Redis7 stack for backend integration tests.
+#
+# Purpose: spin up isolated database + cache for `npm test` runs (locally + CI Phase 9).
+# Differences from `docker-compose.yml` (dev):
+#   - No `api` service: tests load the app via `require('../src/index')`, not a container.
+#   - Alternate ports (5433 / 6380) so dev compose can run simultaneously.
+#   - Distinct named volumes (pgdata_test / redisdata_test) — `down -v` cannot leak dev data.
+#   - Throwaway literal credentials scoped to the test DB (per threat model T-02-00-01).
+#
+# Local workflow:
+#   docker compose -f backend/docker-compose.test.yml up -d
+#   npm test
+#   docker compose -f backend/docker-compose.test.yml down -v   # clean up
+#
+# CI workflow (wired in Phase 9): same images consumed via GitHub Actions `services:` block.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: mtbank_test
+      POSTGRES_USER: mtbank_test
+      POSTGRES_PASSWORD: mtbank_test_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_test:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mtbank_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata_test:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata_test:
+  redisdata_test:
