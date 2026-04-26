@@ -211,6 +211,8 @@ export const logout = async () => {
 export const getMe = () => api.get('/users/me');
 export const getMyStats = () => api.get('/users/me/stats');
 export const updateMe = (data: any) => api.put('/users/me', data);
+// SEC-09 / 03-12: backend now requires q.length >= 10 and returns
+// { items, total, page, limit } without a phone field.
 export const searchUsers = (q: string) => api.get('/users/search', { params: { q } });
 
 // Accounts

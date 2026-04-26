@@ -24,7 +24,8 @@ export default function TradeScreen() {
   }, [loadCards]);
 
   useEffect(() => {
-    if (searchQuery.length < 3) {
+    // SEC-09 / 03-12: backend now requires q.length >= 10 (Zod min(10)).
+    if (searchQuery.length < 10) {
       setUsers([]);
       return;
     }
@@ -32,9 +33,10 @@ export default function TradeScreen() {
       setSearching(true);
       try {
         const res = await api.searchUsers(searchQuery);
-        setUsers(res.data);
+        // SEC-09: response is now { items, total, page, limit }
+        setUsers(Array.isArray(res.data) ? res.data : (res.data?.items ?? []));
       } catch (e) {
-        // error
+        setUsers([]);
       } finally {
         setSearching(false);
       }
@@ -90,7 +92,7 @@ export default function TradeScreen() {
              }}>
                 <MaterialIcons name="search" size={24} color={colors.outlineVariant} />
                 <TextInput
-                  placeholder="Имя или Телефон..."
+                  placeholder="Имя получателя (минимум 10 символов)"
                   placeholderTextColor={colors.outlineVariant}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
@@ -114,7 +116,10 @@ export default function TradeScreen() {
                          <MaterialIcons name="person" size={24} color={colors.primary} />
                          <View style={{ marginLeft: 12 }}>
                            <Text style={{ color: colors.onSurface, fontFamily: 'Manrope-Bold' }}>{item.name}</Text>
-                           <Text style={{ color: colors.onSurfaceVariant, fontSize: 12 }}>{item.phone}</Text>
+                           {/* SEC-09 / 03-12: phone removed from /users/search response payload */}
+                           {item.status ? (
+                             <Text style={{ color: colors.onSurfaceVariant, fontSize: 12 }}>{item.status}</Text>
+                           ) : null}
                          </View>
                       </TouchableOpacity>
                    )}

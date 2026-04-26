@@ -1,5 +1,7 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
+const { reqValidator } = require('../middleware/reqValidator');
+const { userSearchQuerySchema } = require('../schemas/users');
 const { logger } = require('../logger');
 const router = express.Router();
 
@@ -93,28 +95,47 @@ router.get('/me/stats', async (req, res) => {
   }
 });
 
-// GET /api/users/search
-router.get('/search', async (req, res) => {
-  try {
-    const { q } = req.query;
-    if (!q || q.length < 3) return res.json([]);
-
-    const users = await req.prisma.user.findMany({
-      where: {
+// GET /api/users/search \u2014 SEC-09 hardened
+//   - q.length >= 10 (Zod via userSearchQuerySchema)
+//   - phone field NEVER returned in response (information-disclosure mitigation)
+//   - paginated via ?page=&limit= (limit capped at 50 by schema)
+router.get(
+  '/search',
+  reqValidator(userSearchQuerySchema, 'query'),
+  async (req, res, next) => {
+    try {
+      const { q, page = 1, limit = 20 } = req.validated;
+      const skip = (page - 1) * limit;
+      const where = {
         id: { not: req.userId },
         OR: [
-          { phone: { contains: q, mode: 'insensitive' } },
           { name: { contains: q, mode: 'insensitive' } },
+          // phone-prefix search remains for trade flow, but the phone is NEVER
+          // returned in the response payload (SEC-09 / T-03-12-02).
+          { phone: { contains: q } },
         ],
-      },
-      select: { id: true, name: true, phone: true, avatarUrl: true },
-      take: 10,
-    });
-
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: '\u041e\u0448\u0438\u0431\u043a\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430' });
+      };
+      const [items, total] = await Promise.all([
+        req.prisma.user.findMany({
+          where,
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            status: true,
+            // phone: EXPLICITLY EXCLUDED (SEC-09 / T-03-12-02)
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        req.prisma.user.count({ where }),
+      ]);
+      res.json({ items, total, page, limit });
+    } catch (err) {
+      next(err);
+    }
   }
-});
+);
 
 module.exports = router;
