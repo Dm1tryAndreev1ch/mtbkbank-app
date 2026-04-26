@@ -36,7 +36,37 @@ function getPrisma() {
   return _prisma;
 }
 
+// Phase 3 / Plan 03-07 / SEC-04 — Redis-backed auth rate limits (rate-limit-redis)
+// share counters across test cases through the live Redis instance. Without a
+// per-test flush, suites that issue >5 logins in aggregate (e.g. tests/integration/auth.test.js
+// hits login multiple times across `describe` blocks) trip the 5/15min cap and
+// flake with 429 instead of 200. truncateAll() now flushes the `rl:*` keyspace
+// alongside the Postgres truncate so the pre-existing TEST-02 contract holds.
+const Redis = require('redis');
+let _redisFlush;
+async function _getRedisFlush() {
+  if (_redisFlush?.isReady) return _redisFlush;
+  _redisFlush = Redis.createClient({ url: process.env.REDIS_URL });
+  _redisFlush.on('error', () => { /* swallow — flush is best-effort */ });
+  try { await _redisFlush.connect(); } catch (_e) { return null; }
+  return _redisFlush;
+}
+async function clearRateLimitKeys() {
+  const c = await _getRedisFlush();
+  if (!c) return;
+  try {
+    for (const pattern of ['rl:login:*', 'rl:register:*', 'rl:refresh:*']) {
+      const keys = await c.keys(pattern);
+      if (keys.length) await c.del(keys);
+    }
+  } catch (_e) {
+    // best-effort — Redis may be down in unit-only test invocations.
+  }
+}
+
 async function truncateAll() {
+  // Always clear rate-limit buckets first; Postgres truncate is the slow step.
+  await clearRateLimitKeys();
   const prisma = getPrisma();
   // Plan 02-00 originally read `prisma._dmmf.datamodel.models`, but Prisma 6
   // does not expose `_dmmf` on the runtime client (it lives only on the
@@ -57,4 +87,4 @@ async function truncateAll() {
   );
 }
 
-module.exports = { truncateAll, getPrisma };
+module.exports = { truncateAll, getPrisma, clearRateLimitKeys };

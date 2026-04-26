@@ -8,7 +8,6 @@ require('dotenv').config(); // populate process.env from .env BEFORE envalid run
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const closeWithGrace = require('close-with-grace');
 const pinoHttp = require('pino-http');
 const pino = require('pino');
@@ -21,6 +20,7 @@ const { errorNormalizer, notFoundHandler } = require('./errors/errorNormalizer')
 const healthRoutes = require('./routes/health'); // plan 08 — /healthz, /readyz, /version
 
 const { router: authRoutes, loginHandler, registerHandler } = require('./routes/auth');
+const { loginLimiter, registerLimiter } = require('./middleware/authRateLimits');
 const userRoutes = require('./routes/users');
 const accountRoutes = require('./routes/accounts');
 const transactionRoutes = require('./routes/transactions');
@@ -128,30 +128,15 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Rate limiting for auth endpoints — generous enough to never hit during normal use
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,                   // 10 attempts per window
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Слишком много попыток входа. Попробуйте через 15 минут.' },
-});
-const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5,                    // 5 registrations per window
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Слишком много регистраций. Попробуйте позже.' },
-});
-const refreshLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30,                   // 30 refreshes per window (mobile auto-refreshes)
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Слишком много запросов. Попробуйте позже.' },
-});
-
-// Явная регистрация логина на корне app (надёжнее вложенного роутера в части сред / прокси)
+// Phase 3 / Plan 03-07 / SEC-04 — Rate limiters now live in middleware/authRateLimits.js
+// (Redis-backed). App-level `loginLimiter`/`registerLimiter`/`refreshLimiter` const
+// definitions REMOVED here to close Pitfall 4 (double-counting from app+route mounts);
+// regression-guard pins the absence of `^const (loginLimiter|registerLimiter|refreshLimiter)`
+// at app level. The single source of truth is middleware/authRateLimits.js used by
+// routes/auth.js. The two app-level POSTs below still need limiters because they bypass
+// the router (D-14: explicit registration is more reliable than nested-router under some
+// proxies); they reuse the SAME imported limiter instances, so the Redis bucket is
+// shared and there is no double-count.
 app.post('/api/auth/login', loginLimiter, loginHandler);
 app.post('/api/auth/register', registerLimiter, registerHandler);
 app.use('/api/auth', authRoutes);
