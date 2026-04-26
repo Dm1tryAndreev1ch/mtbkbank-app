@@ -129,13 +129,38 @@ function LoginPage({ onLogin }) {
 }
 
 // ===== DASHBOARD =====
+function PageErrorBanner({ message }) {
+  if (!message) return null;
+  return (
+    <div
+      role="alert"
+      style={{
+        padding: '12px 16px',
+        background: 'var(--error-container, #fde2e2)',
+        color: 'var(--on-error-container, #5a1a1a)',
+        borderRadius: 8,
+        marginBottom: 12,
+        fontSize: 13,
+        fontWeight: 600,
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
+function formatPageError(e) {
+  return String(e?.message || 'Ошибка').slice(0, 240);
+}
+
 function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [extended, setExtended] = useState(null);
+  const [pageError, setPageError] = useState(null);
 
   useEffect(() => {
-    apiFetch(`${API}/dashboard`).then(setStats).catch(() => {});
-    apiFetch(`${API}/dashboard/extended`).then(setExtended).catch(() => {});
+    apiFetch(`${API}/dashboard`).then(setStats).catch((e) => setPageError(formatPageError(e)));
+    apiFetch(`${API}/dashboard/extended`).then(setExtended).catch((e) => setPageError(formatPageError(e)));
   }, []);
 
   if (!stats) {
@@ -146,6 +171,7 @@ function DashboardPage() {
           <p className="page-subtitle">Загрузка данных…</p>
         </div>
         <div className="admin-page-scroll">
+          <PageErrorBanner message={pageError} />
           <p style={{ padding: 8, color: 'var(--on-surface-variant)' }}>Загрузка…</p>
         </div>
       </div>
@@ -159,6 +185,7 @@ function DashboardPage() {
         <p className="page-subtitle">Обзор системы MT-Банк</p>
       </div>
       <div className="admin-page-scroll">
+        <PageErrorBanner message={pageError} />
         <div className="stats-grid">
           <div className="stat-card"><div className="stat-label">Пользователи</div><div className="stat-value">{stats.totalUsers}</div></div>
           <div className="stat-card"><div className="stat-label">Карт в обороте</div><div className="stat-value">{stats.totalCards}</div></div>
@@ -228,10 +255,11 @@ function UsersPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: '', phone: '', pin: '1234', mbPoints: 0, status: 'STANDARD' });
+  const [createForm, setCreateForm] = useState({ name: '', phone: '', pin: '', mbPoints: 0, status: 'STANDARD' });
+  const [pageError, setPageError] = useState(null);
 
   // FIX: API returns { users, total, limit, offset } — extract .users array
-  const load = () => apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch(() => {});
+  const load = () => apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch((e) => setPageError(formatPageError(e)));
   useEffect(() => { load(); }, []);
 
   const handleSave = async () => {
@@ -239,7 +267,7 @@ function UsersPage() {
       await apiFetch(`${API}/users/${editing}`, { method: 'PUT', body: form });
       setEditing(null);
       load();
-    } catch (err) { alert(err.message); }
+    } catch (err) { setPageError(formatPageError(err)); }
   };
 
   const handleCreate = async (e) => {
@@ -247,9 +275,9 @@ function UsersPage() {
     try {
       await apiFetch(`${API}/users`, { method: 'POST', body: createForm });
       setShowCreate(false);
-      setCreateForm({ name: '', phone: '', pin: '1234', mbPoints: 0, status: 'STANDARD' });
+      setCreateForm({ name: '', phone: '', pin: '', mbPoints: 0, status: 'STANDARD' });
       load();
-    } catch (err) { alert(err.message); }
+    } catch (err) { setPageError(formatPageError(err)); }
   };
 
   return (
@@ -262,6 +290,7 @@ function UsersPage() {
           </button>
         </div>
         <div className="admin-page-scroll">
+          <PageErrorBanner message={pageError} />
           <div className="table-container">
             <table>
               <thead><tr><th>Имя</th><th>Телефон</th><th>MB Баллы</th><th>Статус</th><th>Карты</th><th>Действия</th></tr></thead>
@@ -329,8 +358,9 @@ function CardsPage() {
   const [cards, setCards] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', brandName: '', brandIcon: 'style', rarity: 'COMMON', cashbackPercent: 1.0, mbValue: 10, maxHealth: 100, description: '' });
+  const [pageError, setPageError] = useState(null);
 
-  const load = () => apiFetch(`${API}/cards`).then(setCards).catch(() => {});
+  const load = () => apiFetch(`${API}/cards`).then(setCards).catch((e) => setPageError(formatPageError(e)));
   useEffect(() => { load(); }, []);
 
   const handleCreate = async (e) => {
@@ -340,13 +370,15 @@ function CardsPage() {
       setShowCreate(false);
       setForm({ name: '', brandName: '', brandIcon: 'style', rarity: 'COMMON', cashbackPercent: 1.0, mbValue: 10, maxHealth: 100, description: '' });
       load();
-    } catch (err) { alert(err.message); }
+    } catch (err) { setPageError(formatPageError(err)); }
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Деактивировать эту карту?')) return;
-    await apiFetch(`${API}/cards/${id}`, { method: 'DELETE' });
-    load();
+    try {
+      await apiFetch(`${API}/cards/${id}`, { method: 'DELETE' });
+      load();
+    } catch (err) { setPageError(formatPageError(err)); }
   };
 
   return (
@@ -359,6 +391,7 @@ function CardsPage() {
           </button>
         </div>
         <div className="admin-page-scroll">
+          <PageErrorBanner message={pageError} />
           <div className="table-container">
             <table>
               <thead><tr><th>Имя</th><th>Бренд</th><th>Редкость</th><th>Кэшбэк</th><th>MB</th><th>Здоровье</th><th>Статус</th><th>Действия</th></tr></thead>
@@ -417,10 +450,11 @@ function SimulatePage() {
   const [accounts, setAccounts] = useState([]);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [pageError, setPageError] = useState(null);
 
   // FIX: API returns { users, total, limit, offset } — extract .users array
   useEffect(() => {
-    apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch(() => {});
+    apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch((e) => setPageError(formatPageError(e)));
   }, []);
 
   const loadAccounts = async (userId) => {
@@ -433,14 +467,15 @@ function SimulatePage() {
       if (data.length > 0) {
         setForm(f => ({ ...f, accountId: data[0].id }));
       }
-    } catch {
+    } catch (e) {
       setAccounts([]);
+      setPageError(formatPageError(e));
     }
   };
 
   const handleSimulate = async (e) => {
     e.preventDefault();
-    if (!form.userId) { alert('Выберите пользователя'); return; }
+    if (!form.userId) { setPageError('Выберите пользователя'); return; }
     setLoading(true);
     setResult(null);
     try {
@@ -457,7 +492,7 @@ function SimulatePage() {
         body,
       });
       setResult(data);
-    } catch (err) { alert(err.message); }
+    } catch (err) { setPageError(formatPageError(err)); }
     finally { setLoading(false); }
   };
 
@@ -468,6 +503,7 @@ function SimulatePage() {
         <p className="page-subtitle">Создайте тестовую транзакцию для проверки дропа карт и переводов</p>
       </div>
       <div className="admin-page-scroll">
+        <PageErrorBanner message={pageError} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
         <div className="table-container" style={{ padding: 32 }}>
           <h3 style={{ marginBottom: 24, fontWeight: 700 }}>Параметры транзакции</h3>
