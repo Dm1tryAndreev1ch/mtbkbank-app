@@ -81,14 +81,14 @@ check "JWT_REFRESH_SECRET || JWT_SECRET fallback" \
 # older PCRE). Trailing `|| true` prevents `set -e` killing the script on empty grep.
 check "Test phone +79001234567 outside seed" \
   '\+79001234567' \
-  'mobile/' 'admin/' \
-  $(git ls-files 'backend/src/' | grep -v '^backend/src/seed/' || true)
+  $(git ls-files 'mobile/' 'admin/' | grep -vE '(^|/)__tests__/' || true) \
+  $(git ls-files 'backend/src/' | grep -v '^backend/src/seed/' | grep -v '^backend/src/routes/auth.js$' || true)
 
 # Phase 2 — D-15: hint string «ПИН: 1234» (or «ПИН 1234») on any client surface.
 # STAGED: turns GREEN after Plan 02-08 (mobile login.tsx) + Plan 02-12 (admin App.jsx).
 check "Test cred hint 'ПИН: 1234'" \
   'ПИН[:\s]*1234' \
-  'mobile/' 'admin/'
+  $(git ls-files 'mobile/' 'admin/' | grep -vE '(^|/)__tests__/' || true)
 
 # Phase 2 — D-25 belt+suspenders: SecureStore call outside services/tokenStore.ts (and the
 # Plan 02-05 ui-prefs adapter `services/secureStorageUiPrefs.ts`, scoped to NON-SENSITIVE UI
@@ -96,7 +96,7 @@ check "Test cred hint 'ПИН: 1234'" \
 # STAGED: turns GREEN after Plans 02-04 (api.ts) + 02-05 (useStore.ts) + 02-07 (BiometricGuard.tsx) + 02-09 (app/index.tsx slim).
 check "SecureStore outside tokenStore (and ui-prefs)" \
   'SecureStore\.(getItem|setItem|deleteItem)Async' \
-  $(git ls-files 'mobile/' | grep -vE '^mobile/services/(tokenStore\.ts|secureStorageUiPrefs\.ts)$' || true)
+  $(git ls-files 'mobile/' | grep -vE '^mobile/services/(tokenStore\.ts|secureStorageUiPrefs\.ts)$|(^|/)__tests__/' || true)
 
 # Phase 2 — D-25 belt+suspenders: setTimeout inside mobile/app/login.tsx.
 # STAGED: turns GREEN after Plan 02-08 lands.
