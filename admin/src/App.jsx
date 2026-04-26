@@ -197,9 +197,18 @@ function DashboardPage() {
         {import.meta.env.DEV && (
           <button
             onClick={() => {
-              const id = Sentry.captureException(new Error('Phase-1 Sentry test (admin)'));
-              // eslint-disable-next-line no-console
-              console.log('[sentry-test-button] sent test event:', id);
+              const err = new Error('Phase-1 Sentry test (admin)');
+              const eventId = Sentry.captureException(err);
+              const sentryWired = Boolean(import.meta.env.VITE_SENTRY_DSN);
+              const msg = sentryWired
+                ? `Тестовая ошибка отправлена в Sentry (event ${eventId})`
+                : 'Sentry DSN не настроен (VITE_SENTRY_DSN пуст). Ошибка будет брошена в консоль.';
+              setPageError(msg);
+              console.log('[sentry-test-button]', { eventId, sentryWired });
+              // Throw asynchronously so the error escapes React's render-time
+              // catch and reaches window.onerror + Sentry's global handler +
+              // any ErrorBoundary wrapping the admin tree.
+              setTimeout(() => { throw err; }, 0);
             }}
             style={{ marginTop: 12, padding: '6px 12px', borderColor: '#a00', color: '#a00', background: 'transparent' }}
             data-testid="sentry-test-button"
