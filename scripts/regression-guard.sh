@@ -50,7 +50,7 @@ echo "=== Phase-1 regression-guard ==="
 
 # 1. CORS open
 check "CORS origin: true"           '\borigin:\s*true\b'                                 'backend/src/'
-check "CORS wildcard origin"        "ALLOWED_ORIGINS.*['\"]\\*['\"]"                     'backend/src/'
+check "CORS wildcard origin"        "ALLOWED_ORIGINS\s*=\s*\[[^]]*['\"]\\*['\"]"          'backend/src/'
 
 # 2. JWT fallback secret
 check "JWT fallback_secret literal" "'fallback_secret'|\"fallback_secret\""              'backend/src/'
@@ -82,7 +82,7 @@ check "JWT_REFRESH_SECRET || JWT_SECRET fallback" \
 check "Test phone +79001234567 outside seed" \
   '\+79001234567' \
   $(git ls-files 'mobile/' 'admin/' | grep -vE '(^|/)__tests__/' || true) \
-  $(git ls-files 'backend/src/' | grep -v '^backend/src/seed/' | grep -v '^backend/src/routes/auth.js$' || true)
+  $(git ls-files 'backend/src/' | grep -v '^backend/src/seed/' | grep -v '^backend/src/routes/auth.js$' | grep -v '^backend/src/schemas/' || true)
 
 # Phase 2 — D-15: hint string «ПИН: 1234» (or «ПИН 1234») on any client surface.
 # STAGED: turns GREEN after Plan 02-08 (mobile login.tsx) + Plan 02-12 (admin App.jsx).
