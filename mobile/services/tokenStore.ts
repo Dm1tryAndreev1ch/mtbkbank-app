@@ -1,12 +1,8 @@
-// mobile/services/tokenStore.ts
-//
-// Sole SecureStore writer for auth tokens. All other mobile code reads/writes via this module.
-// REL-01 single-source-of-truth, REL-05 disk-before-memory, D-21 atomic both-tokens persist,
-// D-02/D-24 seamless legacy-key migration, D-09 throw-on-write-failure with Russian-copy surfacing
-// in caller, single-flight refresh via `_refreshPromise`.
-//
-// ESLint: this is the ONE permitted file that imports `expo-secure-store` (whitelisted by override
-// in mobile/eslint.config.js from Plan 02-01, D-25 Rule A).
+// mobile/services/tokenStore.ts — sole SecureStore writer for auth tokens.
+// REL-01 SSOT, REL-05 disk-before-memory, D-21 atomic both-tokens, D-02/D-24 legacy migration,
+// D-09 throw-on-write-failure (caller maps to Russian copy), single-flight refresh.
+// ESLint override (mobile/eslint.config.js, Plan 02-01, D-25 Rule A) whitelists this file alone
+// to import `expo-secure-store`.
 import * as SecureStore from 'expo-secure-store';
 import * as Sentry from '@sentry/react-native';
 
@@ -181,4 +177,42 @@ export function subscribe(fn: Listener): () => void {
   };
 }
 
-// refreshOnce is added in Task 2.
+/**
+ * Single-flight refresh wrapper (D-21, REL-01). Caller supplies a function that POSTs to
+ * /auth/refresh and returns `{ accessToken, refreshToken, userId? }`. Guarantees:
+ *   1. N parallel callers share ONE call to `callRefreshFn` (`_refreshPromise` guard).
+ *   2. Returned tokens persisted via `setTokens` (REL-05 + D-21 atomic).
+ *   3. On rejection, ALL callers reject and `_refreshPromise` resets to null in `finally`.
+ *   4. Synchronously rejects with `NO_REFRESH_TOKEN` if none in memory.
+ * userId is OPTIONAL — /auth/refresh currently does not include it; attribution carries from login.
+ * Takes `callRefreshFn` as a parameter so this module stays a leaf (no axios import).
+ */
+export async function refreshOnce(
+  callRefreshFn: (
+    currentRefresh: string,
+  ) => Promise<{ accessToken: string; refreshToken: string; userId?: string | number }>,
+): Promise<string> {
+  // Reuse in-flight promise if present.
+  if (_state._refreshPromise) return _state._refreshPromise as Promise<string>;
+
+  if (!_state.refresh) {
+    return Promise.reject(new Error('NO_REFRESH_TOKEN'));
+  }
+
+  const currentRefresh = _state.refresh;
+
+  const flight = (async () => {
+    try {
+      const { accessToken, refreshToken, userId } = await callRefreshFn(currentRefresh);
+      // Atomic both-tokens persist (D-21) — composes on top of setTokens (REL-05).
+      await setTokens(accessToken, refreshToken, userId !== undefined ? { userId } : undefined);
+      return accessToken;
+    } finally {
+      // Reset on BOTH success and failure — a single failed refresh must not poison the singleton.
+      _state._refreshPromise = null;
+    }
+  })();
+
+  _state._refreshPromise = flight as Promise<string | null>;
+  return flight;
+}
