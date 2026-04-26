@@ -90,11 +90,13 @@ check "Test cred hint 'ПИН: 1234'" \
   'ПИН[:\s]*1234' \
   'mobile/' 'admin/'
 
-# Phase 2 — D-25 belt+suspenders: SecureStore call outside services/tokenStore.ts.
+# Phase 2 — D-25 belt+suspenders: SecureStore call outside services/tokenStore.ts (and the
+# Plan 02-05 ui-prefs adapter `services/secureStorageUiPrefs.ts`, scoped to NON-SENSITIVE UI
+# prefs only — D-09 / REL-01).
 # STAGED: turns GREEN after Plans 02-04 (api.ts) + 02-05 (useStore.ts) + 02-07 (BiometricGuard.tsx) + 02-09 (app/index.tsx slim).
-check "SecureStore outside tokenStore" \
+check "SecureStore outside tokenStore (and ui-prefs)" \
   'SecureStore\.(getItem|setItem|deleteItem)Async' \
-  $(git ls-files 'mobile/' | grep -v '^mobile/services/tokenStore\.ts$' || true)
+  $(git ls-files 'mobile/' | grep -vE '^mobile/services/(tokenStore\.ts|secureStorageUiPrefs\.ts)$' || true)
 
 # Phase 2 — D-25 belt+suspenders: setTimeout inside mobile/app/login.tsx.
 # STAGED: turns GREEN after Plan 02-08 lands.

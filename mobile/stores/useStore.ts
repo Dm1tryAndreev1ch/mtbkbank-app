@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
+import * as Sentry from '@sentry/react-native';
 import * as api from '../services/api';
+import * as tokenStore from '../services/tokenStore';
+import { secureStorageUiPrefs } from '../services/secureStorageUiPrefs';
 
 interface User {
   id: string;
@@ -15,11 +17,20 @@ interface User {
   isAdmin: boolean;
 }
 
+// D-06: structured error shape replacing the prior `string | null`.
+export type AppError = { code: string; message: string; requestId?: string } | null;
+
 interface AppState {
   theme: 'light' | 'dark' | 'system';
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   user: User | null;
+  /**
+   * Derived view of the access token. Owned by tokenStore (REL-01); kept in sync via the
+   * module-level `tokenStore.subscribe` below. Existing screens (e.g. app/(tabs)/_layout.tsx)
+   * read this for "is the user logged in" gating until Plan 02-09 migrates them to `isAuthed`.
+   */
   token: string | null;
+  isAuthed: boolean;
   isLoading: boolean;
   accounts: any[];
   transactions: any[];
@@ -30,7 +41,7 @@ interface AppState {
   limits: any[];
   notifications: any[];
   unreadCount: number;
-  error: string | null;
+  error: AppError;
   clearError: () => void;
 
   // Auth
@@ -43,6 +54,11 @@ interface AppState {
     pin: string;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => Promise<void>;
+  /**
+   * @deprecated since Plan 02-05. BootGate (Plan 02-09) owns hydrate via `tokenStore.hydrate()`.
+   * Kept as a thin wrapper so app/index.tsx keeps booting until Plan 02-09 lands. Remove the
+   * wrapper (and its AppState entry) when app/index.tsx no longer references it.
+   */
   loadToken: () => Promise<boolean>;
 
   // Data loading
@@ -63,17 +79,17 @@ interface AppState {
   setCardDesign: (design: string) => Promise<void>;
 }
 
-const secureStorage = {
-  getItem: async (name: string): Promise<string | null> => {
-    try { return await SecureStore.getItemAsync(name); } catch { return null; }
-  },
-  setItem: async (name: string, value: string): Promise<void> => {
-    try { await SecureStore.setItemAsync(name, value); } catch {}
-  },
-  removeItem: async (name: string): Promise<void> => {
-    try { await SecureStore.deleteItemAsync(name); } catch {}
-  },
-};
+/**
+ * Build a structured AppError from any rejection. Backend Phase-1 codebook responses surface
+ * `{ error, message, requestId }`; bare network errors fall back to a Russian fallback string
+ * supplied by the caller.
+ */
+function toAppError(e: any, fallbackMessage: string, fallbackCode = 'NETWORK_ERROR'): AppError {
+  const code = e?.response?.data?.error || fallbackCode;
+  const message = e?.response?.data?.message || fallbackMessage;
+  const requestId = e?.response?.data?.requestId;
+  return { code, message, ...(requestId ? { requestId } : {}) };
+}
 
 export const useStore = create<AppState>()(
   persist(
@@ -81,7 +97,8 @@ export const useStore = create<AppState>()(
       theme: 'system',
       setTheme: (theme) => set({ theme }),
       user: null,
-      token: null,
+      token: tokenStore.getAccess(),
+      isAuthed: tokenStore.isAuthed(),
       isLoading: false,
       accounts: [],
       transactions: [],
@@ -97,159 +114,269 @@ export const useStore = create<AppState>()(
       cardDesign: 'default',
 
       setCardDesign: async (design) => {
-        try { await SecureStore.setItemAsync('cardDesign', design); } catch {}
+        // D-09: UI pref persist failure is non-sensitive — keep silent but breadcrumb.
+        try {
+          await secureStorageUiPrefs.setItem('cardDesign', design);
+        } catch (e) {
+          Sentry.addBreadcrumb({
+            category: 'store.setCardDesign',
+            level: 'info',
+            message: 'cardDesign persist failed',
+            data: { error: String((e as any)?.message || e).slice(0, 200) },
+          });
+        }
         set({ cardDesign: design });
       },
 
       login: async (phone, pin) => {
+        set({ isLoading: true, error: null });
         try {
-          set({ isLoading: true });
           const { data } = await api.login(phone, pin);
-          // api.ts сохраняет токен в SecureStore сам.
-          // data.токен может быть accessToken или token в зависимости от сервера
+          // api.ts persists tokens via tokenStore.setTokens (REL-01); we only mirror user state.
           const token = data.accessToken || data.token;
           if (!token) {
-            set({ isLoading: false });
+            set({
+              isLoading: false,
+              error: {
+                code: 'AUTH_NO_TOKEN',
+                message: 'Сервер не вернул токен',
+              },
+            });
             return false;
           }
-          set({ token, user: data.user, isLoading: false });
+          set({ user: data.user, isLoading: false });
+          // `token` and `isAuthed` are refreshed by the tokenStore subscription below.
           return true;
-        } catch {
-          set({ isLoading: false });
+        } catch (e: any) {
+          // A persist failure surfaces as a thrown Error from tokenStore.setTokens (D-09).
+          // It has no `response` field (it's not an axios rejection), so we treat any rejection
+          // without a server response as a probable persist failure ONLY if the api call itself
+          // would have already produced a response — which it wouldn't have, since tokenStore
+          // throws AFTER the HTTP success. Heuristic: `e?.response` absent + `e?.message` set.
+          const isPersistFailure =
+            e?.message === 'AUTH_TOKEN_PERSIST_FAILED' ||
+            (!e?.response && typeof e?.message === 'string' && e.message.length > 0);
+          const fallbackCode = isPersistFailure ? 'AUTH_TOKEN_PERSIST_FAILED' : 'AUTH_LOGIN_FAILED';
+          const fallbackMessage = isPersistFailure
+            ? 'Не удалось сохранить учётные данные'
+            : 'Не удалось войти';
+          set({
+            isLoading: false,
+            error: toAppError(e, fallbackMessage, fallbackCode),
+          });
           return false;
         }
       },
 
       register: async (payload) => {
         try {
-          set({ isLoading: true });
+          set({ isLoading: true, error: null });
           const { data } = await api.register(payload);
           const token = data.accessToken || data.token;
           if (!token) {
             set({ isLoading: false });
             return { ok: false, error: 'Сервер не вернул токен' };
           }
-          set({ token, user: data.user, isLoading: false });
+          set({ user: data.user, isLoading: false });
           return { ok: true };
         } catch (e: unknown) {
           set({ isLoading: false });
           if (axios.isAxiosError(e)) {
             const data = e.response?.data;
             const serverMsg =
-              typeof data === 'object' && data && 'error' in data
-                ? String((data as { error: string }).error)
-                : undefined;
-            if (serverMsg) return { ok: false, error: serverMsg };
+              typeof data === 'object' && data && 'message' in data
+                ? String((data as { message: string }).message)
+                : typeof data === 'object' && data && 'error' in data
+                  ? String((data as { error: string }).error)
+                  : undefined;
+            if (serverMsg) {
+              set({
+                error: toAppError(e, serverMsg, 'AUTH_REGISTER_FAILED'),
+              });
+              return { ok: false, error: serverMsg };
+            }
             if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
-              return {
-                ok: false,
-                error:
-                  'Нет связи с сервером. Проверьте, что backend запущен (порт 3000), телефон в той же Wi‑Fi сети, либо задайте EXPO_PUBLIC_API_URL в .env в папке mobile.',
-              };
+              const msg =
+                'Нет связи с сервером. Проверьте, что backend запущен (порт 3000), телефон в той же Wi‑Fi сети, либо задайте EXPO_PUBLIC_API_URL в .env в папке mobile.';
+              set({ error: { code: 'NETWORK_ERROR', message: msg } });
+              return { ok: false, error: msg };
             }
             if (e.response?.status === 404) {
-              return {
-                ok: false,
-                error:
-                  'Сервер ответил 404 (часто указан неверный адрес API). В консоли Metro должна быть строка [MTBank API] base URL: … Убедитесь, что там IP вашего ПК и порт 3000 (не 8081). При туннеле Expo создайте mobile/.env: EXPO_PUBLIC_API_URL=http://ВАШ_IP:3000 и перезапустите npx expo start -c.',
-              };
+              const msg =
+                'Сервер ответил 404 (часто указан неверный адрес API). В консоли Metro должна быть строка [MTBank API] base URL: … Убедитесь, что там IP вашего ПК и порт 3000 (не 8081). При туннеле Expo создайте mobile/.env: EXPO_PUBLIC_API_URL=http://ВАШ_IP:3000 и перезапустите npx expo start -c.';
+              set({ error: { code: 'AUTH_REGISTER_404', message: msg } });
+              return { ok: false, error: msg };
             }
             if (e.response?.status) {
-              return { ok: false, error: `Ошибка сервера (${e.response.status})` };
+              const msg = `Ошибка сервера (${e.response.status})`;
+              set({ error: { code: 'SERVER_ERROR', message: msg } });
+              return { ok: false, error: msg };
             }
-            return { ok: false, error: e.message || 'Не удалось зарегистрироваться' };
+            const msg = e.message || 'Не удалось зарегистрироваться';
+            set({ error: { code: 'AUTH_REGISTER_FAILED', message: msg } });
+            return { ok: false, error: msg };
           }
+          set({
+            error: { code: 'AUTH_REGISTER_FAILED', message: 'Не удалось зарегистрироваться' },
+          });
           return { ok: false, error: 'Не удалось зарегистрироваться' };
         }
       },
 
       logout: async () => {
-        try { await SecureStore.deleteItemAsync('token'); } catch {}
-        try { await SecureStore.deleteItemAsync('refreshToken'); } catch {}
+        // api.logout() best-effort calls /auth/logout AND tokenStore.clear() internally.
+        // Surface server errors via Sentry breadcrumb (NOT silent) — REL-04.
+        await api.logout().catch((e: unknown) => {
+          Sentry.addBreadcrumb({
+            category: 'store.logout',
+            level: 'info',
+            message: 'logout reducer caught api.logout error',
+            data: { error: String((e as any)?.message || e).slice(0, 200) },
+          });
+        });
+        // tokenStore.clear() already ran inside api.logout(); the subscription will sync token/isAuthed.
         set({
-          user: null, token: null, accounts: [], transactions: [],
-          cards: [], decks: [], quests: [], subscriptions: [],
-          limits: [], notifications: [], unreadCount: 0,
+          user: null,
+          accounts: [],
+          transactions: [],
+          cards: [],
+          decks: [],
+          quests: [],
+          subscriptions: [],
+          limits: [],
+          notifications: [],
+          unreadCount: 0,
+          error: null,
         });
       },
 
       loadToken: async () => {
-        let token = null;
-        let design = null;
+        // Deprecated wrapper (see interface JSDoc). Hydrates tokenStore once and reports authed-ness.
         try {
-          token = await SecureStore.getItemAsync('token');
-          design = await SecureStore.getItemAsync('cardDesign');
-        } catch {}
-
-        if (design) set({ cardDesign: design });
-
-        if (token) {
-          set({ token });
-          try {
-            const { data } = await api.getMe();
-            set({ user: data });
-            return true;
-          } catch {
-            try { await SecureStore.deleteItemAsync('token'); } catch {}
-            set({ token: null });
-            return false;
+          if (!tokenStore.isHydrated()) {
+            await tokenStore.hydrate();
           }
+        } catch (e) {
+          Sentry.addBreadcrumb({
+            category: 'store.loadToken',
+            level: 'warning',
+            message: 'tokenStore.hydrate failed',
+            data: { error: String((e as any)?.message || e).slice(0, 200) },
+          });
+          return false;
         }
-        return false;
+
+        if (!tokenStore.isAuthed()) return false;
+
+        try {
+          const { data } = await api.getMe();
+          set({ user: data });
+          return true;
+        } catch (e: any) {
+          // Hydrated tokens but /users/me rejected — clear and surface error so callers can route to login.
+          await tokenStore.clear().catch((clearErr: unknown) => {
+            Sentry.addBreadcrumb({
+              category: 'store.loadToken',
+              level: 'warning',
+              message: 'tokenStore.clear failed after getMe rejection',
+              data: { error: String((clearErr as any)?.message || clearErr).slice(0, 200) },
+            });
+          });
+          set({
+            error: toAppError(e, 'Не удалось загрузить профиль'),
+          });
+          return false;
+        }
       },
 
       loadUser: async () => {
-        try { const { data } = await api.getMe(); set({ user: data }); }
-        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить профиль' }); }
+        try {
+          const { data } = await api.getMe();
+          set({ user: data });
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось загрузить профиль') });
+        }
       },
 
       loadAccounts: async () => {
-        try { const { data } = await api.getAccounts(); set({ accounts: data }); }
-        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить счета' }); }
+        try {
+          const { data } = await api.getAccounts();
+          set({ accounts: data });
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось загрузить счета') });
+        }
       },
 
       loadTransactions: async (params) => {
-        try { const { data } = await api.getTransactions(params); set({ transactions: data.transactions }); }
-        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить транзакции' }); }
+        try {
+          const { data } = await api.getTransactions(params);
+          set({ transactions: data.transactions });
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось загрузить транзакции') });
+        }
       },
 
       loadCards: async (params) => {
-        try { const { data } = await api.getInventory(params); set({ cards: data }); }
-        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить карты' }); }
+        try {
+          const { data } = await api.getInventory(params);
+          set({ cards: data });
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось загрузить карты') });
+        }
       },
 
       loadDecks: async () => {
-        try { const { data } = await api.getDecks(); set({ decks: data }); }
-        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить колоды' }); }
+        try {
+          const { data } = await api.getDecks();
+          set({ decks: data });
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось загрузить колоды') });
+        }
       },
 
       loadQuests: async () => {
-        try { const { data } = await api.getDailyQuests(); set({ quests: data }); }
-        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить квесты' }); }
+        try {
+          const { data } = await api.getDailyQuests();
+          set({ quests: data });
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось загрузить квесты') });
+        }
       },
 
       loadSubscriptions: async () => {
-        try { const { data } = await api.getSubscriptions(); set({ subscriptions: data }); }
-        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить подписки' }); }
+        try {
+          const { data } = await api.getSubscriptions();
+          set({ subscriptions: data });
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось загрузить подписки') });
+        }
       },
 
       loadLimits: async () => {
-        try { const { data } = await api.getLimits(); set({ limits: data }); }
-        catch (e: any) { set({ error: e?.message || 'Не удалось загрузить лимиты' }); }
+        try {
+          const { data } = await api.getLimits();
+          set({ limits: data });
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось загрузить лимиты') });
+        }
       },
 
       loadNotifications: async () => {
         try {
           const { data } = await api.getNotifications();
           set({ notifications: data.notifications, unreadCount: data.unreadCount });
-        } catch (e: any) { set({ error: e?.message || 'Не удалось загрузить уведомления' }); }
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось загрузить уведомления') });
+        }
       },
 
       markNotificationRead: async (id: string) => {
         try {
           await api.markNotificationRead(id);
           await get().loadNotifications();
-        } catch {}
+        } catch (e: any) {
+          set({ error: toAppError(e, 'Не удалось обновить уведомление') });
+        }
       },
 
       loadAll: async () => {
@@ -270,8 +397,20 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'mtbank-storage',
-      storage: createJSONStorage(() => secureStorage),
+      // D-09: only NON-SENSITIVE UI prefs (theme, cardDesign) are persisted here. Auth tokens
+      // live in tokenStore (REL-01) and never touch this storage adapter.
+      storage: createJSONStorage(() => secureStorageUiPrefs),
       partialize: (state) => ({ theme: state.theme, cardDesign: state.cardDesign }),
-    }
-  )
+    },
+  ),
 );
+
+// REL-01: keep store.token / store.isAuthed in sync with tokenStore (the SSOT for auth tokens).
+// Singleton subscription registered at module-load time; re-registers automatically on hot reload
+// because the new module instance constructs a fresh listener set.
+tokenStore.subscribe(() => {
+  useStore.setState({
+    token: tokenStore.getAccess(),
+    isAuthed: tokenStore.isAuthed(),
+  });
+});

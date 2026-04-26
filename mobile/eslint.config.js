@@ -62,9 +62,20 @@ module.exports = [
   },
 
   // Override 1: `services/tokenStore.ts` is the SOLE file permitted to import
-  // expo-secure-store. Disable Rule A here.
+  // expo-secure-store for AUTH TOKENS. Disable Rule A here.
   {
     files: ['services/tokenStore.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
+
+  // Override 1b: `services/secureStorageUiPrefs.ts` is the SECOND permitted importer of
+  // expo-secure-store, scoped to NON-SENSITIVE UI prefs only (theme, cardDesign). Whitelisted
+  // by Plan 02-05 alongside its regression-guard.sh path-exclusion. Tokens MUST NOT be written
+  // through this file — D-09 + REL-01.
+  {
+    files: ['services/secureStorageUiPrefs.ts'],
     rules: {
       'no-restricted-imports': 'off',
     },
