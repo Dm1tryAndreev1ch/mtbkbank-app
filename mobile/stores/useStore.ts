@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-import axios from 'axios';
+import { isAxiosError } from 'axios';
 import * as Sentry from '@sentry/react-native';
 import * as api from '../services/api';
 import * as tokenStore from '../services/tokenStore';
@@ -189,7 +189,7 @@ export const useStore = create<AppState>()(
           return { ok: true };
         } catch (e: unknown) {
           set({ isLoading: false });
-          if (axios.isAxiosError(e)) {
+          if (isAxiosError(e)) {
             const data = e.response?.data;
             const serverMsg =
               typeof data === 'object' && data && 'message' in data

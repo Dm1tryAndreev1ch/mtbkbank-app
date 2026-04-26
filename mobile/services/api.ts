@@ -85,7 +85,6 @@ function getApiBase(): string {
 const API_BASE = getApiBase();
 
 if (__DEV__) {
-  // eslint-disable-next-line no-console
   console.log('[MTBank API] base URL:', API_BASE);
 }
 

@@ -36,6 +36,7 @@ module.exports = [
       'dist/',
       'build/',
       '**/__tests__/__snapshots__/',
+      'e2e/',
     ],
   },
 
