@@ -14,14 +14,15 @@ All three apps are TypeScript-aware (mobile is fully TS; backend and admin are J
 
 ## Active Milestone — v1.0 Production-Hardening
 
-The MVP exists; this milestone takes it from "demo-quality with 68 catalogued issues" to a production-ready release. Authoritative bug source: **`TRIAGE.md`** at repo root. See `.planning/PROJECT.md` for the full project context, and `.planning/ROADMAP.md` for the 9-phase roadmap.
+The MVP exists; this milestone takes it from "demo-quality with 68 catalogued issues" to a production-ready release. Authoritative bug source: **`TRIAGE.md`** at repo root. See `.planning/PROJECT.md` for the full project context, and `.planning/ROADMAP.md` for the 10-phase roadmap.
 
-**9 phases (executed in order):**
+**10 phases (executed in numeric order; decimals = INSERTED phases):**
 
-1. Observability Foundation + Regression Scaffolding
-2. Reliability Foundation + CRITICAL Mobile/Boot
+1. Observability Foundation + Regression Scaffolding ✓ (complete 2026-04-25)
+2. Reliability Foundation + CRITICAL Mobile/Boot ✓ (complete 2026-04-26)
 3. Security Hardening + Backend CRITICAL/HIGH
 4. MEDIUM Bug Fixes + Shared UX Primitives
+4.5. Admin Console v2 (INSERTED 2026-04-26) — full CRUD on every Prisma domain, audit-logged, ConfirmDialog-gated
 5. Animation Foundations
 6. Gamified Animations (Card/Deck/HP)
 7. Animation Polish + E2E
@@ -45,7 +46,7 @@ These are committed to in `.planning/PROJECT.md` Key Decisions and propagated th
 
 - **`.planning/PROJECT.md`** — project context, validated/active/out-of-scope requirements, locked decisions
 - **`.planning/REQUIREMENTS.md`** — 78 v1 requirements with REQ-IDs (OBS, REL, SEC, UX, ANIM, TEST, CI, DEPLOY, DOCS) + traceability to phases
-- **`.planning/ROADMAP.md`** — 9 phases with goals, dependencies, success criteria
+- **`.planning/ROADMAP.md`** — 10 phases (1, 2, 3, 4, 4.5, 5, 6, 7, 8, 9) with goals, dependencies, success criteria
 - **`.planning/STATE.md`** — current phase / plan / wave pointer
 - **`.planning/research/`** — `STACK.md`, `FEATURES.md`, `ARCHITECTURE.md`, `PITFALLS.md`, `SUMMARY.md` — read these before starting any phase
 - **`.planning/codebase/`** — `STACK.md`, `ARCHITECTURE.md`, `STRUCTURE.md`, `INTEGRATIONS.md`, `CONVENTIONS.md`, `TESTING.md`, `CONCERNS.md` — current-state map of the existing code
