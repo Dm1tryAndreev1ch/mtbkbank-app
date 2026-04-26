@@ -1,7 +1,50 @@
 /**
  * Card Engine — core game mechanics for the card collection system.
  */
+const { randomUUID } = require('node:crypto');
 const { logger } = require('../logger');
+const { redisClient } = require('../cache');
+
+/**
+ * REL-10 — cron HP-tick leader-election lock.
+ *
+ * Per-process UUID stamped at module load. Logged on lock acquire/skip so
+ * forensic comparison across replicas (when v1.1 enables multi-replica) shows
+ * which instance won the tick.
+ */
+const INSTANCE_ID = randomUUID();
+const HP_TICK_LOCK_KEY = 'lock:hp-tick';
+
+/**
+ * Try to acquire the cron HP-tick leader lock for one tick window.
+ *
+ * Returns true when this process should run the tick body, false otherwise.
+ *
+ *   - SET NX PX(tickMs * 2) — lossy renewal: if a leader process dies between
+ *     ticks, the lock auto-expires and the next tick re-elects.
+ *   - Redis unavailable / transient error → return true. Per SEC-03 fall-through
+ *     contract and the locked v1.0 single-replica deploy decision: there's no
+ *     second replica to race, so a degraded Redis must NOT silence the tick.
+ */
+async function acquireHpTickLeader(tickMs) {
+  if (!redisClient || !redisClient.isReady) {
+    return true; // single-replica fail-open
+  }
+  try {
+    // node-redis v4+/v5: SET with options returns 'OK' when applied, null when NX failed.
+    const result = await redisClient.set(HP_TICK_LOCK_KEY, INSTANCE_ID, {
+      NX: true,
+      PX: tickMs * 2,
+    });
+    return result === 'OK' || result === true;
+  } catch (err) {
+    logger.warn(
+      { event: 'hp-tick-lock-error', err: err.message },
+      'redis lock acquire failed; falling through to leader (single-replica fail-open)'
+    );
+    return true; // fail-open on transient Redis error
+  }
+}
 
 // Rarity-based configuration
 const RARITY_CONFIG = {
@@ -13,6 +56,10 @@ const RARITY_CONFIG = {
 
 // Warning threshold: notify when health drops to or below this value
 const HEALTH_WARNING_THRESHOLD = 30;
+
+// REL-11 — HP-warning dedup window. Re-warn only after this many ms elapse
+// since the previous low-HP notification for the same UserCard.
+const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Active deck HP drain — only cards slotted in the user’s active deck lose HP on a timer.
@@ -287,15 +334,28 @@ async function tickActiveDeckCardHealth(prisma) {
 
       const enteredLowZone = oldHealth > ACTIVE_DECK_LOW_HP_THRESHOLD && newHealth <= ACTIVE_DECK_LOW_HP_THRESHOLD;
       if (enteredLowZone) {
-        await prisma.notification.create({
-          data: {
-            userId: uc.userId,
-            title: '⚠️ Низкое здоровье карты',
-            body: `Карта «${uc.collectionCard.name}» в активной колоде: осталось ${newHealth} HP.`,
-            icon: 'warning',
-          },
-        });
-        lowHpCount += 1;
+        // REL-11 — 24h dedup gate. lastWarningAt is null on first warning;
+        // re-emit only when ≥24h elapsed so cron flapping or rapid health
+        // re-arming (sacrifice → tick → low again) cannot spam the user.
+        const now = new Date();
+        const last = uc.lastWarningAt; // scalar selected by default with `include`
+        const recentlyWarned =
+          last && now.getTime() - new Date(last).getTime() < TWENTY_FOUR_HOURS_MS;
+        if (!recentlyWarned) {
+          await prisma.userCard.update({
+            where: { id: uc.id },
+            data: { lastWarningAt: now },
+          });
+          await prisma.notification.create({
+            data: {
+              userId: uc.userId,
+              title: '⚠️ Низкое здоровье карты',
+              body: `Карта «${uc.collectionCard.name}» в активной колоде: осталось ${newHealth} HP.`,
+              icon: 'warning',
+            },
+          });
+          lowHpCount += 1;
+        }
       }
     }
     if (userTouched) userCount += 1;
@@ -383,4 +443,6 @@ module.exports = {
   tickActiveDeckCardHealth,
   sacrificeCard,
   convertCardToPoints,
+  acquireHpTickLeader,
+  INSTANCE_ID,
 };

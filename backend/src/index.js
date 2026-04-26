@@ -38,7 +38,7 @@ const adminRoutes = require('./routes/admin');
 const { authMiddleware, adminMiddleware } = require('./middleware/auth');
 const { requireFreshAdmin } = require('./middleware/requireFreshAdmin');
 const { adminDestructiveLimiter } = require('./middleware/adminRateLimits');
-const { tickActiveDeckCardHealth } = require('./services/cardEngine');
+const { tickActiveDeckCardHealth, acquireHpTickLeader } = require('./services/cardEngine');
 const { ensureAllUsersHaveActiveDeck } = require('./services/ensureUserActiveDeck');
 
 const app = express();
@@ -239,10 +239,24 @@ function bootRuntime() {
    * that fires 1440 ticks/day cannot exhaust the free-tier quota. logger.error always
    * fires inside reportHpTickError regardless of capture decision (pino redact applies).
    */
-  const hpTickHandle = setInterval(() => {
-    tickActiveDeckCardHealth(prisma).catch((err) =>
-      require('./services/hpTickReporter').reportHpTickError(err, { tickIntervalMs: env.ACTIVE_DECK_HP_TICK_MS })
-    );
+  // REL-10 — leader-election: every tick first attempts redis SET NX PX on
+  // 'lock:hp-tick' with TTL = tickMs * 2. Only the acquirer runs the tick body.
+  // Lossy renewal is intentional — if the leader dies, the next tick re-elects.
+  // Single-replica v1.0 + Redis-unavailable fail-open is preserved (acquireHpTickLeader
+  // returns true on no/unready Redis, so the only running process keeps ticking).
+  const hpTickHandle = setInterval(async () => {
+    try {
+      const isLeader = await acquireHpTickLeader(env.ACTIVE_DECK_HP_TICK_MS);
+      if (!isLeader) {
+        logger.debug({ event: 'hp-tick-skipped', reason: 'not_leader' });
+        return;
+      }
+      await tickActiveDeckCardHealth(prisma);
+    } catch (err) {
+      require('./services/hpTickReporter').reportHpTickError(err, {
+        tickIntervalMs: env.ACTIVE_DECK_HP_TICK_MS,
+      });
+    }
   }, env.ACTIVE_DECK_HP_TICK_MS);
 
   closeWithGrace({ delay: 10000 }, async ({ err, signal }) => {
