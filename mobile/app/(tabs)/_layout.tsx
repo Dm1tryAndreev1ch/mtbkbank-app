@@ -5,8 +5,9 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Shadows } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import { useStore } from '../../stores/useStore';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 
-export default function TabLayout() {
+function TabLayoutInner() {
   const colors = useThemeColor();
   const token = useStore((s) => s.token);
   const loadNotifications = useStore((s) => s.loadNotifications);
@@ -128,6 +129,16 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+  );
+}
+
+// M-M5 / D-05: per-route ErrorBoundary wraps the entire tabs subtree so a
+// crash in one tab renders the fallback instead of a white screen.
+export default function TabLayout() {
+  return (
+    <ErrorBoundary scope="route" routeName="tabs">
+      <TabLayoutInner />
+    </ErrorBoundary>
   );
 }
 
