@@ -2,7 +2,7 @@
  * Phase-1 regression guard (Jest).
  * Pins the four already-fixed Phase-1 anti-patterns AND staging-pins the
  * Phase-2 fixes that are still in the codebase today (intentionally RED via
- * `test.failing` — they flip GREEN automatically when Phase 2 lands without any
+ * Jest `failing` markers — they flip GREEN automatically when Phase 2 lands without any
  * test edit).
  *
  * Companion to scripts/regression-guard.sh (eight bash git-grep checks).
@@ -98,7 +98,7 @@ describe('Phase-1 regression guard — staging pins (RED today, GREEN after Phas
     expect(file).not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
   });
 
-  test.failing('mobile/stores/useStore.ts has no empty `catch {}` (Phase-2 REL-04 fixes this)', () => {
+  test('mobile/stores/useStore.ts has no empty `catch {}` (Phase-2 REL-04 — flipped GREEN by plan 02-05)', () => {
     const file = readRepoFile('mobile/stores/useStore.ts');
     expect(file).not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
   });
