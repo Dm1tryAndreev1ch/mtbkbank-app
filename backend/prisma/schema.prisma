@@ -60,7 +60,7 @@ model User {
   pin           String
   avatarUrl     String?
   expoPushToken String?
-  refreshToken  String?    // FIX: stored for revocation support
+  refreshToken  String? // FIX: stored for revocation support
   mbPoints      Int        @default(0)
   status        UserStatus @default(STANDARD)
   isAdmin       Boolean    @default(false)
@@ -71,13 +71,14 @@ model User {
   bankCards      BankCard[]
   userCards      UserCard[]
   decks          Deck[]
-  tradesFrom     CardTrade[]    @relation("TradesFrom")
-  tradesTo       CardTrade[]    @relation("TradesTo")
+  tradesFrom     CardTrade[]     @relation("TradesFrom")
+  tradesTo       CardTrade[]     @relation("TradesTo")
   userQuests     UserQuest[]
   subscriptions  Subscription[]
   spendingLimits SpendingLimit[]
   notifications  Notification[]
   transactions   Transaction[]
+  auditLogs      AuditLog[]      @relation("AuditActor")
 }
 
 model BankAccount {
@@ -143,7 +144,7 @@ model CollectionCard {
   cashbackPercent  Float
   cashbackCategory String?
   mbValue          Int      @default(0)
-  mbPrice          Int?     // FIX: shop price; falls back to rarity default if null
+  mbPrice          Int? // FIX: shop price; falls back to rarity default if null
   maxHealth        Int      @default(100)
   dropRate         Float    @default(0)
   isActive         Boolean  @default(true)
@@ -159,6 +160,7 @@ model UserCard {
   health           Int        @default(100)
   source           CardSource @default(PURCHASE)
   acquiredAt       DateTime   @default(now())
+  lastWarningAt    DateTime? // REL-11 — null = never warned; updated by tickActiveDeckCardHealth on low-HP push
 
   user           User           @relation(fields: [userId], references: [id])
   collectionCard CollectionCard @relation(fields: [collectionCardId], references: [id])
@@ -284,4 +286,19 @@ model SystemConfig {
   id    String @id @default(cuid())
   key   String @unique
   value String
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id])
+  action     String // DOMAIN_REASON code, e.g. 'USER_HARD_DELETE', 'ACCOUNT_FREEZE'
+  targetType String // 'User' | 'BankAccount' | 'Transaction' | …
+  targetId   String?
+  payload    Json // { before, after, reason, … } — already PII-scrubbed
+  requestId  String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
 }
