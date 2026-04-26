@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { authMiddleware } = require('../middleware/auth');
 const { logger } = require('../logger');
+const { env } = require('../env');
 const router = express.Router();
 
 const ACCESS_TTL = '15m';
@@ -43,7 +44,7 @@ function luhnValid(pan) {
 function signAccess(userId, isAdmin) {
   return jwt.sign(
     { userId, isAdmin: !!isAdmin },
-    process.env.JWT_SECRET,
+    env.JWT_SECRET,
     { expiresIn: ACCESS_TTL }
   );
 }
@@ -51,7 +52,7 @@ function signAccess(userId, isAdmin) {
 function signRefresh(userId) {
   return jwt.sign(
     { userId },
-    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    env.JWT_REFRESH_SECRET,
     { expiresIn: REFRESH_TTL }
   );
 }
@@ -227,7 +228,7 @@ router.post('/refresh', refreshLimiter, async (req, res) => {
 
     let payload;
     try {
-      payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+      payload = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET);
     } catch {
       return res.status(401).json({ error: 'Недействительный refresh token' });
     }
