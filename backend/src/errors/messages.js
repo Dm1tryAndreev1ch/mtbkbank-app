@@ -9,6 +9,10 @@
 module.exports = {
   AUTH_INVALID_PIN:        'Неверный ПИН-код',
   AUTH_USER_NOT_FOUND:     'Пользователь не найден',
+  // Phase 3 / SEC-12 / D-12 — single error for /auth/login regardless of which side
+  // failed (phone unknown OR PIN wrong). Combined with bcrypt-on-DUMMY_HASH this
+  // closes the user-enumeration side channel via timing AND error-message text.
+  AUTH_INVALID_CREDENTIALS: 'Неверный телефон или ПИН-код',
   AUTH_TOKEN_INVALID:      'Сессия недействительна',
   AUTH_TOKEN_EXPIRED:      'Сессия истекла',
   AUTH_FORBIDDEN:          'Доступ запрещён',

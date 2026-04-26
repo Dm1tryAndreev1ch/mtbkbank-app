@@ -5,11 +5,19 @@ const { authMiddleware } = require('../middleware/auth');
 const { loginLimiter, registerLimiter, refreshLimiter } = require('../middleware/authRateLimits');
 const { logger } = require('../logger');
 const { env } = require('../env');
-const { luhnCheck } = require('../schemas/_helpers/luhn');
+const { AppError } = require('../errors/AppError');
+const { reqValidator } = require('../middleware/reqValidator');
+const { loginSchema, registerSchema, refreshSchema } = require('../schemas/auth');
 const router = express.Router();
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL = '30d';
+
+// Phase 3 / SEC-12 / D-12 — precomputed dummy hash for constant-cost compare on
+// the user-not-found path. bcrypt.compare(pin, DUMMY_HASH) costs the same as a
+// real compare on the same rounds, so wall-clock timing cannot leak whether
+// `phone` is a registered account. Never used as an authentication target.
+const DUMMY_HASH = bcrypt.hashSync('dummy-pin-for-timing-parity', 10);
 
 function normalizePhone(phone) {
   let p = String(phone ?? '').trim().replace(/[\s()-]/g, '');
@@ -23,10 +31,6 @@ function normalizePhone(phone) {
 function digitsOnlyPan(cardNumber) {
   return String(cardNumber ?? '').replace(/\D/g, '');
 }
-
-// luhnCheck is now imported from ../schemas/_helpers/luhn (Phase 3 / D-11 single source of truth).
-// Local alias preserved for callsite legibility.
-const luhnValid = luhnCheck;
 
 function signAccess(userId, isAdmin) {
   return jwt.sign(
@@ -44,18 +48,27 @@ function signRefresh(userId) {
   );
 }
 
-/** POST /api/auth/login — вынесен в именованный handler для явного app.post в index.js */
-async function loginHandler(req, res) {
+/** POST /api/auth/login — timing-safe per SEC-12/D-12. */
+async function loginHandler(req, res, next) {
   try {
-    const { phone, pin } = req.body;
-    if (!phone || !pin) return res.status(400).json({ error: 'Укажите телефон и PIN' });
-
+    // reqValidator(loginSchema) populated req.validated with shape { phone, pin }.
+    const { phone, pin } = req.validated;
     const user = await req.prisma.user.findUnique({ where: { phone } });
-    if (!user) return res.status(401).json({ error: 'Неверный телефон или PIN' });
-    if (user.status === 'BLOCKED') return res.status(403).json({ error: 'Аккаунт заблокирован' });
 
-    const ok = await bcrypt.compare(pin, user.pin);
-    if (!ok) return res.status(401).json({ error: 'Неверный телефон или PIN' });
+    // CRITICAL (D-12): always run bcrypt.compare regardless of user existence.
+    // The dummy-hash branch costs the same as a real bcrypt.compare on the same
+    // rounds → wall-clock timing cannot leak whether `phone` is a registered
+    // account. Branching on the boolean happens AFTER the compare resolves.
+    const ok = await bcrypt.compare(pin, user?.pin || DUMMY_HASH);
+
+    if (!user || !ok || user.status === 'BLOCKED') {
+      // Single error code + Russian message regardless of branch.
+      // Note: BLOCKED users intentionally collapse into AUTH_INVALID_CREDENTIALS
+      // here too — leaking "this phone is BLOCKED" would itself be a phone-existence
+      // oracle. Status differentiation (was 403 for BLOCKED) is sacrificed for
+      // the side-channel closure per the threat model T-03-09-02.
+      throw new AppError('AUTH_INVALID_CREDENTIALS', 401);
+    }
 
     const accessToken = signAccess(user.id, user.isAdmin);
     const refreshToken = signRefresh(user.id);
@@ -74,36 +87,21 @@ async function loginHandler(req, res) {
       },
     });
   } catch (err) {
-    (req.log ?? logger).error({ err }, 'Login error');
-    res.status(500).json({ error: 'Ошибка сервера' });
+    next(err);
   }
 }
 
-/** POST /api/auth/register — самостоятельная регистрация (клиентское приложение). */
-async function registerHandler(req, res) {
+/** POST /api/auth/register — Zod-validated input via reqValidator(registerSchema). */
+async function registerHandler(req, res, next) {
   try {
-    const { firstName, lastName, cardNumber, phone, pin } = req.body;
-    const fn = String(firstName ?? '').trim();
-    const ln = String(lastName ?? '').trim();
-    if (!fn || !ln) return res.status(400).json({ error: 'Укажите имя и фамилию' });
-    if (!pin || !/^\d{4}$/.test(String(pin))) {
-      return res.status(400).json({ error: 'ПИН-код должен состоять из 4 цифр' });
-    }
-
+    // Zod has already validated phone (^\+\d{11,15}$), pin (^\d{4}$), Luhn-checked
+    // cardNumber (13–19 digits), and name lengths. Re-normalize phone defensively
+    // in case future intake widens the regex (idempotent for already-normalized input).
+    const { firstName, lastName, cardNumber, phone, pin } = req.validated;
+    const fn = String(firstName).trim();
+    const ln = String(lastName).trim();
     const normalizedPhone = normalizePhone(phone);
-    const phoneDigits = normalizedPhone ? normalizedPhone.replace(/\D/g, '') : '';
-    if (!normalizedPhone || phoneDigits.length < 11 || phoneDigits.length > 15) {
-      return res.status(400).json({
-        error: 'Укажите корректный номер телефона с кодом страны (например +79001234567)',
-      });
-    }
-
     const pan = digitsOnlyPan(cardNumber);
-    if (!luhnValid(pan)) {
-      return res.status(400).json({
-        error: 'Некорректный номер карты. Введите 13–19 цифр с действительной контрольной суммой.',
-      });
-    }
 
     const existing = await req.prisma.user.findUnique({ where: { phone: normalizedPhone } });
     if (existing) return res.status(409).json({ error: 'Пользователь с таким телефоном уже зарегистрирован' });
@@ -171,10 +169,10 @@ async function registerHandler(req, res) {
     });
   } catch (err) {
     (req.log ?? logger).error({ err }, 'Register error');
-    if (err.code === 'P2002') {
+    if (err && err.code === 'P2002') {
       return res.status(409).json({ error: 'Такой телефон уже занят' });
     }
-    res.status(500).json({ error: 'Ошибка сервера' });
+    return next(err);
   }
 }
 
@@ -184,15 +182,17 @@ router.get('/login', (_req, res) => {
 });
 // Phase 3 / Plan 03-07 / SEC-04 — limiters live in middleware/authRateLimits.js
 // (Redis-backed via shared redisClient). Old in-memory definitions removed.
-router.post('/login', loginLimiter, loginHandler);
-/** Дублирует app.post('/api/auth/register') — если клиент/прокси бьёт только в смонтированный роутер. */
-router.post('/register', registerLimiter, registerHandler);
+// Phase 3 / Plan 03-09 / SEC-10/SEC-12 — reqValidator(*) wired before each handler.
+router.post('/login', loginLimiter, reqValidator(loginSchema), loginHandler);
+router.post('/register', registerLimiter, reqValidator(registerSchema), registerHandler);
 
-// POST /api/auth/refresh — rate limited at router level (per-user key)
-router.post('/refresh', refreshLimiter, async (req, res) => {
+// POST /api/auth/refresh — rate limited at router level (per-user key) +
+// Zod-validated input. The handler still uses legacy res.status(...).json(...)
+// shape on jwt-verify/DB-mismatch failures — those are NOT covered by 03-09
+// (separate token-rotation contract owned by Phase 2 D-13).
+router.post('/refresh', refreshLimiter, reqValidator(refreshSchema), async (req, res) => {
   try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
+    const { refreshToken } = req.validated;
 
     let payload;
     try {
@@ -220,6 +220,7 @@ router.post('/refresh', refreshLimiter, async (req, res) => {
 
     res.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
   } catch (err) {
+    (req.log ?? logger).error({ err }, 'Refresh error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -233,6 +234,7 @@ router.post('/logout', authMiddleware, async (req, res) => {
     });
     res.json({ success: true });
   } catch (err) {
+    (req.log ?? logger).error({ err }, 'Logout error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

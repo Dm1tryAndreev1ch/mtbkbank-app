@@ -61,27 +61,30 @@ describe('POST /api/auth/login', () => {
     expect(res.body.user.phone).toBe('+79991234567');
   });
 
-  test('bad PIN: returns 401 + Russian error «Неверный телефон или PIN»', async () => {
+  test('bad PIN: returns 401 + AUTH_INVALID_CREDENTIALS (Phase 3 / SEC-12 / D-12)', async () => {
     await seedUser({ phone: '+79991234567', pin: '1234' });
     const res = await supertest(app)
       .post('/api/auth/login')
       .send({ phone: '+79991234567', pin: '9999' });
     expect(res.status).toBe(401);
-    expect(res.body.error).toMatch(/Неверный/);
+    expect(res.body.error).toBe('AUTH_INVALID_CREDENTIALS');
+    expect(res.body.message).toBe('Неверный телефон или ПИН-код');
   });
 
-  test('unknown phone: returns 401 + Russian error', async () => {
+  test('unknown phone: returns 401 + AUTH_INVALID_CREDENTIALS (same shape as bad PIN — D-12)', async () => {
     const res = await supertest(app)
       .post('/api/auth/login')
       .send({ phone: '+70000000000', pin: '1234' });
     expect(res.status).toBe(401);
-    expect(res.body.error).toMatch(/Неверный/);
+    expect(res.body.error).toBe('AUTH_INVALID_CREDENTIALS');
+    expect(res.body.message).toBe('Неверный телефон или ПИН-код');
   });
 
-  test('missing fields: returns 400 + Russian error', async () => {
+  test('missing fields: returns 400 + VALIDATION_FAILED (Zod via reqValidator)', async () => {
     const res = await supertest(app).post('/api/auth/login').send({});
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Укажите/);
+    expect(res.body.error).toBe('VALIDATION_FAILED');
+    expect(Array.isArray(res.body.issues)).toBe(true);
   });
 });
 
@@ -117,7 +120,7 @@ describe('POST /api/auth/register', () => {
     expect(res.body.error).toMatch(/уже/);
   });
 
-  test('invalid card number (Luhn fail): returns 400', async () => {
+  test('invalid card number (Luhn fail): returns 400 VALIDATION_FAILED with cardNumber issue', async () => {
     const res = await supertest(app)
       .post('/api/auth/register')
       .send({
@@ -128,7 +131,9 @@ describe('POST /api/auth/register', () => {
         cardNumber: '1234567890123456',
       });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/карты/i);
+    expect(res.body.error).toBe('VALIDATION_FAILED');
+    expect(Array.isArray(res.body.issues)).toBe(true);
+    expect(res.body.issues.some((i) => Array.isArray(i.path) && i.path.includes('cardNumber'))).toBe(true);
   });
 });
 
@@ -160,10 +165,13 @@ describe('POST /api/auth/refresh', () => {
     expect(res.body.refreshToken).not.toBe(refreshToken);
   });
 
-  test('invalid token: returns 401', async () => {
+  test('invalid token: returns 401 (passes Zod min-length but jwt.verify rejects)', async () => {
+    // refreshSchema requires min(20) chars; supply a long-enough garbage string
+    // so we exercise the jwt.verify failure path (401), not the Zod gate (400).
+    const garbage = 'x'.repeat(64);
     const res = await supertest(app)
       .post('/api/auth/refresh')
-      .send({ refreshToken: 'invalid-jwt' });
+      .send({ refreshToken: garbage });
     expect(res.status).toBe(401);
     expect(res.body.error).toMatch(/Недействительный/);
   });

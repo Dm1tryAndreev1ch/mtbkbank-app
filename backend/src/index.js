@@ -20,6 +20,8 @@ const { errorNormalizer, notFoundHandler } = require('./errors/errorNormalizer')
 const healthRoutes = require('./routes/health'); // plan 08 — /healthz, /readyz, /version
 
 const { router: authRoutes, loginHandler, registerHandler } = require('./routes/auth');
+const { reqValidator } = require('./middleware/reqValidator');
+const { loginSchema, registerSchema } = require('./schemas/auth');
 const { loginLimiter, registerLimiter } = require('./middleware/authRateLimits');
 const userRoutes = require('./routes/users');
 const accountRoutes = require('./routes/accounts');
@@ -138,8 +140,10 @@ app.use((req, _res, next) => {
 // the router (D-14: explicit registration is more reliable than nested-router under some
 // proxies); they reuse the SAME imported limiter instances, so the Redis bucket is
 // shared and there is no double-count.
-app.post('/api/auth/login', loginLimiter, loginHandler);
-app.post('/api/auth/register', registerLimiter, registerHandler);
+// Phase 3 / Plan 03-09 / SEC-10/SEC-12 — reqValidator(*) wired here too because
+// these app-level POSTs bypass the router-level chain in routes/auth.js.
+app.post('/api/auth/login', loginLimiter, reqValidator(loginSchema), loginHandler);
+app.post('/api/auth/register', registerLimiter, reqValidator(registerSchema), registerHandler);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/accounts', accountRoutes);
