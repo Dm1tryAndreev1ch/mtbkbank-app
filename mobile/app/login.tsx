@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
   TouchableWithoutFeedback, Keyboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { router } from 'expo-router';
 import { useStore } from '../stores/useStore';
 import { Colors, Fonts, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
+import { ActionButton } from '../components/ActionButton';
 
 export default function LoginScreen() {
   const [phone, setPhone] = useState('');
@@ -97,6 +98,7 @@ export default function LoginScreen() {
                 placeholderTextColor={Colors.outlineVariant}
                 returnKeyType="done"
                 onSubmitEditing={() => Keyboard.dismiss()}
+                maxLength={12}
               />
             </View>
 
@@ -149,17 +151,16 @@ export default function LoginScreen() {
               ))}
             </View>
 
-            <TouchableOpacity
-              style={[styles.loginButton, pin.length < 4 && styles.loginButtonDisabled]}
-              onPress={handleLogin}
-              disabled={pin.length < 4 || isLoading || isSubmitting}
-            >
-              {isLoading || isSubmitting ? (
-                <ActivityIndicator color={Colors.onPrimary} />
-              ) : (
-                <Text style={styles.loginButtonText}>Войти</Text>
-              )}
-            </TouchableOpacity>
+            <View style={styles.loginButtonWrap}>
+              <ActionButton
+                onPress={handleLogin}
+                label="Войти"
+                busyLabel="Входим…"
+                endpointKey="POST /auth/login"
+                disabled={pin.length < 4 || isLoading || isSubmitting}
+                testID="login-submit"
+              />
+            </View>
           </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
@@ -218,6 +219,7 @@ const styles = StyleSheet.create({
   numpadKeyEmpty: { backgroundColor: 'transparent', shadowOpacity: 0, elevation: 0 },
   numpadKeyText: { fontSize: Fonts.sizes.xl, fontWeight: Fonts.weights.bold, color: Colors.onSurface },
   loginButton: { width: '100%', backgroundColor: Colors.primary, borderRadius: BorderRadius.full, paddingVertical: Spacing.base, alignItems: 'center', ...Shadows.primary },
+  loginButtonWrap: { width: '100%', maxWidth: 360 },
   loginButtonDisabled: { opacity: 0.5 },
   loginButtonText: { fontSize: Fonts.sizes.base, fontWeight: Fonts.weights.extrabold, color: Colors.onPrimary, letterSpacing: 2, textTransform: 'uppercase' },
 });

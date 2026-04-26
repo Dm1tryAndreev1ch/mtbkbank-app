@@ -77,10 +77,11 @@ test('M-M3: switching method (phone → own) clears recipient', () => {
   // 1. Pick "phone" method from picker → form opens.
   fireEvent.press(getByText('По номеру телефона'));
 
-  // 2. Type a phone recipient.
+  // 2. Type a phone recipient (formatted by formatPhone in the component).
   const input = getByPlaceholderText('+375 XX XXX-XX-XX');
   fireEvent.changeText(input, '+79001234567');
-  expect(queryByDisplayValue(/79001234567/)).toBeTruthy();
+  // formatPhone produces something like "+790 01 234-567" — match by digit run.
+  expect(queryByDisplayValue(/7.*9.*0.*0.*1.*2.*3.*4.*5.*6.*7/)).toBeTruthy();
 
   // 3. Tap header back (testID added in impl) to return to picker.
   fireEvent.press(getByTestId('transfer-back'));
@@ -91,5 +92,5 @@ test('M-M3: switching method (phone → own) clears recipient', () => {
   // 5. Switch back to phone form — recipient must be empty (cleared on method change).
   fireEvent.press(getByTestId('transfer-back'));
   fireEvent.press(getByText('По номеру телефона'));
-  expect(queryByDisplayValue(/79001234567/)).toBeNull();
+  expect(queryByDisplayValue(/7.*9.*0.*0.*1.*2.*3.*4.*5.*6.*7/)).toBeNull();
 });

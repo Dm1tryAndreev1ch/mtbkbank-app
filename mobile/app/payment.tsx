@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ActivityIndicator, ScrollView, KeyboardAvoidingView,
+  ScrollView, KeyboardAvoidingView,
   Platform, Keyboard, TouchableWithoutFeedback
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +14,8 @@ import { Fonts, Spacing, BorderRadius, Shadows, formatMoney } from '../constants
 import { useThemeColor } from '../hooks/useThemeColor';
 import AppAlert from '../components/AppAlert';        // ← импорт компонента
 import { useAppAlert } from '../hooks/useAppAlert';   // ← импорт хука
+import { ActionButton } from '../components/ActionButton';
+import { InlineError, InlineErrorIssue } from '../components/InlineError';
 
 const CATEGORIES = [
   {
@@ -68,13 +70,35 @@ export default function PaymentScreen() {
   const [service, setService]   = useState<any>(null);
   const [amount, setAmount]     = useState('');
   const [account, setAccount]   = useState('');
-  const [loading, setLoading]   = useState(false);
   const [search, setSearch]     = useState('');
+  // M-M1: payment-mutation issues are tracked separately from background reload errors.
+  const [paymentIssues, setPaymentIssues] = useState<InlineErrorIssue[] | undefined>(undefined);
 
   // ↓ одна строка вместо кучи useState для алертов
   const alert = useAppAlert();
 
   const { accounts, loadAccounts } = useStore();
+
+  // M-M1: background balance refresh on mount. Failures surface as info toast only —
+  // the payment form remains usable and is NOT marked errored.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.getAccounts();
+        if (!cancelled) {
+          useStore.setState({ accounts: data });
+        }
+      } catch {
+        if (!cancelled) {
+          useStore.getState().toast.show('Не удалось обновить баланс', 'info');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const colors = useThemeColor();
   const s = useMemo(() => mk(colors), [colors]);
   const mainAcc = accounts.find((a: any) => a.type === 'main') || accounts[0];
@@ -86,24 +110,29 @@ export default function PaymentScreen() {
       )
     : CATEGORIES;
 
-  // ↓ чистый handlePay без boilerplate
+  // M-M1 + UX-04: handlePay is the ActionButton onPress; ActionButton owns busy state,
+  // single-flight lock, and error toast. We additionally extract VALIDATION_FAILED
+  // issues[] into local state so InlineError can surface field-level errors.
   const handlePay = async () => {
     const amt = Number(amount);
 
     if (!account.trim()) {
-      alert.error('Проверьте данные', 'Введите номер лицевого счёта');
-      return;
+      throw Object.assign(new Error('Введите номер лицевого счёта'), {
+        response: { data: { error: 'VALIDATION_FAILED', message: 'Введите номер лицевого счёта' } },
+      });
     }
     if (!amt || amt <= 0) {
-      alert.error('Неверная сумма', 'Введите сумму больше нуля');
-      return;
+      throw Object.assign(new Error('Введите сумму больше нуля'), {
+        response: { data: { error: 'VALIDATION_FAILED', message: 'Введите сумму больше нуля' } },
+      });
     }
     if (!mainAcc) {
-      alert.error('Нет счёта', 'Не найден счёт для списания средств');
-      return;
+      throw Object.assign(new Error('Не найден счёт для списания средств'), {
+        response: { data: { error: 'VALIDATION_FAILED', message: 'Не найден счёт для списания средств' } },
+      });
     }
 
-    setLoading(true);
+    setPaymentIssues(undefined);
     try {
       await api.makePayment({
         accountId: mainAcc.id,
@@ -112,16 +141,15 @@ export default function PaymentScreen() {
         merchant: service?.name || selected?.title,
       });
       await loadAccounts();
-      alert.success(
-        'Платёж выполнен! 🎉',
-        `${formatMoney(amt)} успешно списано со счёта`,
-        () => router.back(),   // ← вызовется после закрытия алерта
-      );
+      useStore.getState().toast.show('Платёж выполнен', 'success');
+      router.replace('/history');
     } catch (e: any) {
-      const message = e?.response?.data?.error || 'Не удалось выполнить платеж. Попробуйте позже.';
-      alert.error('Платёж не выполнен', message);
-    } finally {
-      setLoading(false);
+      // Surface field-level issues for InlineError; ActionButton catches and toasts.
+      const issues: InlineErrorIssue[] | undefined = e?.response?.data?.issues;
+      if (Array.isArray(issues) && issues.length > 0) {
+        setPaymentIssues(issues);
+      }
+      throw e;
     }
   };
 
@@ -238,13 +266,14 @@ export default function PaymentScreen() {
               <TextInput
                 style={[s.input, s.inputBig]}
                 value={amount}
-                onChangeText={setAmount}
+                onChangeText={(v) => { setAmount(v); if (paymentIssues) setPaymentIssues(undefined); }}
                 placeholder="0.00 ₽"
                 placeholderTextColor={colors.outlineVariant}
                 keyboardType="numeric"
                 returnKeyType="done"
                 onSubmitEditing={Keyboard.dismiss}
               />
+              <InlineError issues={paymentIssues} field="amount" />
 
               {mainAcc && (
                 <View style={s.fromCard}>
@@ -259,16 +288,15 @@ export default function PaymentScreen() {
                 </View>
               )}
 
-              <TouchableOpacity
-                style={[s.btn, loading && { opacity: 0.7 }]}
-                onPress={handlePay}
-                disabled={loading}
-              >
-                {loading
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={s.btnT}>Оплатить</Text>
-                }
-              </TouchableOpacity>
+              <View style={{ marginTop: Spacing.xl }}>
+                <ActionButton
+                  onPress={handlePay}
+                  label="Оплатить"
+                  busyLabel="Оплачиваем…"
+                  endpointKey="POST /api/payments"
+                  testID="payment-submit"
+                />
+              </View>
             </ScrollView>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>

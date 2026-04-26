@@ -12,6 +12,7 @@ import { useStore } from '../stores/useStore';
 import * as api from '../services/api';
 import { Fonts, Spacing, BorderRadius, Shadows, formatMoney } from '../constants/theme';
 import { useThemeColor } from '../hooks/useThemeColor';
+import { ActionButton } from '../components/ActionButton';
 
 const METHODS = [
   { id: 'phone', icon: 'phone-android', title: 'По номеру телефона', desc: 'Мгновенный перевод', color: '#0ea5e9' },
@@ -29,7 +30,6 @@ export default function TransferScreen() {
   );
   const [amount, setAmount] = useState(params.amount ?? '');
   const [recipient, setRecipient] = useState(params.to ?? '');
-  const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [resolvedUser, setResolvedUser] = useState<{ name: string; accountId: string } | null>(null);
   const [resolveError, setResolveError] = useState('');
@@ -70,56 +70,53 @@ export default function TransferScreen() {
     }
   }, [recipient, selected]);
 
+  // M-M3: switching method clears the recipient field in the same dispatch.
+  const handleMethodChange = (m: 'phone' | 'own') => {
+    setSelected(m);
+    setRecipient('');
+    setResolvedUser(null);
+    setResolveError('');
+  };
+
+  // UX-04: handleTransfer is the ActionButton onPress; ActionButton owns busy +
+  // single-flight + error toast. Throw to let ActionButton surface errors.
   const handleTransfer = async () => {
     const amt = Number(amount);
-    if (!amt || amt <= 0) { Alert.alert('Ошибка', 'Введите корректную сумму'); return; }
-    if (!mainAcc) { Alert.alert('Ошибка', 'Нет доступных счетов'); return; }
+    if (!amt || amt <= 0) throw new Error('Введите корректную сумму');
+    if (!mainAcc) throw new Error('Нет доступных счетов');
 
     if (selected === 'own') {
-      if (!secondAcc) { Alert.alert('Ошибка', 'Нет второго счёта для перевода'); return; }
-      setLoading(true);
-      try {
-        await api.transferOwn({
-          fromAccountId: mainAcc.id,
-          toAccountId: secondAcc.id,
-          amount: amt,
-        });
-        await Promise.all([loadAccounts(), loadTransactions()]);
-        Alert.alert('Готово', `Переведено ${formatMoney(amt)} между счетами`, [
-          { text: 'OK', onPress: () => router.back() },
-        ]);
-      } catch (e: any) {
-        Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось выполнить перевод');
-      } finally { setLoading(false); }
+      if (!secondAcc) throw new Error('Нет второго счёта для перевода');
+      await api.transferOwn({
+        fromAccountId: mainAcc.id,
+        toAccountId: secondAcc.id,
+        amount: amt,
+      });
+      await Promise.all([loadAccounts(), loadTransactions()]);
+      useStore.getState().toast.show('Перевод отправлен', 'success');
+      router.back();
       return;
     }
 
-    if (!recipient.trim()) { Alert.alert('Ошибка', 'Укажите получателя'); return; }
+    if (!recipient.trim()) throw new Error('Укажите получателя');
 
-    // If user resolved — use accountId directly; otherwise send recipient string
-    setLoading(true);
-    try {
-      const payload: any = { fromAccountId: mainAcc.id, amount: amt };
-      if (resolvedUser) {
-        payload.toAccountId = resolvedUser.accountId;
-      } else {
-        payload.recipient = recipient.replace(/[\s\-]/g, '');
-      }
+    const payload: any = { fromAccountId: mainAcc.id, amount: amt };
+    if (resolvedUser) {
+      payload.toAccountId = resolvedUser.accountId;
+    } else {
+      payload.recipient = recipient.replace(/[\s\-]/g, '');
+    }
 
-      await api.makeTransfer(payload);
-      await Promise.all([loadAccounts(), loadTransactions()]);
-      Alert.alert('Успешно', `Перевод ${formatMoney(amt)} выполнен`, [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
-    } catch (e: any) {
-      Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось выполнить перевод');
-    } finally { setLoading(false); }
+    await api.makeTransfer(payload);
+    await Promise.all([loadAccounts(), loadTransactions()]);
+    useStore.getState().toast.show('Перевод отправлен', 'success');
+    router.back();
   };
 
   return (
     <SafeAreaView style={s.root} edges={['top']}>
       <View style={s.hdr}>
-        <TouchableOpacity style={s.back} onPress={() => selected ? setSelected(null) : router.back()}>
+        <TouchableOpacity testID="transfer-back" style={s.back} onPress={() => selected ? setSelected(null) : router.back()}>
           <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={s.hdrt}>{selected ? METHODS.find(m => m.id === selected)?.title : 'Перевод средств'}</Text>
@@ -142,11 +139,7 @@ export default function TransferScreen() {
           <Text style={s.secTitle}>СПОСОБ ПЕРЕВОДА</Text>
           {METHODS.map((m, i) => (
             <Animated.View entering={FadeInDown.delay(i * 80)} key={m.id}>
-              <TouchableOpacity style={s.methodRow} onPress={() => {
-                setSelected(m.id);
-                setResolvedUser(null);
-                setResolveError('');
-              }}>
+              <TouchableOpacity style={s.methodRow} onPress={() => handleMethodChange(m.id as 'phone' | 'own')}>
                 <View style={[s.methodIco, { backgroundColor: `${m.color}18` }]}>
                   <MaterialIcons name={m.icon as any} size={26} color={m.color} />
                 </View>
@@ -242,16 +235,16 @@ export default function TransferScreen() {
                 ))}
               </View>
 
-              <TouchableOpacity
-                style={[s.btn, (loading || (selected !== 'own' && !!resolveError)) && { opacity: 0.6 }]}
-                onPress={handleTransfer}
-                disabled={loading || (selected !== 'own' && !!resolveError)}
-              >
-                {loading
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={s.btnT}>Перевести</Text>
-                }
-              </TouchableOpacity>
+              <View style={{ marginTop: Spacing.xl }}>
+                <ActionButton
+                  onPress={handleTransfer}
+                  label="Перевести"
+                  busyLabel="Отправляем перевод…"
+                  endpointKey="POST /api/transactions"
+                  disabled={selected !== 'own' && !!resolveError}
+                  testID="transfer-submit"
+                />
+              </View>
             </ScrollView>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
