@@ -35,6 +35,7 @@ const subscriptionRoutes = require('./routes/subscriptions');
 const adminRoutes = require('./routes/admin');
 const { authMiddleware, adminMiddleware } = require('./middleware/auth');
 const { requireFreshAdmin } = require('./middleware/requireFreshAdmin');
+const { adminDestructiveLimiter } = require('./middleware/adminRateLimits');
 const { tickActiveDeckCardHealth } = require('./services/cardEngine');
 const { ensureAllUsersHaveActiveDeck } = require('./services/ensureUserActiveDeck');
 
@@ -154,7 +155,10 @@ app.use('/api/subscriptions', subscriptionRoutes);
 // Phase 3 / SEC-08 / D-05..D-08 — admin chain: JWT → JWT-isAdmin claim fast-reject →
 // DB recheck (5-min LRU). JWT-claim alone never authorizes admin actions; requireFreshAdmin
 // is the source of truth and rejects stolen / un-revoked admin tokens within ≤5 min.
-app.use('/api/admin', authMiddleware, adminMiddleware, requireFreshAdmin, adminRoutes);
+// Phase 3 / SEC-04 / D-13..D-15 — adminDestructiveLimiter caps mutation verbs at
+// 60/min per actorId AFTER requireFreshAdmin has authoritatively confirmed the
+// admin flag, so in-memory bucket keys are always JWT-verified userIds.
+app.use('/api/admin', authMiddleware, adminMiddleware, requireFreshAdmin, adminDestructiveLimiter, adminRoutes);
 
 /** Корень: чтобы в браузере было видно, что это наш API (а не чужой сервис на том же порту). */
 app.get('/', (_req, res) => {
