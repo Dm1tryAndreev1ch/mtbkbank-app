@@ -11,36 +11,48 @@ import { Colors, Fonts, Spacing, BorderRadius, Shadows } from '../constants/them
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function LoginScreen() {
-  const [phone, setPhone] = useState('+79001234567');
+  const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
-  const { login, isLoading, loadAll } = useStore();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isLoading, loadAll } = useStore();
 
   const submitLogin = async (p: string, code: string) => {
+    if (isSubmitting) return;
     if (!p || code.length !== 4) {
       setError('Введите телефон и 4-значный ПИН');
       return;
     }
     setError('');
-    const success = await login(p, code);
-    if (success) {
-      loadAll();
-      router.replace('/(tabs)');
-    } else {
-      setError('Неверный телефон или ПИН-код');
-      setPin('');
+    setIsSubmitting(true);
+    try {
+      // Routing on success is owned by BootGate (Plan 02-07): tokenStore.subscribe
+      // (Plan 02-05) flips useStore.isAuthed false→true and BootGate's routing
+      // useEffect (deps [state, isAuthed, onboarded]) replaces to /(tabs).
+      // login.tsx MUST NOT call router.replace — that would race with BootGate.
+      const success = await useStore.getState().login(p, code);
+      if (success) {
+        loadAll();
+      } else {
+        setError('Неверный телефон или ПИН-код');
+        setPin('');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleLogin = () => submitLogin(phone, pin);
 
   const handlePinInput = (digit: string) => {
+    if (isSubmitting) return;
     Keyboard.dismiss();
     if (pin.length < 4) {
       const newPin = pin + digit;
       setPin(newPin);
       if (newPin.length === 4) {
-        setTimeout(() => submitLogin(phone, newPin), 100);
+        // Synchronous submit. isSubmitting guards re-entry on rapid taps.
+        submitLogin(phone, newPin);
       }
     }
   };
@@ -140,16 +152,14 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={[styles.loginButton, pin.length < 4 && styles.loginButtonDisabled]}
               onPress={handleLogin}
-              disabled={pin.length < 4 || isLoading}
+              disabled={pin.length < 4 || isLoading || isSubmitting}
             >
-              {isLoading ? (
+              {isLoading || isSubmitting ? (
                 <ActivityIndicator color={Colors.onPrimary} />
               ) : (
                 <Text style={styles.loginButtonText}>Войти</Text>
               )}
             </TouchableOpacity>
-
-            <Text style={styles.hint}>Тест: +79001234567 / ПИН: 1234</Text>
           </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
@@ -210,5 +220,4 @@ const styles = StyleSheet.create({
   loginButton: { width: '100%', backgroundColor: Colors.primary, borderRadius: BorderRadius.full, paddingVertical: Spacing.base, alignItems: 'center', ...Shadows.primary },
   loginButtonDisabled: { opacity: 0.5 },
   loginButtonText: { fontSize: Fonts.sizes.base, fontWeight: Fonts.weights.extrabold, color: Colors.onPrimary, letterSpacing: 2, textTransform: 'uppercase' },
-  hint: { marginTop: Spacing.base, fontSize: Fonts.sizes.xs, color: Colors.outlineVariant },
 });
