@@ -98,4 +98,45 @@ module.exports = [
       ],
     },
   },
+
+  // Phase-4 D-08 — mockup-button + raw-async-onPress hard-gate across mobile/app/.
+  //   1. `<X onPress={() => {}}>`           — empty onPress is forbidden.
+  //   2. `<X onPress={() => undefined}>`    — explicit no-op is forbidden.
+  //   3. `<X onPress={async () => ...}>`    — raw async onPress is forbidden,
+  //      EXCEPT on `<ActionButton>` which is the sole permitted async-onPress
+  //      consumer (single-flight + offline-aware + rate-limit-aware) per UX-04.
+  //
+  // AST selector notes:
+  //   - `JSXAttribute[value.expression.body.body.length=0]` matches an empty BlockStatement body.
+  //   - For raw async we filter at the JSXAttribute level and use a parent-element
+  //     `:not(...)` predicate via the JSXOpeningElement parent.
+  //
+  // Belt-and-suspenders: scripts/regression-guard.sh greps for the same patterns
+  // so disabling the lint rule alone does not pass CI.
+  {
+    files: ['app/**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "JSXAttribute[name.name='onPress'][value.expression.type='ArrowFunctionExpression'][value.expression.body.type='BlockStatement'][value.expression.body.body.length=0]",
+          message:
+            'Empty onPress is forbidden — wire the handler, hide the button, or use ActionButton (Phase 4 D-07/D-08).',
+        },
+        {
+          selector:
+            "JSXAttribute[name.name='onPress'][value.expression.type='ArrowFunctionExpression'][value.expression.body.type='Identifier'][value.expression.body.name='undefined']",
+          message:
+            'onPress={() => undefined} is forbidden — wire or remove (Phase 4 D-07/D-08).',
+        },
+        {
+          selector:
+            "JSXOpeningElement:not([name.name='ActionButton']) > JSXAttribute[name.name='onPress'][value.expression.type='ArrowFunctionExpression'][value.expression.async=true]",
+          message:
+            'Raw async onPress is forbidden — use <ActionButton /> (UX-04, Phase 4 D-06/D-08).',
+        },
+      ],
+    },
+  },
 ];
