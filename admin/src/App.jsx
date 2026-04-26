@@ -148,7 +148,7 @@ function LoginPage({ onLogin }) {
             value={values.phone}
             onChange={e => setField('phone', e.target.value)}
             onBlur={() => blurField('phone')}
-            placeholder="+79001234567"
+            placeholder="+7XXXXXXXXXX"
           />
           {errors.phone && <small className="admin-error" style={{ color: 'var(--error)', display: 'block', marginTop: 4 }}>{errors.phone}</small>}
         </div>

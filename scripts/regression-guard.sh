@@ -210,6 +210,63 @@ else
   echo "OK    Phase-3 REL-08: processCardDrop signature does not pass raw Number"
 fi
 
+echo "=== Phase-4 gates ==="
+
+# Phase-4 D-03: AppAlert.tsx must be physically deleted (split into Toast + ConfirmDialog).
+if [[ -f mobile/components/AppAlert.tsx ]]; then
+  echo "FAIL  Phase-4 D-03: mobile/components/AppAlert.tsx still present (must be deleted; use Toast/ConfirmDialog)"
+  FAIL=1
+else
+  echo "OK    Phase-4 D-03: AppAlert.tsx removed"
+fi
+
+# Phase-4 D-03: no consumers of AppAlert remaining.
+# Path-restricted to mobile/ excluding component-internal historical doc-comments
+# in Toast.tsx / ConfirmDialog.tsx (those reference the *file* in comments, not import it).
+if git grep -nP "from\s+['\"][^'\"]*AppAlert['\"]" -- 'mobile/' 2>/dev/null; then
+  echo "FAIL  Phase-4 D-03: AppAlert import still present in mobile/"
+  FAIL=1
+else
+  echo "OK    Phase-4 D-03: no AppAlert imports"
+fi
+
+# Phase-4 D-07: empty/no-op onPress in mobile/app/.
+check "Phase-4 D-07: Empty onPress in mobile/app" 'onPress=\{\s*\(\s*\)\s*=>\s*(\{\s*\}|undefined)\s*\}' 'mobile/app/'
+
+# Phase-4 D-06/D-08: raw async onPress on TouchableOpacity/Pressable in mobile/app
+# (ActionButton is the sole permitted async-onPress consumer per UX-04). git grep -P
+# is line-scoped; we must use `-z` to span the JSX element across newlines.
+if git grep -znP '<(TouchableOpacity|Pressable)\b[^>]*onPress=\{\s*async\s' -- 'mobile/app/' 2>/dev/null; then
+  echo "FAIL  Phase-4 D-06/D-08: raw async onPress on TouchableOpacity/Pressable — use <ActionButton />"
+  FAIL=1
+else
+  echo "OK    Phase-4 D-06/D-08: no raw async onPress on Touchable/Pressable in mobile/app"
+fi
+
+# Phase-4 D-12: mergeByUpdatedAt helper present.
+if [[ ! -f mobile/stores/mergeByUpdatedAt.ts ]]; then
+  echo "FAIL  Phase-4 D-12: mobile/stores/mergeByUpdatedAt.ts missing"
+  FAIL=1
+else
+  echo "OK    Phase-4 D-12: mergeByUpdatedAt.ts present"
+fi
+
+# Phase-4 D-05: root ErrorBoundary mounted in _layout.tsx.
+if ! git grep -q 'ErrorBoundary scope="root"' -- 'mobile/app/_layout.tsx' 2>/dev/null; then
+  echo "FAIL  Phase-4 D-05: root ErrorBoundary not mounted in mobile/app/_layout.tsx"
+  FAIL=1
+else
+  echo "OK    Phase-4 D-05: root ErrorBoundary mounted"
+fi
+
+# Phase-4 D-09: OfflineBanner + ToastHost mounted in _layout.tsx.
+if ! git grep -qE 'OfflineBanner|ToastHost' -- 'mobile/app/_layout.tsx' 2>/dev/null; then
+  echo "FAIL  Phase-4 D-09: OfflineBanner/ToastHost not mounted in _layout.tsx"
+  FAIL=1
+else
+  echo "OK    Phase-4 D-09: OfflineBanner/ToastHost mounted"
+fi
+
 if [[ $FAIL -ne 0 ]]; then
   echo ""
   echo "Regression-guard FAILED — fix the listed pattern(s) before committing."
