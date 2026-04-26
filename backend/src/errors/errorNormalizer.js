@@ -38,7 +38,11 @@ function errorNormalizer(err, req, res, _next) {
   } else if (
     err instanceof Prisma.PrismaClientKnownRequestError ||
     err instanceof Prisma.PrismaClientValidationError ||
-    err instanceof Prisma.PrismaClientUnknownRequestError
+    err instanceof Prisma.PrismaClientUnknownRequestError ||
+    // Defensive: jest.resetModules + dual require paths can cause instanceof to fail
+    // across module-boundary copies of @prisma/client. Fall back to constructor-name
+    // matching for the three Prisma error classes — never matches application code.
+    (err && err.constructor && /^PrismaClient(Known|Unknown|Validation)RequestError$/.test(err.constructor.name))
   ) {
     // REL-07 / Pitfall 9 (plan 03-05): Postgres 23514 CHECK violation on
     // BankAccount_balance_nonneg_check surfaces either as PrismaClientKnownRequestError
