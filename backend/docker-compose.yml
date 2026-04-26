@@ -35,6 +35,7 @@ services:
       DATABASE_URL: postgresql://mtbbank:mtbbank_secret_2024@postgres:5432/mtbbank
       REDIS_URL: redis://redis:6379
       JWT_SECRET: mtbbank_jwt_secret_change_in_production
+      JWT_REFRESH_SECRET: mtbbank_jwt_refresh_secret_change_in_production
       PORT: 3000
       NODE_ENV: development
     depends_on:
