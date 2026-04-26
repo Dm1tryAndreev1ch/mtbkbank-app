@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/react';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { TokenProvider } from './auth/TokenContext';
 import './index.css';
 
 try {
@@ -25,7 +26,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         </div>
       )}
     >
-      <App />
+      <TokenProvider>
+        <App />
+      </TokenProvider>
     </Sentry.ErrorBoundary>
   </React.StrictMode>
 );
