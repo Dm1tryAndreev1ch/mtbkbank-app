@@ -339,7 +339,11 @@ router.post(
   reqValidator(adminGrantCardSchema),
   async (req, res, next) => {
     try {
-      const { userId, collectionCardId } = req.validated;
+      // Phase 4 / 04-02 / B-M6 — `source` is now an optional enum field
+      // validated by reqValidator(grantCardSchema). Defaults to 'ADMIN' when
+      // not supplied so existing admin UI flows are unaffected.
+      const { userId, collectionCardId, source } = req.validated;
+      const grantSource = source || 'ADMIN';
 
       const card = await req.prisma.collectionCard.findUnique({
         where: { id: collectionCardId },
@@ -360,7 +364,7 @@ router.post(
             userId,
             collectionCardId,
             health: card.maxHealth,
-            source: 'ADMIN',
+            source: grantSource,
           },
           include: { collectionCard: true },
         });

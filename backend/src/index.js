@@ -287,4 +287,9 @@ if (require.main === module) {
   bootRuntime();
 }
 
+// Phase 4 / 04-02 / B-M8 — expose the live PrismaClient instance the app uses
+// so integration tests can spy on its model accessors (e.g. notification.create).
+// Production code paths still go through req.prisma; this is just an additional
+// handle for tests that need to fault-inject without standing up a parallel app.
 module.exports = app;
+module.exports.prisma = prisma;
