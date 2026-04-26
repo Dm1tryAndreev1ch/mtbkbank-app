@@ -1,59 +1,67 @@
+// backend/src/websocket/index.js
+// Phase 3 / REL-09 / SEC-11 — rooms refactor + shared JWT verifier + env reads.
+//
+// Replaces the legacy in-memory userId->socketId Map with Socket.IO rooms
+// (`user:{id}`). On connect the socket joins its user room; broadcasts emit
+// via io.to(room).emit(...). Reconnect produces exactly one delivery per emit
+// (Socket.IO 4.x rooms auto-clean on disconnect — Pitfall 5).
+//
+// JWT verification is delegated to verifyAccessToken from middleware/auth.js so
+// HTTP and WS share a single envalid-validated env.JWT_SECRET source.
+
 const { Server } = require('socket.io');
-const jwt = require('jsonwebtoken');
 const { logger } = require('../logger');
+const { env } = require('../env');
+const { verifyAccessToken } = require('../middleware/auth');
 
 let io;
-const connectedUsers = new Map(); // userId -> socketId
 
 function setupWebSockets(server) {
   io = new Server(server, {
     cors: {
-      origin: (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000')
-        .split(',').map(o => o.trim()).filter(Boolean),
+      origin: env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean),
       methods: ['GET', 'POST'],
       credentials: true,
-    }
+    },
   });
 
-  // JWT Middleware validation
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) {
-      return next(new Error('Authentication error'));
+      logger.warn(
+        { event: 'ws_handshake_no_token', socketId: socket.id },
+        'WS rejected: no token'
+      );
+      return next(new Error('AUTH_TOKEN_INVALID'));
     }
     try {
-      if (!process.env.JWT_SECRET) {
-        return next(new Error('JWT_SECRET not configured'));
-      }
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      socket.user = decoded; // { id, phone }
+      const decoded = verifyAccessToken(token); // shared verifier; env.JWT_SECRET; throws
+      socket.user = { id: decoded.userId, isAdmin: !!decoded.isAdmin };
       next();
     } catch (err) {
-      next(new Error('Authentication error'));
+      logger.warn(
+        { event: 'ws_handshake_invalid_token', socketId: socket.id, reason: err.message },
+        'WS rejected: invalid token'
+      );
+      next(new Error('AUTH_TOKEN_INVALID'));
     }
   });
 
   io.on('connection', (socket) => {
-    logger.info(
-      { socketId: socket.id, userId: socket.user.id },
-      '🔌 Socket Connected'
-    );
-
-    connectedUsers.set(socket.user.id, socket.id);
+    const userId = socket.user.id;
+    socket.join(`user:${userId}`); // REL-09 — replaces in-memory Map
+    logger.info({ socketId: socket.id, userId }, 'socket_connected');
 
     socket.on('disconnect', () => {
-      logger.info({ socketId: socket.id }, '❌ Socket Disconnected');
-      connectedUsers.delete(socket.user.id);
+      // Socket.IO v4 auto-leaves all rooms on disconnect (Pitfall 5).
+      logger.info({ socketId: socket.id, userId }, 'socket_disconnected');
     });
   });
 }
 
 function broadcastToUser(userId, eventName, payload) {
   if (!io) return;
-  const socketId = connectedUsers.get(userId);
-  if (socketId) {
-    io.to(socketId).emit(eventName, payload);
-  }
+  io.to(`user:${userId}`).emit(eventName, payload);
 }
 
 function broadcastToAll(eventName, payload) {
@@ -64,10 +72,7 @@ function broadcastToAll(eventName, payload) {
 function broadcastToMany(userIds, eventName, payload) {
   if (!io) return;
   for (const userId of userIds) {
-    const socketId = connectedUsers.get(userId);
-    if (socketId) {
-      io.to(socketId).emit(eventName, payload);
-    }
+    io.to(`user:${userId}`).emit(eventName, payload);
   }
 }
 
@@ -77,4 +82,3 @@ module.exports = {
   broadcastToAll,
   broadcastToMany,
 };
-
