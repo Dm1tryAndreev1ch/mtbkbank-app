@@ -2,6 +2,19 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { processCardDrop } = require('../services/cardEngine');
 const { logger } = require('../logger');
+// Phase 3 / 03-10 / SEC-14 / D-03 — every admin mutation wraps writes in
+// prisma.$transaction and calls auditLog.writeAudit(tx, ...) inside the same tx.
+// We import the *module* (not destructured) so tests can monkey-patch
+// auditLog.writeAudit at runtime to assert the rollback contract.
+const auditLog = require('../services/auditLog');
+const { reqValidator } = require('../middleware/reqValidator');
+const {
+  adminUserUpdateSchema,
+  adminUserCreateSchema,
+  adminGrantCardSchema,
+} = require('../schemas/admin');
+const { requireFreshAdmin } = require('../middleware/requireFreshAdmin');
+const { AppError } = require('../errors/AppError');
 const router = express.Router();
 
 // Phase 3 / SEC-08 / D-05..D-08 — auth + admin + requireFreshAdmin are now mounted at the
@@ -95,62 +108,106 @@ router.get('/users', async (req, res) => {
   }
 });
 
-// PUT /api/admin/users/:id
-router.put('/users/:id', async (req, res) => {
-  try {
-    const { name, mbPoints, status, pin } = req.body;
-    const data = {};
-    if (name !== undefined) data.name = name;
-    if (mbPoints !== undefined) data.mbPoints = mbPoints;
-    if (status !== undefined) data.status = status;
-    if (pin) data.pin = await bcrypt.hash(pin, 10);
+// PUT /api/admin/users/:id — Phase 3 / 03-10 / SEC-14 + SEC-10 + D-07
+router.put(
+  '/users/:id',
+  reqValidator(adminUserUpdateSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const data = { ...req.validated };
+      if (data.pin) data.pin = await bcrypt.hash(data.pin, 10);
 
-    const user = await req.prisma.user.update({
-      where: { id: req.params.id },
-      data,
-      select: { id: true, name: true, phone: true, mbPoints: true, status: true },
-    });
-    res.json(user);
-  } catch (err) {
-    res.status(500).json({ error: 'Ошибка сервера' });
+      const updated = await req.prisma.$transaction(async (tx) => {
+        const before = await tx.user.findUnique({
+          where: { id },
+          select: {
+            id: true, name: true, phone: true, mbPoints: true,
+            status: true, isAdmin: true,
+          },
+        });
+        if (!before) throw new AppError('NOT_FOUND', 404);
+        const after = await tx.user.update({
+          where: { id },
+          data,
+          select: {
+            id: true, name: true, phone: true, mbPoints: true,
+            status: true, isAdmin: true,
+          },
+        });
+        await auditLog.writeAudit(tx, {
+          actorId: req.userId,
+          action: 'USER_UPDATE',
+          targetType: 'User',
+          targetId: id,
+          before,
+          after,
+          requestId: req.id,
+        });
+        return after;
+      });
+
+      // D-07 — drop the freshness cache entry so demote/promote takes effect immediately
+      if ('isAdmin' in data) requireFreshAdmin.invalidate(req.params.id);
+
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
   }
-});
+);
 
-// POST /api/admin/users
-router.post('/users', async (req, res) => {
-  try {
-    const { name, phone, pin, mbPoints = 0, status = 'STANDARD', isAdmin = false } = req.body;
-    const hashedPin = await bcrypt.hash(pin, 10);
+// POST /api/admin/users — Phase 3 / 03-10 / SEC-14 + SEC-10
+router.post(
+  '/users',
+  reqValidator(adminUserCreateSchema),
+  async (req, res, next) => {
+    try {
+      const {
+        name, phone, pin, mbPoints = 0, status = 'STANDARD', isAdmin = false,
+      } = req.validated;
+      const hashedPin = await bcrypt.hash(pin, 10);
 
-    const user = await req.prisma.user.create({
-      data: { name, phone, pin: hashedPin, mbPoints, status, isAdmin },
-    });
+      const created = await req.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: { name, phone, pin: hashedPin, mbPoints, status, isAdmin },
+        });
+        await tx.bankAccount.create({
+          data: {
+            userId: user.id,
+            name: 'Главный счёт',
+            type: 'main',
+            balance: 0,
+            currency: 'RUB',
+          },
+        });
+        // Дефолтная активная колода для каждого нового пользователя
+        await tx.deck.create({
+          data: {
+            userId: user.id,
+            name: 'Моя колода',
+            isActive: true,
+          },
+        });
+        await auditLog.writeAudit(tx, {
+          actorId: req.userId,
+          action: 'USER_CREATE',
+          targetType: 'User',
+          targetId: user.id,
+          before: null,
+          after: user,
+          requestId: req.id,
+        });
+        return user;
+      });
 
-    await req.prisma.bankAccount.create({
-      data: {
-        userId: user.id,
-        name: 'Главный счёт',
-        type: 'main',
-        balance: 0,
-        currency: 'RUB',
-      },
-    });
-
-    // FIX: создаём дефолтную активную колоду для каждого нового пользователя
-    await req.prisma.deck.create({
-      data: {
-        userId: user.id,
-        name: 'Моя колода',
-        isActive: true,
-      },
-    });
-
-    res.json(user);
-  } catch (err) {
-    (req.log ?? logger).error({ err }, 'Create user error');
-    res.status(500).json({ error: 'Ошибка создания пользователя' });
+      res.json(created);
+    } catch (err) {
+      (req.log ?? logger).error({ err }, 'Create user error');
+      next(err);
+    }
   }
-});
+);
 
 // ==================== CARD TEMPLATES ====================
 
@@ -168,28 +225,41 @@ router.get('/cards', async (req, res) => {
 
 // POST /api/admin/cards
 // FIX: whitelist полей — mass assignment устранён
-router.post('/cards', async (req, res) => {
+router.post('/cards', async (req, res, next) => {
   try {
     const {
       name, description, rarity, brandName, brandIcon, brandLogo, imageUrl,
       cashbackPercent, maxHealth, dropRate, isActive,
     } = req.body;
-    const card = await req.prisma.collectionCard.create({
-      data: {
-        name, description, rarity, brandName, brandIcon, brandLogo, imageUrl,
-        cashbackPercent, maxHealth, dropRate,
-        isActive: isActive !== undefined ? isActive : true,
-      },
+    const created = await req.prisma.$transaction(async (tx) => {
+      const card = await tx.collectionCard.create({
+        data: {
+          name, description, rarity, brandName, brandIcon, brandLogo, imageUrl,
+          cashbackPercent, maxHealth, dropRate,
+          isActive: isActive !== undefined ? isActive : true,
+        },
+      });
+      await auditLog.writeAudit(tx, {
+        actorId: req.userId,
+        action: 'CARD_TEMPLATE_CREATE',
+        targetType: 'CollectionCard',
+        targetId: card.id,
+        before: null,
+        after: card,
+        requestId: req.id,
+      });
+      return card;
     });
-    res.json(card);
+    res.json(created);
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка создания карты' });
+    (req.log ?? logger).error({ err }, 'Create card template error');
+    next(err);
   }
 });
 
 // PUT /api/admin/cards/:id
 // FIX: whitelist полей — mass assignment устранён
-router.put('/cards/:id', async (req, res) => {
+router.put('/cards/:id', async (req, res, next) => {
   try {
     const {
       name, description, rarity, brandName, brandIcon, brandLogo, imageUrl,
@@ -208,65 +278,115 @@ router.put('/cards/:id', async (req, res) => {
     if (dropRate !== undefined) data.dropRate = dropRate;
     if (isActive !== undefined) data.isActive = isActive;
 
-    const card = await req.prisma.collectionCard.update({
-      where: { id: req.params.id },
-      data,
+    const { id } = req.params;
+    const updated = await req.prisma.$transaction(async (tx) => {
+      const before = await tx.collectionCard.findUnique({ where: { id } });
+      if (!before) throw new AppError('NOT_FOUND', 404);
+      const after = await tx.collectionCard.update({ where: { id }, data });
+      await auditLog.writeAudit(tx, {
+        actorId: req.userId,
+        action: 'CARD_TEMPLATE_UPDATE',
+        targetType: 'CollectionCard',
+        targetId: id,
+        before,
+        after,
+        requestId: req.id,
+      });
+      return after;
     });
-    res.json(card);
+    res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка обновления карты' });
+    (req.log ?? logger).error({ err }, 'Update card template error');
+    next(err);
   }
 });
 
-// DELETE /api/admin/cards/:id
-router.delete('/cards/:id', async (req, res) => {
+// DELETE /api/admin/cards/:id (soft-delete via isActive=false)
+router.delete('/cards/:id', async (req, res, next) => {
   try {
-    await req.prisma.collectionCard.update({
-      where: { id: req.params.id },
-      data: { isActive: false },
+    const { id } = req.params;
+    await req.prisma.$transaction(async (tx) => {
+      const before = await tx.collectionCard.findUnique({ where: { id } });
+      if (!before) throw new AppError('NOT_FOUND', 404);
+      const after = await tx.collectionCard.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      await auditLog.writeAudit(tx, {
+        actorId: req.userId,
+        action: 'CARD_TEMPLATE_DELETE',
+        targetType: 'CollectionCard',
+        targetId: id,
+        before,
+        after,
+        requestId: req.id,
+      });
+      return after;
     });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка удаления' });
+    (req.log ?? logger).error({ err }, 'Delete card template error');
+    next(err);
   }
 });
 
 // ==================== GRANT CARDS ====================
 
-// POST /api/admin/grant-card
+// POST /api/admin/grant-card — Phase 3 / 03-10 / SEC-14
 // FIX: добавлена проверка дубликата перед выдачей
-router.post('/grant-card', async (req, res) => {
-  try {
-    const { userId, collectionCardId } = req.body;
-    const card = await req.prisma.collectionCard.findUnique({
-      where: { id: collectionCardId },
-    });
-    if (!card) return res.status(404).json({ error: 'Шаблон карты не найден' });
+router.post(
+  '/grant-card',
+  reqValidator(adminGrantCardSchema),
+  async (req, res, next) => {
+    try {
+      const { userId, collectionCardId } = req.validated;
 
-    const existing = await req.prisma.userCard.findFirst({
-      where: { userId, collectionCardId },
-      select: { id: true },
-    });
-    if (existing) return res.status(400).json({ error: 'У пользователя уже есть эта карта' });
+      const card = await req.prisma.collectionCard.findUnique({
+        where: { id: collectionCardId },
+      });
+      if (!card) return res.status(404).json({ error: 'Шаблон карты не найден' });
 
-    const userCard = await req.prisma.userCard.create({
-      data: {
-        userId,
-        collectionCardId,
-        health: card.maxHealth,
-        source: 'ADMIN',
-      },
-      include: { collectionCard: true },
-    });
+      const existing = await req.prisma.userCard.findFirst({
+        where: { userId, collectionCardId },
+        select: { id: true },
+      });
+      if (existing) {
+        return res.status(400).json({ error: 'У пользователя уже есть эта карта' });
+      }
 
-    res.json(userCard);
-  } catch (err) {
-    if (err.code === 'P2002') {
-      return res.status(400).json({ error: 'У пользователя уже есть эта карта' });
+      const userCard = await req.prisma.$transaction(async (tx) => {
+        const created = await tx.userCard.create({
+          data: {
+            userId,
+            collectionCardId,
+            health: card.maxHealth,
+            source: 'ADMIN',
+          },
+          include: { collectionCard: true },
+        });
+        await auditLog.writeAudit(tx, {
+          actorId: req.userId,
+          action: 'CARD_GRANT',
+          targetType: 'UserCard',
+          targetId: created.id,
+          before: null,
+          after: created,
+          reason: `granted collectionCardId=${collectionCardId} to userId=${userId}`,
+          requestId: req.id,
+        });
+        return created;
+      });
+
+      res.json(userCard);
+    } catch (err) {
+      if (err && err.code === 'P2002') {
+        return res.status(400).json({ error: 'У пользователя уже есть эта карта' });
+      }
+      (req.log ?? logger).error({ err }, 'Grant card error');
+      next(err);
     }
-    res.status(500).json({ error: 'Ошибка выдачи карты' });
   }
-});
+);
 
 // ==================== USER ACCOUNTS ====================
 
@@ -285,8 +405,8 @@ router.get('/users/:id/accounts', async (req, res) => {
 
 // ==================== SIMULATE TRANSACTION ====================
 
-// POST /api/admin/simulate-transaction
-router.post('/simulate-transaction', async (req, res) => {
+// POST /api/admin/simulate-transaction — Phase 3 / 03-10 / SEC-14
+router.post('/simulate-transaction', async (req, res, next) => {
   try {
     const { userId, amount, category, merchant, merchantIcon, type = 'PURCHASE' } = req.body;
     let { accountId } = req.body;
@@ -342,6 +462,16 @@ router.post('/simulate-transaction', async (req, res) => {
           description: 'Админ: симуляция транзакции',
         },
       });
+      await auditLog.writeAudit(tx, {
+        actorId: req.userId,
+        action: 'TRANSACTION_SIMULATE',
+        targetType: 'Transaction',
+        targetId: t.id,
+        before: null,
+        after: t,
+        reason: `simulated ${txType} amount=${numericAmount} for userId=${userId}`,
+        requestId: req.id,
+      });
       return { transaction: t, account: updatedAccount };
     });
 
@@ -364,7 +494,7 @@ router.post('/simulate-transaction', async (req, res) => {
       return res.status(400).json({ error: 'Недостаточно средств на момент списания' });
     }
     (req.log ?? logger).error({ err }, 'Simulate transaction error');
-    res.status(500).json({ error: 'Ошибка сервера' });
+    next(err);
   }
 });
 
