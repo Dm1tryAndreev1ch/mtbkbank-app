@@ -3,6 +3,25 @@ import * as Sentry from '@sentry/react';
 import { useToken } from './auth/TokenContext';
 import { AppError } from './errors/AppError';
 import { lookup as lookupErrorMessage } from './errors/codebook';
+// Phase 4 / 04-04 — admin UX primitives + Zod form hook (A-M1..A-M5).
+import { ToastHost, useAdminToast } from './components/Toast';
+import { SkeletonRow } from './components/SkeletonRow';
+import { SpinnerButton } from './components/SpinnerButton';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { useZodForm } from './lib/useZodForm';
+import { loginSchema, phoneSchema, pinSchema, nameSchema } from './lib/schemas';
+import { z } from 'zod';
+
+// Toast helpers — push backend message verbatim on error, Russian success copy on mutation.
+function toastSuccess(message) {
+  useAdminToast.getState().push({ type: 'success', message });
+}
+function toastErrorFromAppError(err, fallback = 'Ошибка операции') {
+  const msg = err && err.name === 'AppError'
+    ? lookupErrorMessage(err.code)
+    : fallback;
+  useAdminToast.getState().push({ type: 'error', message: msg });
+}
 
 const API = '/api/admin';
 
@@ -66,15 +85,20 @@ async function apiFetch(token, path, opts = {}) {
 }
 
 // ===== LOGIN =====
+// Phase 4 / 04-04 / A-M1 — useZodForm + loginSchema (backend D-15 reuse).
+// Phase 4 / 04-04 / A-M2 — SpinnerButton for in-flight submit state.
 function LoginPage({ onLogin }) {
   const { setToken } = useToken();
-  const [phone, setPhone] = useState('');
-  const [pin, setPin] = useState('');
+  const { values, errors, setField, blurField, submit } = useZodForm(loginSchema, {
+    phone: '',
+    pin: '',
+  });
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const onSubmit = submit(async ({ phone, pin }) => {
     setError('');
+    setIsSubmitting(true);
     try {
       const res = await fetch(withApiBase('/api/auth/login'), {
         method: 'POST',
@@ -106,24 +130,49 @@ function LoginPage({ onLogin }) {
       }
     } catch (err) {
       setError('Нет соединения с API. Запустите backend (`npm run dev` в папке backend) и откройте админку через `npm run dev` в папке admin.');
+    } finally {
+      setIsSubmitting(false);
     }
-  };
+  });
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-      <form onSubmit={handleSubmit} style={{ width: 360, background: 'var(--surface-card)', padding: 40, borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)' }}>
+      <form onSubmit={onSubmit} style={{ width: 360, background: 'var(--surface-card)', padding: 40, borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)' }}>
         <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>MT-Банк</h1>
         <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', letterSpacing: 3, marginBottom: 32 }}>ПАНЕЛЬ АДМИНИСТРАТОРА</p>
         {error && <div style={{ background: 'rgba(186,26,26,0.08)', color: 'var(--error)', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13, fontWeight: 600 }}>{error}</div>}
         <div className="form-group">
           <label className="form-label">Телефон</label>
-          <input className="form-input" value={phone} onChange={e => setPhone(e.target.value)} />
+          <input
+            className="form-input"
+            value={values.phone}
+            onChange={e => setField('phone', e.target.value)}
+            onBlur={() => blurField('phone')}
+            placeholder="+79001234567"
+          />
+          {errors.phone && <small className="admin-error" style={{ color: 'var(--error)', display: 'block', marginTop: 4 }}>{errors.phone}</small>}
         </div>
         <div className="form-group">
           <label className="form-label">ПИН-код</label>
-          <input className="form-input" type="password" maxLength={4} value={pin} onChange={e => setPin(e.target.value)} placeholder="****" />
+          <input
+            className="form-input"
+            type="password"
+            maxLength={4}
+            value={values.pin}
+            onChange={e => setField('pin', e.target.value)}
+            onBlur={() => blurField('pin')}
+            placeholder="****"
+          />
+          {errors.pin && <small className="admin-error" style={{ color: 'var(--error)', display: 'block', marginTop: 4 }}>{errors.pin}</small>}
         </div>
-        <button className="btn btn-primary" style={{ width: '100%', marginTop: 8 }} type="submit">Войти</button>
+        <SpinnerButton
+          loading={isSubmitting}
+          type="submit"
+          className="btn btn-primary"
+          style={{ width: '100%', marginTop: 8, justifyContent: 'center' }}
+        >
+          Войти
+        </SpinnerButton>
         <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: 'var(--on-surface-variant)' }}>Войдите с учётными данными администратора</p>
       </form>
     </div>
@@ -279,36 +328,77 @@ function DashboardPage() {
 }
 
 // ===== USERS =====
+// A-M1/A-M3 — admin-local schema for create-user form (z.coerce.number guards mbPoints).
+// Uses re-exported phone/pin/name from backend (D-15) so the rules cannot drift.
+const userCreateAdminSchema = z.object({
+  name: nameSchema,
+  phone: phoneSchema,
+  pin: pinSchema,
+  mbPoints: z.coerce.number().min(0).default(0),
+  status: z.enum(['STANDARD', 'SILVER', 'GOLD', 'PLATINUM', 'BLOCKED']).default('STANDARD'),
+});
+const userEditAdminSchema = z.object({
+  name: nameSchema,
+  mbPoints: z.coerce.number().min(0),
+  status: z.enum(['STANDARD', 'SILVER', 'GOLD', 'PLATINUM', 'BLOCKED']),
+});
+
 function UsersPage() {
   const { token } = useToken();
   const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({});
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: '', phone: '', pin: '', mbPoints: 0, status: 'STANDARD' });
   const [pageError, setPageError] = useState(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+
+  // A-M1/A-M3 — Zod forms.
+  const editForm = useZodForm(userEditAdminSchema, { name: '', mbPoints: 0, status: 'STANDARD' });
+  const createForm = useZodForm(userCreateAdminSchema, {
+    name: '', phone: '', pin: '', mbPoints: 0, status: 'STANDARD',
+  });
 
   // FIX: API returns { users, total, limit, offset } — extract .users array
-  const load = () => apiFetch(token, `${API}/users`).then(data => setUsers(data.users ?? [])).catch((e) => setPageError(formatPageError(e)));
+  const load = () => {
+    setLoading(true);
+    apiFetch(token, `${API}/users`)
+      .then(data => setUsers(data.users ?? []))
+      .catch((e) => { setPageError(formatPageError(e)); toastErrorFromAppError(e, 'Не удалось загрузить пользователей'); })
+      .finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, [token]);
 
-  const handleSave = async () => {
+  const handleSave = editForm.submit(async (data) => {
+    setIsSavingEdit(true);
     try {
-      await apiFetch(token, `${API}/users/${editing}`, { method: 'PUT', body: form });
+      await apiFetch(token, `${API}/users/${editing}`, { method: 'PUT', body: data });
       setEditing(null);
+      toastSuccess('Сохранение выполнено');
       load();
-    } catch (err) { setPageError(formatPageError(err)); }
-  };
+    } catch (err) {
+      setPageError(formatPageError(err));
+      toastErrorFromAppError(err, 'Не удалось сохранить пользователя');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  });
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
+  const handleCreate = createForm.submit(async (data) => {
+    setIsCreating(true);
     try {
-      await apiFetch(token, `${API}/users`, { method: 'POST', body: createForm });
+      await apiFetch(token, `${API}/users`, { method: 'POST', body: data });
       setShowCreate(false);
-      setCreateForm({ name: '', phone: '', pin: '', mbPoints: 0, status: 'STANDARD' });
+      createForm.reset({ name: '', phone: '', pin: '', mbPoints: 0, status: 'STANDARD' });
+      toastSuccess('Сохранение выполнено');
       load();
-    } catch (err) { setPageError(formatPageError(err)); }
-  };
+    } catch (err) {
+      setPageError(formatPageError(err));
+      toastErrorFromAppError(err, 'Не удалось создать пользователя');
+    } finally {
+      setIsCreating(false);
+    }
+  });
 
   return (
     <>
@@ -325,7 +415,10 @@ function UsersPage() {
             <table>
               <thead><tr><th>Имя</th><th>Телефон</th><th>MB Баллы</th><th>Статус</th><th>Карты</th><th>Действия</th></tr></thead>
               <tbody>
-                {users.map(u => (
+                {/* A-M4 — render skeleton rows while loading */}
+                {loading && users.length === 0 ? (
+                  <SkeletonRow columns={6} rows={5} />
+                ) : users.map(u => (
                   <tr key={u.id}>
                     <td style={{ fontWeight: 700 }}>{u.name}</td>
                     <td>{u.phone}</td>
@@ -333,7 +426,10 @@ function UsersPage() {
                     <td><span className={`badge badge-${u.status?.toLowerCase()}`}>{u.status}</span></td>
                     <td>{u._count?.userCards || 0}</td>
                     <td>
-                      <button className="btn btn-sm btn-primary" onClick={() => { setEditing(u.id); setForm({ name: u.name, mbPoints: u.mbPoints, status: u.status }); }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => {
+                        setEditing(u.id);
+                        editForm.reset({ name: u.name, mbPoints: u.mbPoints ?? 0, status: u.status || 'STANDARD' });
+                      }}>
                         Изменить
                       </button>
                     </td>
@@ -347,21 +443,45 @@ function UsersPage() {
 
       {editing && (
         <div className="modal-overlay" onClick={() => setEditing(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <form className="modal" onClick={e => e.stopPropagation()} onSubmit={handleSave}>
             <h2 className="modal-title">Редактировать пользователя</h2>
-            <div className="form-group"><label className="form-label">Имя</label><input className="form-input" value={form.name || ''} onChange={e => setForm({...form, name: e.target.value})} /></div>
-            <div className="form-group"><label className="form-label">MB Баллы</label><input className="form-input" type="number" value={form.mbPoints || 0} onChange={e => setForm({...form, mbPoints: parseInt(e.target.value)})} /></div>
-            <div className="form-group"><label className="form-label">Статус</label>
-              <select className="form-select" value={form.status || ''} onChange={e => setForm({...form, status: e.target.value})}>
+            <div className="form-group">
+              <label className="form-label">Имя</label>
+              <input
+                className="form-input"
+                value={editForm.values.name || ''}
+                onChange={e => editForm.setField('name', e.target.value)}
+                onBlur={() => editForm.blurField('name')}
+              />
+              {editForm.errors.name && <small className="admin-error" style={{ color: 'var(--error)' }}>{editForm.errors.name}</small>}
+            </div>
+            <div className="form-group">
+              <label className="form-label">MB Баллы</label>
+              <input
+                className="form-input"
+                type="number"
+                value={editForm.values.mbPoints ?? 0}
+                onChange={e => editForm.setField('mbPoints', e.target.value)}
+                onBlur={() => editForm.blurField('mbPoints')}
+              />
+              {editForm.errors.mbPoints && <small className="admin-error" style={{ color: 'var(--error)' }}>{editForm.errors.mbPoints}</small>}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Статус</label>
+              <select
+                className="form-select"
+                value={editForm.values.status || ''}
+                onChange={e => editForm.setField('status', e.target.value)}
+                onBlur={() => editForm.blurField('status')}
+              >
                 <option value="STANDARD">Standard</option><option value="SILVER">Silver</option><option value="GOLD">Gold</option><option value="PLATINUM">Platinum</option><option value="BLOCKED">Blocked</option>
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Новый ПИН (если нужно)</label><input className="form-input" maxLength={4} placeholder="****" onChange={e => setForm({...form, pin: e.target.value})} /></div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn" onClick={() => setEditing(null)}>Отмена</button>
-              <button className="btn btn-primary" onClick={handleSave}>Сохранить</button>
+              <button type="button" className="btn" onClick={() => setEditing(null)}>Отмена</button>
+              <SpinnerButton type="submit" loading={isSavingEdit} className="btn btn-primary">Сохранить</SpinnerButton>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
@@ -369,12 +489,41 @@ function UsersPage() {
         <div className="modal-overlay" onClick={() => setShowCreate(false)}>
           <form className="modal" onClick={e => e.stopPropagation()} onSubmit={handleCreate}>
             <h2 className="modal-title">Новый пользователь</h2>
-            <div className="form-group"><label className="form-label">Имя</label><input className="form-input" required value={createForm.name} onChange={e => setCreateForm({...createForm, name: e.target.value})} /></div>
-            <div className="form-group"><label className="form-label">Телефон</label><input className="form-input" required value={createForm.phone} onChange={e => setCreateForm({...createForm, phone: e.target.value})} placeholder="+79..." /></div>
-            <div className="form-group"><label className="form-label">ПИН-код</label><input className="form-input" required maxLength={4} value={createForm.pin} onChange={e => setCreateForm({...createForm, pin: e.target.value})} /></div>
+            <div className="form-group">
+              <label className="form-label">Имя</label>
+              <input
+                className="form-input"
+                value={createForm.values.name}
+                onChange={e => createForm.setField('name', e.target.value)}
+                onBlur={() => createForm.blurField('name')}
+              />
+              {createForm.errors.name && <small className="admin-error" style={{ color: 'var(--error)' }}>{createForm.errors.name}</small>}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Телефон</label>
+              <input
+                className="form-input"
+                value={createForm.values.phone}
+                onChange={e => createForm.setField('phone', e.target.value)}
+                onBlur={() => createForm.blurField('phone')}
+                placeholder="+79..."
+              />
+              {createForm.errors.phone && <small className="admin-error" style={{ color: 'var(--error)' }}>{createForm.errors.phone}</small>}
+            </div>
+            <div className="form-group">
+              <label className="form-label">ПИН-код</label>
+              <input
+                className="form-input"
+                maxLength={4}
+                value={createForm.values.pin}
+                onChange={e => createForm.setField('pin', e.target.value)}
+                onBlur={() => createForm.blurField('pin')}
+              />
+              {createForm.errors.pin && <small className="admin-error" style={{ color: 'var(--error)' }}>{createForm.errors.pin}</small>}
+            </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" className="btn" onClick={() => setShowCreate(false)}>Отмена</button>
-              <button type="submit" className="btn btn-primary">Создать</button>
+              <SpinnerButton type="submit" loading={isCreating} className="btn btn-primary">Создать</SpinnerButton>
             </div>
           </form>
         </div>
@@ -384,32 +533,75 @@ function UsersPage() {
 }
 
 // ===== CARDS =====
+// A-M3 — z.coerce.number() guards every numeric input; NaN can never reach the API.
+const cardCreateAdminSchema = z.object({
+  name: nameSchema,
+  brandName: z.string().min(1, 'Поле обязательно'),
+  brandIcon: z.string().default('style'),
+  rarity: z.enum(['COMMON', 'RARE', 'EPIC', 'LEGENDARY']),
+  cashbackPercent: z.coerce.number().min(0),
+  mbValue: z.coerce.number().min(0),
+  maxHealth: z.coerce.number().min(0),
+  description: z.string().optional().default(''),
+});
+
 function CardsPage() {
   const { token } = useToken();
   const [cards, setCards] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', brandName: '', brandIcon: 'style', rarity: 'COMMON', cashbackPercent: 1.0, mbValue: 10, maxHealth: 100, description: '' });
   const [pageError, setPageError] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // { id, name } | null
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const load = () => apiFetch(token, `${API}/cards`).then(setCards).catch((e) => setPageError(formatPageError(e)));
+  const cardForm = useZodForm(cardCreateAdminSchema, {
+    name: '', brandName: '', brandIcon: 'style', rarity: 'COMMON',
+    cashbackPercent: 1.0, mbValue: 10, maxHealth: 100, description: '',
+  });
+
+  const load = () => {
+    setLoading(true);
+    apiFetch(token, `${API}/cards`)
+      .then(setCards)
+      .catch((e) => { setPageError(formatPageError(e)); toastErrorFromAppError(e, 'Не удалось загрузить карты'); })
+      .finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, [token]);
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
+  const handleCreate = cardForm.submit(async (data) => {
+    setIsCreating(true);
     try {
-      await apiFetch(token, `${API}/cards`, { method: 'POST', body: { ...form, cashbackPercent: parseFloat(form.cashbackPercent), mbValue: parseInt(form.mbValue), maxHealth: parseInt(form.maxHealth) } });
+      await apiFetch(token, `${API}/cards`, { method: 'POST', body: data });
       setShowCreate(false);
-      setForm({ name: '', brandName: '', brandIcon: 'style', rarity: 'COMMON', cashbackPercent: 1.0, mbValue: 10, maxHealth: 100, description: '' });
+      cardForm.reset({
+        name: '', brandName: '', brandIcon: 'style', rarity: 'COMMON',
+        cashbackPercent: 1.0, mbValue: 10, maxHealth: 100, description: '',
+      });
+      toastSuccess('Сохранение выполнено');
       load();
-    } catch (err) { setPageError(formatPageError(err)); }
-  };
+    } catch (err) {
+      setPageError(formatPageError(err));
+      toastErrorFromAppError(err, 'Не удалось создать карту');
+    } finally {
+      setIsCreating(false);
+    }
+  });
 
-  const handleDelete = async (id) => {
-    if (!confirm('Деактивировать эту карту?')) return;
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    setIsDeleting(true);
     try {
-      await apiFetch(token, `${API}/cards/${id}`, { method: 'DELETE' });
+      await apiFetch(token, `${API}/cards/${confirmDelete.id}`, { method: 'DELETE' });
+      setConfirmDelete(null);
+      toastSuccess('Удаление выполнено');
       load();
-    } catch (err) { setPageError(formatPageError(err)); }
+    } catch (err) {
+      setPageError(formatPageError(err));
+      toastErrorFromAppError(err, 'Не удалось удалить карту');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -427,7 +619,10 @@ function CardsPage() {
             <table>
               <thead><tr><th>Имя</th><th>Бренд</th><th>Редкость</th><th>Кэшбэк</th><th>MB</th><th>Здоровье</th><th>Статус</th><th>Действия</th></tr></thead>
               <tbody>
-                {cards.map(c => (
+                {/* A-M4 — skeleton rows while loading */}
+                {loading && cards.length === 0 ? (
+                  <SkeletonRow columns={8} rows={5} />
+                ) : cards.map(c => (
                   <tr key={c.id}>
                     <td style={{ fontWeight: 700 }}>{c.name}</td>
                     <td>{c.brandName}</td>
@@ -436,7 +631,7 @@ function CardsPage() {
                     <td>{c.mbValue}</td>
                     <td>{c.maxHealth}</td>
                     <td>{c.isActive ? <span style={{ color: 'var(--success)' }}>●</span> : <span style={{ color: 'var(--error)' }}>●</span>}</td>
-                    <td><button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id)}>Удалить</button></td>
+                    <td><button className="btn btn-sm btn-danger" onClick={() => setConfirmDelete({ id: c.id, name: c.name })}>Удалить</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -449,27 +644,73 @@ function CardsPage() {
         <div className="modal-overlay" onClick={() => setShowCreate(false)}>
           <form className="modal" onClick={e => e.stopPropagation()} onSubmit={handleCreate}>
             <h2 className="modal-title">Новая карта</h2>
-            <div className="form-group"><label className="form-label">Название</label><input className="form-input" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-            <div className="form-group"><label className="form-label">Бренд</label><input className="form-input" required value={form.brandName} onChange={e => setForm({...form, brandName: e.target.value})} /></div>
-            <div className="form-group"><label className="form-label">Иконка (Material Icon)</label><input className="form-input" value={form.brandIcon} onChange={e => setForm({...form, brandIcon: e.target.value})} /></div>
+            <div className="form-group">
+              <label className="form-label">Название</label>
+              <input className="form-input" value={cardForm.values.name}
+                onChange={e => cardForm.setField('name', e.target.value)}
+                onBlur={() => cardForm.blurField('name')} />
+              {cardForm.errors.name && <small className="admin-error" style={{ color: 'var(--error)' }}>{cardForm.errors.name}</small>}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Бренд</label>
+              <input className="form-input" value={cardForm.values.brandName}
+                onChange={e => cardForm.setField('brandName', e.target.value)}
+                onBlur={() => cardForm.blurField('brandName')} />
+              {cardForm.errors.brandName && <small className="admin-error" style={{ color: 'var(--error)' }}>{cardForm.errors.brandName}</small>}
+            </div>
+            <div className="form-group"><label className="form-label">Иконка (Material Icon)</label>
+              <input className="form-input" value={cardForm.values.brandIcon}
+                onChange={e => cardForm.setField('brandIcon', e.target.value)} />
+            </div>
             <div className="form-group"><label className="form-label">Редкость</label>
-              <select className="form-select" value={form.rarity} onChange={e => setForm({...form, rarity: e.target.value})}>
+              <select className="form-select" value={cardForm.values.rarity}
+                onChange={e => cardForm.setField('rarity', e.target.value)}>
                 <option value="COMMON">Common</option><option value="RARE">Rare</option><option value="EPIC">Epic</option><option value="LEGENDARY">Legendary</option>
               </select>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-              <div className="form-group"><label className="form-label">Кэшбэк %</label><input className="form-input" type="number" step="0.1" value={form.cashbackPercent} onChange={e => setForm({...form, cashbackPercent: e.target.value})} /></div>
-              <div className="form-group"><label className="form-label">MB Стоимость</label><input className="form-input" type="number" value={form.mbValue} onChange={e => setForm({...form, mbValue: e.target.value})} /></div>
-              <div className="form-group"><label className="form-label">Макс. HP</label><input className="form-input" type="number" value={form.maxHealth} onChange={e => setForm({...form, maxHealth: e.target.value})} /></div>
+              <div className="form-group">
+                <label className="form-label">Кэшбэк %</label>
+                <input className="form-input" type="number" step="0.1" value={cardForm.values.cashbackPercent}
+                  onChange={e => cardForm.setField('cashbackPercent', e.target.value)}
+                  onBlur={() => cardForm.blurField('cashbackPercent')} />
+                {cardForm.errors.cashbackPercent && <small className="admin-error" style={{ color: 'var(--error)' }}>{cardForm.errors.cashbackPercent}</small>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">MB Стоимость</label>
+                <input className="form-input" type="number" value={cardForm.values.mbValue}
+                  onChange={e => cardForm.setField('mbValue', e.target.value)}
+                  onBlur={() => cardForm.blurField('mbValue')} />
+                {cardForm.errors.mbValue && <small className="admin-error" style={{ color: 'var(--error)' }}>{cardForm.errors.mbValue}</small>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Макс. HP</label>
+                <input className="form-input" type="number" value={cardForm.values.maxHealth}
+                  onChange={e => cardForm.setField('maxHealth', e.target.value)}
+                  onBlur={() => cardForm.blurField('maxHealth')} />
+                {cardForm.errors.maxHealth && <small className="admin-error" style={{ color: 'var(--error)' }}>{cardForm.errors.maxHealth}</small>}
+              </div>
             </div>
-            <div className="form-group"><label className="form-label">Описание</label><input className="form-input" value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>
+            <div className="form-group"><label className="form-label">Описание</label>
+              <input className="form-input" value={cardForm.values.description}
+                onChange={e => cardForm.setField('description', e.target.value)} />
+            </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" className="btn" onClick={() => setShowCreate(false)}>Отмена</button>
-              <button type="submit" className="btn btn-primary">Создать</button>
+              <SpinnerButton type="submit" loading={isCreating} className="btn btn-primary">Создать</SpinnerButton>
             </div>
           </form>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Деактивировать карту?"
+        message={confirmDelete ? `Карта «${confirmDelete.name}» будет деактивирована.` : ''}
+        confirmLabel={isDeleting ? 'Выполняется…' : 'Удалить'}
+        onConfirm={handleDelete}
+        onCancel={() => (isDeleting ? null : setConfirmDelete(null))}
+      />
     </>
   );
 }
@@ -567,9 +808,15 @@ function SimulatePage() {
               </select>
             </div>
             <div className="form-group"><label className="form-label">Мерчант / Описание</label><input className="form-input" value={form.merchant} onChange={e => setForm({...form, merchant: e.target.value})} /></div>
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', opacity: loading ? 0.7 : 1 }} disabled={loading}>
-              {loading ? '⏳ Выполняется...' : (<><span className="material-icons-outlined" style={{ fontSize: 18 }}>play_arrow</span> Выполнить транзакцию</>)}
-            </button>
+            {/* A-M2 — SpinnerButton owns disabled+spinner for the simulate mutation. */}
+            <SpinnerButton
+              type="submit"
+              loading={loading}
+              className="btn btn-primary"
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              <span className="material-icons-outlined" style={{ fontSize: 18 }}>play_arrow</span> Выполнить транзакцию
+            </SpinnerButton>
           </form>
         </div>
 
@@ -624,7 +871,11 @@ export default function App() {
   const { token, clearToken } = useToken();
   const [user, setUser] = useState(null);
   const [page, setPage] = useState('dashboard');
-  const [theme, setTheme] = useState(readStoredTheme);
+  // A-M5 — explicit lazy initializer. The previous form `useState(readStoredTheme)`
+  // accidentally relied on React's auto-call-if-function behavior; the explicit
+  // arrow makes intent clear and is safe against future React semantics changes
+  // (e.g. component-as-state-initializer linting). Per TRIAGE A-M5.
+  const [theme, setTheme] = useState(() => readStoredTheme());
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -642,7 +893,12 @@ export default function App() {
       });
   }, [token, clearToken]);
 
-  if (!user) return <LoginPage onLogin={setUser} />;
+  if (!user) return (
+    <>
+      <LoginPage onLogin={setUser} />
+      <ToastHost />
+    </>
+  );
 
   return (
     <div className="admin-shell">
@@ -707,6 +963,7 @@ export default function App() {
         {page === 'cards'     && <CardsPage />}
         {page === 'simulate'  && <SimulatePage />}
       </main>
+      <ToastHost />
     </div>
   );
 }

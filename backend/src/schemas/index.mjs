@@ -3,14 +3,23 @@
 // Admin (Vite/ESM) imports from this file so it shares the EXACT validation
 // surface the backend enforces. DO NOT duplicate schemas — drift defeats D-15.
 //
-// To add another domain's schemas, append a `require('./<domain>.js')` line and
-// re-export each named schema. NEVER define a schema in this file.
+// To add another domain's schemas, append an `import` line and re-export each
+// named schema. NEVER define a schema in this file.
+//
+// Phase 4 / 04-04 — switched from `createRequire(import.meta.url)` to plain
+// `import` syntax. The previous form pulled in `node:module`, which Vite/Rollup
+// cannot bundle for the browser (admin build broke). Plain `import` of the .js
+// CJS files works in BOTH Node (native CJS interop) and Vite (CJS-to-ESM
+// transform), so the shim is now isomorphic.
 
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const auth = require('./auth.js');
-const cards = require('./cards.js');
+// CJS modules expose `module.exports = { ... }`. Vite/Rollup synthesize the
+// keys as named exports on the module namespace object (via the bundled CJS
+// interop plugin), and Node ≥22 does the same when it can statically analyse
+// the CJS module. `import * as` therefore gives us a single import shape that
+// works in BOTH the bundler (admin build) and Node (backend tests / shim
+// loading at process boot).
+import * as auth from './auth.js';
+import * as cards from './cards.js';
 
 // auth.js
 export const phoneSchema      = auth.phoneSchema;
