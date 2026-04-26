@@ -20,6 +20,35 @@ interface User {
 // D-06: structured error shape replacing the prior `string | null`.
 export type AppError = { code: string; message: string; requestId?: string } | null;
 
+// Plan 04-01 D-01/D-02 — Toast slice driven by useStore; consumed by <ToastHost />.
+export type ToastType = 'success' | 'error' | 'warning' | 'info';
+export interface ToastEntry {
+  key: string;
+  type: ToastType;
+  message: string;
+  requestId?: string;
+  autoDismissMs?: number;
+  createdAt: number;
+}
+export interface ToastSlice {
+  queue: ToastEntry[];
+  show: (
+    message: string,
+    type: ToastType,
+    opts?: { key?: string; requestId?: string; autoDismissMs?: number },
+  ) => void;
+  hide: (key?: string) => void;
+}
+
+// Plan 04-01 D-09 — netinfo-driven slice.
+export interface NetworkSlice {
+  isOnline: boolean;
+  setOnline: (v: boolean) => void;
+}
+
+// Plan 04-01 D-10 — rate-limit registry keyed by `${METHOD} ${path}`.
+export type RateLimitMap = Record<string, { until: number; remaining?: number }>;
+
 interface AppState {
   theme: 'light' | 'dark' | 'system';
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
@@ -84,6 +113,13 @@ interface AppState {
   // Settings
   cardDesign: string;
   setCardDesign: (design: string) => Promise<void>;
+
+  // Plan 04-01 — UX primitives plumbing
+  toast: ToastSlice;
+  network: NetworkSlice;
+  rateLimit: RateLimitMap;
+  setRateLimit: (key: string, value: { until: number; remaining?: number }) => void;
+  clearRateLimit: (key: string) => void;
 }
 
 /**
@@ -120,6 +156,51 @@ export const useStore = create<AppState>()(
       error: null,
       clearError: () => set({ error: null }),
       cardDesign: 'default',
+
+      // Plan 04-01 — Toast / network / rate-limit slices (ephemeral; excluded from persist).
+      toast: {
+        queue: [] as ToastEntry[],
+        show: (message, type, opts) => {
+          set((s) => {
+            const key =
+              opts?.key ?? `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            const entry: ToastEntry = {
+              key,
+              type,
+              message,
+              requestId: opts?.requestId,
+              autoDismissMs: opts?.autoDismissMs,
+              createdAt: Date.now(),
+            };
+            const queue = s.toast.queue
+              .filter((e) => e.key !== key)
+              .concat(entry)
+              .slice(-5); // cap 5; drop oldest
+            return { toast: { ...s.toast, queue } };
+          });
+        },
+        hide: (key) =>
+          set((s) => ({
+            toast: {
+              ...s.toast,
+              queue: key ? s.toast.queue.filter((e) => e.key !== key) : [],
+            },
+          })),
+      },
+      network: {
+        isOnline: true,
+        setOnline: (v) =>
+          set((s) => ({ network: { ...s.network, isOnline: v } })),
+      },
+      rateLimit: {} as RateLimitMap,
+      setRateLimit: (key, value) =>
+        set((s) => ({ rateLimit: { ...s.rateLimit, [key]: value } })),
+      clearRateLimit: (key) =>
+        set((s) => {
+          const next = { ...s.rateLimit };
+          delete next[key];
+          return { rateLimit: next };
+        }),
 
       setCardDesign: async (design) => {
         // D-09: UI pref persist failure is non-sensitive — keep silent but breadcrumb.

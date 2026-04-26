@@ -16,9 +16,13 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { useStore } from '../stores/useStore';
 import BiometricGuard from '../components/BiometricGuard';
 import BootGate from '../components/BootGate';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { OfflineBanner } from '../components/OfflineBanner';
+import { ToastHost } from '../components/Toast';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -39,15 +43,28 @@ function RootLayout() {
     if (loaded) SplashScreen.hideAsync();
   }, [loaded]);
 
+  // Plan 04-01 D-12 — wire NetInfo into useStore.network so OfflineBanner mounts
+  // and ActionButton disables on connectivity loss.
+  useEffect(() => {
+    const sub = NetInfo.addEventListener((s) =>
+      useStore.getState().network.setOnline(Boolean(s.isConnected)),
+    );
+    return () => sub();
+  }, []);
+
   if (!loaded) return null;
 
   return (
     <ThemeProvider value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <BootGate>
-        <BiometricGuard>
-          <Stack screenOptions={{ headerShown: false }} />
-        </BiometricGuard>
-      </BootGate>
+      <ErrorBoundary scope="root">
+        <OfflineBanner />
+        <ToastHost />
+        <BootGate>
+          <BiometricGuard>
+            <Stack screenOptions={{ headerShown: false }} />
+          </BiometricGuard>
+        </BootGate>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }

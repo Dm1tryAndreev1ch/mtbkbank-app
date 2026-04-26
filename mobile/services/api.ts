@@ -2,7 +2,9 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { NativeModules, Platform } from 'react-native';
 import * as Sentry from '@sentry/react-native';
+import { router } from 'expo-router';
 import * as tokenStore from './tokenStore';
+import { useStore } from '../stores/useStore';
 
 /** Только localhost / IPv4 — туннели *.exp.direct и т.п. на :3000 не подходят. */
 function isUsableDevApiHost(host: string): boolean {
@@ -113,12 +115,57 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Plan 04-01 D-10/D-11 — 429 + 401-on-refresh side-effects.
+// Mounted FIRST so 401-refresh handling below sees an unhandled rejection it can
+// process; this interceptor only writes to the store + routes for refresh-401.
+api.interceptors.response.use(undefined, async (err) => {
+  const status = err?.response?.status;
+  const config = err?.config ?? {};
+  if (status === 429) {
+    const retryAfterRaw = err.response?.headers?.['retry-after'];
+    const retryAfter = Number(retryAfterRaw ?? 60) || 60;
+    const method = String(config.method ?? 'GET').toUpperCase();
+    const path = String(config.url ?? '');
+    const key = `${method} ${path}`;
+    try {
+      useStore.getState().setRateLimit(key, { until: Date.now() + retryAfter * 1000 });
+      const minutes = Math.max(1, Math.ceil(retryAfter / 60));
+      useStore
+        .getState()
+        .toast.show(`Слишком много попыток. Попробуйте через ${minutes} мин.`, 'warning');
+    } catch {
+      // store may not be hydrated in early-boot edge case
+    }
+  }
+  if (status === 401 && config._isRefresh === true) {
+    await tokenStore.clear().catch(() => undefined);
+    try {
+      useStore.setState((s) => ({ ...s, isAuthed: false, user: null, token: null }));
+      useStore.getState().toast.show('Сессия истекла, войдите снова', 'warning');
+    } catch {
+      // best-effort
+    }
+    try {
+      router.replace('/login');
+    } catch {
+      // best-effort — router may not be ready in tests
+    }
+  }
+  return Promise.reject(err);
+});
+
 // Response interceptor — delegates 401-refresh single-flight to tokenStore.refreshOnce (D-21).
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error?.config;
     const status = error?.response?.status;
+
+    // Refresh-flagged requests are handled by the side-effect interceptor above;
+    // do NOT attempt the access-token refresh dance for them (Plan 04-01 D-11).
+    if (originalRequest?._isRefresh === true) {
+      return Promise.reject(error);
+    }
 
     if (
       status !== 401 ||
@@ -134,9 +181,14 @@ api.interceptors.response.use(
       const newAccessToken = await tokenStore.refreshOnce(async (currentRefresh) => {
         // Bare axios.post (NOT the api instance) so the request interceptor doesn't
         // attach a stale Authorization header to the refresh call.
-        const refreshResp = await axios.post(absoluteApiUrl('/auth/refresh'), {
-          refreshToken: currentRefresh,
-        });
+        // Plan 04-01 D-11 — `_isRefresh:true` so the side-effect interceptor in
+        // tokenStore-aware api instance routes 401s to /login. Bare axios doesn't
+        // hit that interceptor, so on rejection here we wipe + redirect ourselves.
+        const refreshResp = await axios.post(
+          absoluteApiUrl('/auth/refresh'),
+          { refreshToken: currentRefresh },
+          { _isRefresh: true } as any,
+        );
         return {
           accessToken: refreshResp.data?.accessToken,
           refreshToken: refreshResp.data?.refreshToken,
@@ -148,8 +200,19 @@ api.interceptors.response.use(
       originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
       return api(originalRequest);
     } catch {
-      // Refresh failed — wipe local token state. Phase 4 / UX-08 wires the explicit redirect.
+      // Refresh failed — wipe local token state and surface UX-08 (D-11) redirect.
       await tokenStore.clear();
+      try {
+        useStore.setState((s) => ({ ...s, isAuthed: false, user: null, token: null }));
+        useStore.getState().toast.show('Сессия истекла, войдите снова', 'warning');
+      } catch {
+        // best-effort
+      }
+      try {
+        router.replace('/login');
+      } catch {
+        // best-effort
+      }
       return Promise.reject(error);
     }
   },
