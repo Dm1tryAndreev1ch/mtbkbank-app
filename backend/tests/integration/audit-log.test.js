@@ -1,25 +1,28 @@
 /**
- * Phase 3 — Plan 03-02 — SEC-14, D-01..D-04 integration coverage.
+ * Phase 3 — Plan 03-02 / 03-10 — SEC-14, D-01..D-04 integration coverage.
  *
  * AuditLog write-path contract: writeAudit must commit in the same
  * prisma.$transaction as the mutation it audits, scrub forbidden keys,
  * store JSONB before/after payloads, and remain append-only.
  *
- * Three cases are live now (driven directly via prisma.$transaction).
- * Two stay `it.todo` until 03-10 wires the admin-route caller — those
- * cases (rollback-on-throw + append-only via API) only become meaningful
- * once a real mutation exists alongside the writeAudit call.
+ * 03-10 flips the rollback + append-only cases to live now that
+ * routes/admin.js wires writeAudit(tx, ...) inside prisma.$transaction
+ * for every mutation route.
  */
 
 const supertest = require('supertest');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { truncateAll, getPrisma } = require('../setup');
 
 let app;
 let prisma;
+let auditLog;
 
 beforeAll(() => {
   jest.resetModules();
   app = require('../../src/index');
+  auditLog = require('../../src/services/auditLog');
   prisma = getPrisma();
 });
 
@@ -56,7 +59,39 @@ describe('AuditLog (SEC-14, D-01..D-04)', () => {
     expect(rows[0].requestId).toBe('r-1');
   });
 
-  it.todo('writeAudit throwing rolls back the mutation (Phase-4.5 dependency, D-03)');
+  it('writeAudit throwing rolls back the mutation (Phase-4.5 dependency, D-03)', async () => {
+    const target = await prisma.user.create({
+      data: { phone: '+79991234560', pin: 'h', name: 'Original' },
+    });
+    const admin = await prisma.user.create({
+      data: { phone: '+79991234561', pin: 'h', name: 'Admin', isAdmin: true },
+    });
+    const token = jwt.sign(
+      { userId: admin.id, isAdmin: true },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    const original = auditLog.writeAudit;
+    auditLog.writeAudit = async () => {
+      throw new Error('simulated_audit_failure');
+    };
+
+    try {
+      const res = await supertest(app)
+        .put(`/api/admin/users/${target.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Changed' });
+      expect(res.status).toBeGreaterThanOrEqual(500);
+    } finally {
+      auditLog.writeAudit = original;
+    }
+
+    const after = await prisma.user.findUnique({ where: { id: target.id } });
+    expect(after.name).toBe('Original'); // ROLLED BACK
+    const auditRows = await prisma.auditLog.findMany();
+    expect(auditRows).toHaveLength(0); // no audit row either
+  });
 
   it('AuditLog.payload is JSONB and stores scrubbed before/after (D-01, D-02)', async () => {
     const { writeAudit } = require('../../src/services/auditLog');
@@ -108,9 +143,34 @@ describe('AuditLog (SEC-14, D-01..D-04)', () => {
     expect(row.payload.after.ok).toBe('visible');
   });
 
-  it.todo('AuditLog rows are append-only — no DELETE endpoint exposed (D-04)');
-});
+  it('AuditLog rows are append-only — no DELETE endpoint exposed (D-04)', async () => {
+    const admin = await prisma.user.create({
+      data: {
+        phone: '+79991234562',
+        pin: await bcrypt.hash('1234', 4),
+        name: 'Admin',
+        isAdmin: true,
+      },
+    });
+    const token = jwt.sign(
+      { userId: admin.id, isAdmin: true },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+    // Create an audit row via a real admin mutation.
+    const create = await supertest(app)
+      .post('/api/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ phone: '+79990000111', pin: '1234', name: 'New' });
+    expect(create.status).toBeLessThan(500);
 
-// supertest unused while admin-route caller still lives in 03-10
-void supertest;
-void app;
+    const rows = await prisma.auditLog.findMany();
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+
+    // No DELETE endpoint exists for audit-log — Express returns 404.
+    const res = await supertest(app)
+      .delete(`/api/admin/audit-log/${rows[0].id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect([404, 405]).toContain(res.status);
+  });
+});
