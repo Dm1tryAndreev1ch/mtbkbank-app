@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Platform,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-import * as SecureStore from 'expo-secure-store';
+import * as tokenStore from '../services/tokenStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, {
   FadeIn, FadeOut,
@@ -16,11 +16,12 @@ import { useThemeColor } from '../hooks/useThemeColor';
 /**
  * Биометрический гуард.
  *
- * Источник правды — SecureStore ('token'), НЕ zustand.
- * Zustand гидрируется асинхронно и вызывает лишние ре-рендеры.
+ * Источник правды — tokenStore.isAuthed() (D-03, REL-01). После Plan 02-09 BootGate
+ * гарантирует, что tokenStore.hydrate() завершился до монтирования этого компонента,
+ * поэтому isAuthed() читается синхронно из in-memory mirror.
  *
  * Логика:
- * 1. При монтировании читаем токен из SecureStore.
+ * 1. При монтировании синхронно проверяем tokenStore.isAuthed().
  * 2. Если токена нет — пропускаем сразу.
  * 3. Если токен есть — показываем экран биометрии и запускаем authenticate().
  * 4. При успехе: isUnlocked = true, экран скрывается навсегда (до перезапуска).
@@ -28,7 +29,7 @@ import { useThemeColor } from '../hooks/useThemeColor';
  */
 export default function BiometricGuard({ children }: { children: React.ReactNode }) {
   // Три состояния загрузки:
-  // null  = ещё не проверили SecureStore
+  // null  = ещё не проверили tokenStore
   // false = токена нет, пропускаем
   // true  = токен есть, нужна биометрия
   const [hasToken, setHasToken] = useState<boolean | null>(null);
@@ -99,29 +100,27 @@ export default function BiometricGuard({ children }: { children: React.ReactNode
     }
   };
 
-  // Читаем токен из SecureStore один раз при монтировании
+  // Синхронно читаем tokenStore.isAuthed() один раз при монтировании.
+  // tokenStore — SSOT для access/refresh токенов (REL-01); BootGate гарантирует hydrate
+  // до этого момента (Plan 02-09).
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    SecureStore.getItemAsync('token')
-      .then(t => {
-        if (t) {
-          setHasToken(true);
-          // Запускаем биометрию только один раз
-          if (!didAuth.current) {
-            didAuth.current = true;
-            authenticate();
-          }
-        } else {
-          setHasToken(false);
-        }
-      })
-      .catch(() => setHasToken(false));
+    if (tokenStore.isAuthed()) {
+      setHasToken(true);
+      // Запускаем биометрию только один раз
+      if (!didAuth.current) {
+        didAuth.current = true;
+        authenticate();
+      }
+    } else {
+      setHasToken(false);
+    }
   }, []);
 
   // Web — всегда пропускаем
   if (Platform.OS === 'web') return <>{children}</>;
 
-  // Ещё не прочитали SecureStore — не рендерим ничего (splash скрывает)
+  // Ещё не прочитали tokenStore — не рендерим ничего (splash скрывает)
   if (hasToken === null) return null;
 
   // Токена нет или уже разблокировано — рендерим приложение
