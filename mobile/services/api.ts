@@ -1,8 +1,8 @@
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { NativeModules, Platform } from 'react-native';
 import * as Sentry from '@sentry/react-native';
+import * as tokenStore from './tokenStore';
 
 /** Только localhost / IPv4 — туннели *.exp.direct и т.п. на :3000 не подходят. */
 function isUsableDevApiHost(host: string): boolean {
@@ -19,7 +19,14 @@ function hostFromBundleScript(): string | null {
     if (!url) return null;
     const m = String(url).match(/^https?:\/\/([^/:[?#]+)/i);
     return m ? m[1] : null;
-  } catch {
+  } catch (e) {
+    // Defensive: NativeModules may be unavailable in some test envs. Surface via breadcrumb.
+    Sentry.addBreadcrumb({
+      category: 'api.hostFromBundleScript',
+      level: 'warning',
+      message: 'failed to read scriptURL',
+      data: { error: String((e as any)?.message || e).slice(0, 200) },
+    });
     return null;
   }
 }
@@ -99,50 +106,67 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-api.interceptors.request.use(async (config) => {
+// Request interceptor — synchronous in-memory token read via tokenStore (REL-01).
+api.interceptors.request.use((config) => {
   if (isPublicAuthPath(config.url)) return config;
-  const token = await SecureStore.getItemAsync('token');
+  const token = tokenStore.getAccess();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
+// Response interceptor — delegates 401-refresh single-flight to tokenStore.refreshOnce (D-21).
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      const reqUrl = originalRequest.url || '';
-      if (/\/auth\/(register|login)(\?|$)/i.test(reqUrl)) {
-        return Promise.reject(error);
-      }
-      originalRequest._retry = true;
-      try {
-        const refreshToken = await SecureStore.getItemAsync('refreshToken');
-        if (refreshToken) {
-          const res = await axios.post(absoluteApiUrl('/auth/refresh'), { refreshToken });
-          if (res.data.accessToken) {
-            await SecureStore.setItemAsync('token', res.data.accessToken);
-            if (res.data.refreshToken) {
-              await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
-            }
-            originalRequest.headers.Authorization = `Bearer ${res.data.accessToken}`;
-            return api(originalRequest);
-          }
-        }
-      } catch {}
+    const originalRequest = error?.config;
+    const status = error?.response?.status;
+
+    if (
+      status !== 401 ||
+      !originalRequest ||
+      originalRequest._retried ||
+      isPublicAuthPath(originalRequest.url)
+    ) {
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
-  }
+    originalRequest._retried = true;
+
+    try {
+      const newAccessToken = await tokenStore.refreshOnce(async (currentRefresh) => {
+        // Bare axios.post (NOT the api instance) so the request interceptor doesn't
+        // attach a stale Authorization header to the refresh call.
+        const refreshResp = await axios.post(absoluteApiUrl('/auth/refresh'), {
+          refreshToken: currentRefresh,
+        });
+        return {
+          accessToken: refreshResp.data?.accessToken,
+          refreshToken: refreshResp.data?.refreshToken,
+          // userId is NOT included in /auth/refresh response — leave undefined.
+        };
+      });
+
+      originalRequest.headers = originalRequest.headers || {};
+      originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+      return api(originalRequest);
+    } catch {
+      // Refresh failed — wipe local token state. Phase 4 / UX-08 wires the explicit redirect.
+      await tokenStore.clear();
+      return Promise.reject(error);
+    }
+  },
 );
 
 export const login = async (phone: string, pin: string) => {
   const res = await api.post(absoluteApiUrl('/auth/login'), { phone, pin });
-  if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
-  if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
-  // Phase 1 OBS-03: attribute subsequent Sentry events to the authenticated user.
-  // Phase 2 REL-01 will move this into tokenStore.setTokens().
-  const userId = res.data?.user?.id;
-  if (userId) Sentry.setUser({ id: String(userId) });
+  const { accessToken, refreshToken, user } = res.data || {};
+  if (accessToken && refreshToken) {
+    // Let setTokens throw on persist failure — useStore surfaces D-09 Russian copy.
+    await tokenStore.setTokens(
+      accessToken,
+      refreshToken,
+      user?.id !== undefined ? { userId: user.id } : undefined,
+    );
+  }
   return res;
 };
 
@@ -155,21 +179,33 @@ export type RegisterPayload = {
 };
 
 export const register = async (body: RegisterPayload) => {
+  // Wipe any prior token state before registration (idempotent).
+  await tokenStore.clear();
+  const res = await api.post(absoluteApiUrl('/auth/register'), body);
+  const { accessToken, refreshToken, user } = res.data || {};
+  if (accessToken && refreshToken) {
+    await tokenStore.setTokens(
+      accessToken,
+      refreshToken,
+      user?.id !== undefined ? { userId: user.id } : undefined,
+    );
+  }
+  return res;
+};
+
+export const logout = async () => {
+  // Best-effort server-side revocation; surface via Sentry breadcrumb on failure (NOT silent).
   try {
-    await SecureStore.deleteItemAsync('token');
-  } catch {}
-  try {
-    await SecureStore.deleteItemAsync('refreshToken');
-  } catch {}
-  return api.post(absoluteApiUrl('/auth/register'), body).then(async (res) => {
-    try {
-      if (res.data.accessToken) await SecureStore.setItemAsync('token', res.data.accessToken);
-      if (res.data.refreshToken) await SecureStore.setItemAsync('refreshToken', res.data.refreshToken);
-    } catch {
-      /* store всё равно выставит токен в памяти */
-    }
-    return res;
-  });
+    await api.post('/auth/logout');
+  } catch (e) {
+    Sentry.addBreadcrumb({
+      category: 'auth.logout',
+      level: 'warning',
+      message: 'server logout failed',
+      data: { error: String((e as any)?.message || e).slice(0, 200) },
+    });
+  }
+  await tokenStore.clear();
 };
 
 // User
