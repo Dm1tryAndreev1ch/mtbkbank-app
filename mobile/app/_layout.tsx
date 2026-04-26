@@ -18,6 +18,7 @@ import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import { useStore } from '../stores/useStore';
 import BiometricGuard from '../components/BiometricGuard';
+import BootGate from '../components/BootGate';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -42,9 +43,11 @@ function RootLayout() {
 
   return (
     <ThemeProvider value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <BiometricGuard>
-        <Stack screenOptions={{ headerShown: false }} />
-      </BiometricGuard>
+      <BootGate>
+        <BiometricGuard>
+          <Stack screenOptions={{ headerShown: false }} />
+        </BiometricGuard>
+      </BootGate>
     </ThemeProvider>
   );
 }
