@@ -12,8 +12,6 @@ import { useStore } from '../stores/useStore';
 import * as api from '../services/api';
 import { Fonts, Spacing, BorderRadius, Shadows, formatMoney } from '../constants/theme';
 import { useThemeColor } from '../hooks/useThemeColor';
-import AppAlert from '../components/AppAlert';        // ← импорт компонента
-import { useAppAlert } from '../hooks/useAppAlert';   // ← импорт хука
 import { ActionButton } from '../components/ActionButton';
 import { InlineError, InlineErrorIssue } from '../components/InlineError';
 
@@ -73,9 +71,6 @@ export default function PaymentScreen() {
   const [search, setSearch]     = useState('');
   // M-M1: payment-mutation issues are tracked separately from background reload errors.
   const [paymentIssues, setPaymentIssues] = useState<InlineErrorIssue[] | undefined>(undefined);
-
-  // ↓ одна строка вместо кучи useState для алертов
-  const alert = useAppAlert();
 
   const { accounts, loadAccounts } = useStore();
 
@@ -302,8 +297,6 @@ export default function PaymentScreen() {
         </KeyboardAvoidingView>
       )}
 
-      {/* ─── Алерт — одна строка в конце ──────────── */}
-      <AppAlert {...alert.props} colors={colors} />
     </SafeAreaView>
   );
 }

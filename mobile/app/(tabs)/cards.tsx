@@ -15,6 +15,7 @@ import {
 import Animated2, { FadeIn } from 'react-native-reanimated';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ActionButton } from '../../components/ActionButton';
 
 type Rarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
@@ -768,9 +769,15 @@ export default function CardsScreen() {
                   <Text style={styles.questTitle}>{q.quest?.title || 'Задание'}</Text>
                   <Text style={styles.questDesc} numberOfLines={2}>{q.quest?.description || ''}</Text>
                   {q.completed && !q.claimed ? (
-                    <TouchableOpacity style={styles.claimButton} onPress={async () => { await apiClient.claimQuest(q.id); loadQuests(); loadUser(); }}>
-                      <Text style={styles.claimButtonText}>Забрать</Text>
-                    </TouchableOpacity>
+                    <ActionButton
+                      label="Забрать"
+                      endpointKey={`claimQuest:${q.id}`}
+                      onPress={async () => {
+                        await apiClient.claimQuest(q.id);
+                        loadQuests();
+                        loadUser();
+                      }}
+                    />
                   ) : q.claimed ? (
                     <View style={styles.completedBadge}>
                       <MaterialIcons name="check-circle" size={14} color="#22c55e" />
