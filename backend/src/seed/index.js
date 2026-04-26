@@ -1,10 +1,16 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { logger } = require('../logger');
+const { env } = require('../env');
 
 const prisma = new PrismaClient();
 
 async function main() {
+  if (env.NODE_ENV === 'production') {
+    logger.warn('seed script refused to run in production (NODE_ENV=production)');
+    process.exit(1);
+  }
+
   logger.info('🌱 Начинаем заполнение базы данных...');
 
   // Clean existing data
