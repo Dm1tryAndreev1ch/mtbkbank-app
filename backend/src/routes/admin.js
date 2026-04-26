@@ -1,12 +1,13 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { processCardDrop } = require('../services/cardEngine');
 const { logger } = require('../logger');
 const router = express.Router();
 
-router.use(authMiddleware);
-router.use(adminMiddleware);
+// Phase 3 / SEC-08 / D-05..D-08 — auth + admin + requireFreshAdmin are now mounted at the
+// app level in src/index.js (`app.use('/api/admin', authMiddleware, adminMiddleware,
+// requireFreshAdmin, adminRoutes)`). Do NOT re-add `router.use(authMiddleware)` here:
+// double-mounting would re-decode the JWT on every admin request.
 
 // ==================== DASHBOARD ====================
 

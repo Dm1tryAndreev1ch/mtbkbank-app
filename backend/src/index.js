@@ -33,6 +33,8 @@ const limitRoutes = require('./routes/limits');
 const notificationRoutes = require('./routes/notifications');
 const subscriptionRoutes = require('./routes/subscriptions');
 const adminRoutes = require('./routes/admin');
+const { authMiddleware, adminMiddleware } = require('./middleware/auth');
+const { requireFreshAdmin } = require('./middleware/requireFreshAdmin');
 const { tickActiveDeckCardHealth } = require('./services/cardEngine');
 const { ensureAllUsersHaveActiveDeck } = require('./services/ensureUserActiveDeck');
 
@@ -134,7 +136,10 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/limits', limitRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/admin', adminRoutes);
+// Phase 3 / SEC-08 / D-05..D-08 — admin chain: JWT → JWT-isAdmin claim fast-reject →
+// DB recheck (5-min LRU). JWT-claim alone never authorizes admin actions; requireFreshAdmin
+// is the source of truth and rejects stolen / un-revoked admin tokens within ≤5 min.
+app.use('/api/admin', authMiddleware, adminMiddleware, requireFreshAdmin, adminRoutes);
 
 /** Корень: чтобы в браузере было видно, что это наш API (а не чужой сервис на том же порту). */
 app.get('/', (_req, res) => {

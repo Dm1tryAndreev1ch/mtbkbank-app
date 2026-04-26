@@ -10,15 +10,22 @@ const supertest = require('supertest');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { truncateAll, getPrisma } = require('../setup');
-const { requireFreshAdmin } = require('../../src/middleware/requireFreshAdmin');
-const { logger } = require('../../src/logger');
 
+// IMPORTANT: requireFreshAdmin + logger MUST be loaded AFTER `jest.resetModules()` in
+// beforeAll so the test holds the same module instance the running Express app loads.
+// If we required them at the top of the file, jest.resetModules() would invalidate them
+// and `app` would get a different copy → the test's `_cache` and `logger.warn` spy
+// would not observe the in-process cache hits / log lines from real requests.
 let app;
 let prisma;
+let requireFreshAdmin;
+let logger;
 
 beforeAll(() => {
   jest.resetModules();
   app = require('../../src/index');
+  ({ requireFreshAdmin } = require('../../src/middleware/requireFreshAdmin'));
+  ({ logger } = require('../../src/logger'));
   prisma = getPrisma();
 });
 
