@@ -37,13 +37,22 @@ function getPrisma() {
 
 async function truncateAll() {
   const prisma = getPrisma();
-  const models = prisma._dmmf.datamodel.models
-    .filter((m) => (m.dbName || m.name) !== '_prisma_migrations')
-    .map((m) => `"${m.dbName || m.name}"`)
-    .join(', ');
-  if (!models) return; // empty schema (defensive)
+  // Plan 02-00 originally read `prisma._dmmf.datamodel.models`, but Prisma 6
+  // does not expose `_dmmf` on the runtime client (it lives only on the
+  // generator-time DMMF). Two correct alternatives:
+  //   1. Read `prisma._runtimeDataModel.models` (private but stable since 4.x).
+  //   2. Query information_schema for the public-schema table list (engine-agnostic).
+  // We use option (2) — it round-trips the actual database state, doesn't depend
+  // on a Prisma private API, and naturally excludes `_prisma_migrations` via the
+  // filter clause.
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT tablename FROM pg_tables
+     WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`,
+  );
+  if (!rows || rows.length === 0) return;
+  const list = rows.map((r) => `"${r.tablename}"`).join(', ');
   await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE ${models} RESTART IDENTITY CASCADE`,
+    `TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`,
   );
 }
 
