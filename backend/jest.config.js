@@ -20,4 +20,11 @@ module.exports = {
   // forceExit lets Jest terminate cleanly after all tests pass. Pre-existing
   // behaviour noted in plan 01-01 SUMMARY (cache initial-connection retry loop).
   forceExit: true,
+  // Plan 02-11 (Wave 3): integration suites in tests/integration/* share one
+  // PostgreSQL DB and TRUNCATE in beforeEach. Parallel Jest workers would
+  // cross-truncate each other's seed data and produce intermittent 401s on
+  // login (user vanished between seed and request). Plan 02-00 threat model
+  // T-02-00-03 already accepted single-runner serialisation for v1.0;
+  // maxWorkers:1 is the enforcement of that decision.
+  maxWorkers: 1,
 };
