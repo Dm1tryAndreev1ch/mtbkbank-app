@@ -1,19 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
+import { useToken } from './auth/TokenContext';
 
 const API = '/api/admin';
-
-// Token stored in a module-level ref updated by React — avoids stale closures in apiFetch
-const tokenRef = { current: localStorage.getItem('admin_token') || '' };
-
-function setToken(value) {
-  tokenRef.current = value;
-  if (value) {
-    localStorage.setItem('admin_token', value);
-  } else {
-    localStorage.removeItem('admin_token');
-  }
-}
 
 /**
  * VITE_API_ORIGIN — прямой URL API (см. .env.development).
@@ -46,12 +35,13 @@ function parseJsonBody(text) {
   return JSON.parse(raw);
 }
 
-async function apiFetch(path, opts = {}) {
+// SEC-06: token is injected by callers from useToken() — no module-level token state.
+async function apiFetch(token, path, opts = {}) {
   const res = await fetch(withApiBase(path), {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${tokenRef.current}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...opts.headers,
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -66,6 +56,7 @@ async function apiFetch(path, opts = {}) {
 
 // ===== LOGIN =====
 function LoginPage({ onLogin }) {
+  const { setToken } = useToken();
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -154,14 +145,15 @@ function formatPageError(e) {
 }
 
 function DashboardPage() {
+  const { token } = useToken();
   const [stats, setStats] = useState(null);
   const [extended, setExtended] = useState(null);
   const [pageError, setPageError] = useState(null);
 
   useEffect(() => {
-    apiFetch(`${API}/dashboard`).then(setStats).catch((e) => setPageError(formatPageError(e)));
-    apiFetch(`${API}/dashboard/extended`).then(setExtended).catch((e) => setPageError(formatPageError(e)));
-  }, []);
+    apiFetch(token, `${API}/dashboard`).then(setStats).catch((e) => setPageError(formatPageError(e)));
+    apiFetch(token, `${API}/dashboard/extended`).then(setExtended).catch((e) => setPageError(formatPageError(e)));
+  }, [token]);
 
   if (!stats) {
     return (
@@ -260,6 +252,7 @@ function DashboardPage() {
 
 // ===== USERS =====
 function UsersPage() {
+  const { token } = useToken();
   const [users, setUsers] = useState([]);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
@@ -268,12 +261,12 @@ function UsersPage() {
   const [pageError, setPageError] = useState(null);
 
   // FIX: API returns { users, total, limit, offset } — extract .users array
-  const load = () => apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch((e) => setPageError(formatPageError(e)));
-  useEffect(() => { load(); }, []);
+  const load = () => apiFetch(token, `${API}/users`).then(data => setUsers(data.users ?? [])).catch((e) => setPageError(formatPageError(e)));
+  useEffect(() => { load(); }, [token]);
 
   const handleSave = async () => {
     try {
-      await apiFetch(`${API}/users/${editing}`, { method: 'PUT', body: form });
+      await apiFetch(token, `${API}/users/${editing}`, { method: 'PUT', body: form });
       setEditing(null);
       load();
     } catch (err) { setPageError(formatPageError(err)); }
@@ -282,7 +275,7 @@ function UsersPage() {
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
-      await apiFetch(`${API}/users`, { method: 'POST', body: createForm });
+      await apiFetch(token, `${API}/users`, { method: 'POST', body: createForm });
       setShowCreate(false);
       setCreateForm({ name: '', phone: '', pin: '', mbPoints: 0, status: 'STANDARD' });
       load();
@@ -364,18 +357,19 @@ function UsersPage() {
 
 // ===== CARDS =====
 function CardsPage() {
+  const { token } = useToken();
   const [cards, setCards] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', brandName: '', brandIcon: 'style', rarity: 'COMMON', cashbackPercent: 1.0, mbValue: 10, maxHealth: 100, description: '' });
   const [pageError, setPageError] = useState(null);
 
-  const load = () => apiFetch(`${API}/cards`).then(setCards).catch((e) => setPageError(formatPageError(e)));
-  useEffect(() => { load(); }, []);
+  const load = () => apiFetch(token, `${API}/cards`).then(setCards).catch((e) => setPageError(formatPageError(e)));
+  useEffect(() => { load(); }, [token]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
-      await apiFetch(`${API}/cards`, { method: 'POST', body: { ...form, cashbackPercent: parseFloat(form.cashbackPercent), mbValue: parseInt(form.mbValue), maxHealth: parseInt(form.maxHealth) } });
+      await apiFetch(token, `${API}/cards`, { method: 'POST', body: { ...form, cashbackPercent: parseFloat(form.cashbackPercent), mbValue: parseInt(form.mbValue), maxHealth: parseInt(form.maxHealth) } });
       setShowCreate(false);
       setForm({ name: '', brandName: '', brandIcon: 'style', rarity: 'COMMON', cashbackPercent: 1.0, mbValue: 10, maxHealth: 100, description: '' });
       load();
@@ -385,7 +379,7 @@ function CardsPage() {
   const handleDelete = async (id) => {
     if (!confirm('Деактивировать эту карту?')) return;
     try {
-      await apiFetch(`${API}/cards/${id}`, { method: 'DELETE' });
+      await apiFetch(token, `${API}/cards/${id}`, { method: 'DELETE' });
       load();
     } catch (err) { setPageError(formatPageError(err)); }
   };
@@ -454,6 +448,7 @@ function CardsPage() {
 
 // ===== SIMULATE TRANSACTION =====
 function SimulatePage() {
+  const { token } = useToken();
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ userId: '', accountId: '', amount: 500, type: 'PURCHASE', category: 'Покупки', merchant: 'Тестовый магазин' });
   const [accounts, setAccounts] = useState([]);
@@ -463,15 +458,15 @@ function SimulatePage() {
 
   // FIX: API returns { users, total, limit, offset } — extract .users array
   useEffect(() => {
-    apiFetch(`${API}/users`).then(data => setUsers(data.users ?? [])).catch((e) => setPageError(formatPageError(e)));
-  }, []);
+    apiFetch(token, `${API}/users`).then(data => setUsers(data.users ?? [])).catch((e) => setPageError(formatPageError(e)));
+  }, [token]);
 
   const loadAccounts = async (userId) => {
     setForm(f => ({ ...f, userId, accountId: '' }));
     setAccounts([]);
     if (!userId) return;
     try {
-      const data = await apiFetch(`${API}/users/${userId}/accounts`);
+      const data = await apiFetch(token, `${API}/users/${userId}/accounts`);
       setAccounts(data);
       if (data.length > 0) {
         setForm(f => ({ ...f, accountId: data[0].id }));
@@ -496,7 +491,7 @@ function SimulatePage() {
         type: form.type,
       };
       if (form.accountId) body.accountId = form.accountId;
-      const data = await apiFetch(`${API}/simulate-transaction`, {
+      const data = await apiFetch(token, `${API}/simulate-transaction`, {
         method: 'POST',
         body,
       });
@@ -598,6 +593,7 @@ function readStoredTheme() {
 }
 
 export default function App() {
+  const { token, clearToken } = useToken();
   const [user, setUser] = useState(null);
   const [page, setPage] = useState('dashboard');
   const [theme, setTheme] = useState(readStoredTheme);
@@ -609,14 +605,14 @@ export default function App() {
     } catch {}
   }, [theme]);
 
-  // Validate stored token on mount
+  // Validate stored token on mount (or whenever it changes after login).
   useEffect(() => {
-    if (!tokenRef.current) return;
-    apiFetch(`${API}/dashboard`)
+    if (!token) return;
+    apiFetch(token, `${API}/dashboard`)
       .catch(() => {
-        setToken('');
+        clearToken();
       });
-  }, []);
+  }, [token, clearToken]);
 
   if (!user) return <LoginPage onLogin={setUser} />;
 
@@ -672,7 +668,7 @@ export default function App() {
             </span>
           </button>
           <button className="btn btn-sm" style={{ width: '100%' }} onClick={() => {
-            setToken('');
+            clearToken();
             setUser(null);
           }}>Выйти</button>
         </div>
