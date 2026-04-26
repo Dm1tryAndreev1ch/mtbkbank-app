@@ -1,45 +1,13 @@
-import { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
-import { router } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import { useStore } from '../stores/useStore';
-import { Colors } from '../constants/theme';
+// mobile/app/index.tsx
+//
+// D-05 — BootGate owns bootstrap routing. By the time React tries to render this screen,
+// BootGate has already called `router.replace('/(tabs)' | '/login' | '/onboarding')`.
+// This file is a structural placeholder; the original bootstrap logic moved into BootGate.
 
-/**
- * Главная точка входа - решает куда направить пользователя:
- * 1. Не прошёл onboarding → /onboarding
- * 2. Есть токен → загрузить данные → /(tabs)
- * 3. Нет токена → /login
- */
+import { Redirect } from 'expo-router';
+
 export default function Index() {
-  const { loadToken, loadAll } = useStore();
-
-  useEffect(() => {
-    async function bootstrap() {
-      try {
-        const onboarded = await SecureStore.getItemAsync('onboarded');
-        if (!onboarded) {
-          router.replace('/onboarding');
-          return;
-        }
-
-        const hasToken = await loadToken();
-        if (hasToken) {
-          loadAll(); // фоновая загрузка
-          router.replace('/(tabs)');
-        } else {
-          router.replace('/login');
-        }
-      } catch {
-        router.replace('/login');
-      }
-    }
-    bootstrap();
-  }, []);
-
-  return (
-    <View style={{ flex: 1, backgroundColor: Colors.background, justifyContent: 'center', alignItems: 'center' }}>
-      <ActivityIndicator size="large" color={Colors.primary} />
-    </View>
-  );
+  // Defensive fallback: BootGate's routing effect normally fires before this renders.
+  // If somehow it hasn't, /login is the safest landing point.
+  return <Redirect href="/login" />;
 }
