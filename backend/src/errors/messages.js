@@ -12,6 +12,8 @@ module.exports = {
   AUTH_TOKEN_INVALID:      'Сессия недействительна',
   AUTH_TOKEN_EXPIRED:      'Сессия истекла',
   AUTH_FORBIDDEN:          'Доступ запрещён',
+  // Phase 3 / SEC-08 / D-06 — stale admin JWT (DB says isAdmin:false or status:BLOCKED)
+  ADMIN_FLAG_REVOKED:      'Сессия администратора недействительна. Войдите снова.',
   BALANCE_INSUFFICIENT:    'Недостаточно средств',
   DECK_VALIDATION_FAILED:  'Колода не прошла проверку',
   RATE_LIMIT_EXCEEDED:     'Слишком много запросов. Попробуйте позже.',
