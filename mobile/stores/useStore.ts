@@ -31,6 +31,13 @@ interface AppState {
    */
   token: string | null;
   isAuthed: boolean;
+  /**
+   * Onboarding-completed flag (Plan 02-07). Sourced from `secureStorageUiPrefs.getOnboarded()`
+   * by BootGate at boot time; selector-subscribed by BootGate's routing useEffect so completion
+   * of /onboarding (which calls `setOnboarded(true)` + `useStore.setState({onboarded: true})`)
+   * re-fires the routing effect.
+   */
+  onboarded: boolean;
   isLoading: boolean;
   accounts: any[];
   transactions: any[];
@@ -99,6 +106,7 @@ export const useStore = create<AppState>()(
       user: null,
       token: tokenStore.getAccess(),
       isAuthed: tokenStore.isAuthed(),
+      onboarded: false,
       isLoading: false,
       accounts: [],
       transactions: [],

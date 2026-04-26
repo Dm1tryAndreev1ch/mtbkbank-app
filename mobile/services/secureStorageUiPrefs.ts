@@ -32,3 +32,17 @@ export const secureStorageUiPrefs = {
     }
   },
 };
+
+// `onboarded` UI flag (Plan 02-07). Lives here because it's a non-sensitive UI pref —
+// not a credential. BootGate reads it during boot to decide /onboarding vs /login vs /(tabs).
+// The /onboarding screen calls `setOnboarded(true)` at completion (future caller — not in scope).
+const ONBOARDED_KEY = 'onboarded';
+
+export async function getOnboarded(): Promise<boolean> {
+  const v = await secureStorageUiPrefs.getItem(ONBOARDED_KEY);
+  return v === '1' || v === 'true';
+}
+
+export async function setOnboarded(value: boolean): Promise<void> {
+  await secureStorageUiPrefs.setItem(ONBOARDED_KEY, value ? '1' : '0');
+}
