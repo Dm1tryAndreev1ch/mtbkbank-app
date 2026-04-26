@@ -30,14 +30,16 @@ const adminUserCreateSchema = z.object({
   isAdmin: z.boolean().optional(),
 });
 
-const adminGrantCardSchema = z.object({
-  userId: z.string().min(1, 'Укажите пользователя'),
-  collectionCardId: z.string().min(1, 'Укажите карту'),
-});
+// Phase 4 / 04-02 / B-M6 — admin grant accepts optional `source` enum mirrored
+// from Prisma `enum CardSource`. Re-exports schemas/cards.js#grantCardSchema so
+// there is a single Zod source of truth for the source-enum contract.
+const { grantCardSchema, sourceSchema } = require('./cards');
+const adminGrantCardSchema = grantCardSchema;
 
 module.exports = {
   adminUserUpdateSchema,
   adminUserCreateSchema,
   adminGrantCardSchema,
   userStatusSchema,
+  sourceSchema,
 };

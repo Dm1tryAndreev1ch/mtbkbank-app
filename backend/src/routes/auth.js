@@ -12,6 +12,11 @@ const router = express.Router();
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL = '30d';
+// Phase 4 / 04-02 / B-M2 — DB-side expiry stamp matches JWT lifetime (30d).
+// Stored on User.refreshTokenExpiresAt so /refresh can reject expired tokens
+// even if the JWT signature still verifies (e.g. a paranoid future where we
+// shorten REFRESH_TTL but historical tokens remain in the wild).
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Phase 3 / SEC-12 / D-12 — precomputed dummy hash for constant-cost compare on
 // the user-not-found path. bcrypt.compare(pin, DUMMY_HASH) costs the same as a
@@ -75,7 +80,11 @@ async function loginHandler(req, res, next) {
 
     await req.prisma.user.update({
       where: { id: user.id },
-      data: { refreshToken },
+      data: {
+        refreshToken,
+        // Phase 4 / 04-02 / B-M2 — DB-side expiry stamp at issuance.
+        refreshTokenExpiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+      },
     });
 
     res.json({
@@ -152,7 +161,11 @@ async function registerHandler(req, res, next) {
 
     await req.prisma.user.update({
       where: { id: user.id },
-      data: { refreshToken },
+      data: {
+        refreshToken,
+        // Phase 4 / 04-02 / B-M2 — DB-side expiry stamp at issuance.
+        refreshTokenExpiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+      },
     });
 
     res.status(201).json({
@@ -203,10 +216,25 @@ router.post('/refresh', refreshLimiter, reqValidator(refreshSchema), async (req,
 
     const user = await req.prisma.user.findUnique({
       where: { id: payload.userId },
-      select: { id: true, status: true, isAdmin: true, refreshToken: true },
+      select: { id: true, status: true, isAdmin: true, refreshToken: true, refreshTokenExpiresAt: true },
     });
     if (!user || user.refreshToken !== refreshToken) {
       return res.status(401).json({ error: 'Недействительный refresh token' });
+    }
+    // Phase 4 / 04-02 / B-M2 — DB-side expiry gate. The JWT signature may still
+    // verify (REFRESH_TTL is 30d so the JWT exp matches) but if a future tightening
+    // backdates expiresAt or a manual revocation drops it to the past, we reject
+    // here with a stable error code REFRESH_TOKEN_EXPIRED so the client can route
+    // straight to /login instead of looping silent-refresh.
+    if (
+      user.refreshTokenExpiresAt &&
+      user.refreshTokenExpiresAt.getTime() < Date.now()
+    ) {
+      (req.log ?? logger).warn({ userId: user.id }, 'Refresh token expired');
+      return res.status(401).json({
+        error: 'REFRESH_TOKEN_EXPIRED',
+        message: 'Сессия истекла, войдите снова',
+      });
     }
     if (user.status === 'BLOCKED') return res.status(403).json({ error: 'Аккаунт заблокирован' });
 
@@ -215,7 +243,11 @@ router.post('/refresh', refreshLimiter, reqValidator(refreshSchema), async (req,
 
     await req.prisma.user.update({
       where: { id: user.id },
-      data: { refreshToken: newRefreshToken },
+      data: {
+        refreshToken: newRefreshToken,
+        // Phase 4 / 04-02 / B-M2 — refresh expiry sliding window resets at rotation.
+        refreshTokenExpiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+      },
     });
 
     res.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });

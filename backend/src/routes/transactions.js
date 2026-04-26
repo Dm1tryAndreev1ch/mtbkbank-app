@@ -275,17 +275,29 @@ router.post('/transfer', async (req, res) => {
       return { transOut, transIn };
     });
 
-    // Уведомление — некритично, вне транзакции
-    await req.prisma.notification.create({
-      data: {
-        userId: destUserId,
-        title: '💸 Входящий перевод',
-        body: `Вам поступил перевод ${amount} ${toAccount.currency}`,
-        icon: 'account_balance_wallet',
-      },
-    }).catch(err => (req.log ?? logger).error({ err }, 'Notification create error (non-critical)'));
+    // Уведомление — некритично, вне транзакции (Phase 4 / 04-02 / B-M8).
+    // Failure is logged AND surfaced to the client via `notificationDeferred:true`
+    // so observability + UI can react ("вам пришёл перевод, но уведомление мы
+    // создадим позже"). Transaction itself MUST still succeed.
+    let notificationDeferred = false;
+    try {
+      await req.prisma.notification.create({
+        data: {
+          userId: destUserId,
+          title: '💸 Входящий перевод',
+          body: `Вам поступил перевод ${amount} ${toAccount.currency}`,
+          icon: 'account_balance_wallet',
+        },
+      });
+    } catch (err) {
+      (req.log ?? logger).error(
+        { err, userId: destUserId, txId: result.transOut?.id },
+        'Notification create failed',
+      );
+      notificationDeferred = true;
+    }
 
-    res.json({ success: true, transaction: result.transOut });
+    res.json({ success: true, transaction: result.transOut, notificationDeferred });
   } catch (err) {
     if (err.message === 'INSUFFICIENT') {
       return res.status(400).json({ error: 'Недостаточно средств на момент списания' });

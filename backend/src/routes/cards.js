@@ -3,6 +3,8 @@ const { authMiddleware } = require('../middleware/auth');
 const { sacrificeCard, convertCardToPoints } = require('../services/cardEngine');
 const { getCached, setCached } = require('../cache');
 const { logger } = require('../logger');
+const { reqValidator } = require('../middleware/reqValidator');
+const { sacrificeSchema, convertSchema, buyCardSchema } = require('../schemas/cards');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -129,16 +131,21 @@ router.post('/buy', async (req, res) => {
   }
 });
 
-// POST /api/cards/sacrifice
-router.post('/sacrifice', async (req, res) => {
+// POST /api/cards/sacrifice — Phase 4 / 04-02 / B-M7
+// reqValidator enforces both IDs are present strings; the route translates
+// service-level errors with stable codes into the HTTP error contract.
+router.post('/sacrifice', reqValidator(sacrificeSchema), async (req, res) => {
   try {
-    const { sacrificeId, targetId } = req.body;
-    if (!sacrificeId || !targetId) {
-      return res.status(400).json({ error: 'Укажите карту для жертвы и целевую карту' });
-    }
+    const { sacrificeId, targetId } = req.validated;
     const result = await sacrificeCard(req.prisma, req.userId, sacrificeId, targetId);
     res.json(result);
   } catch (err) {
+    if (err && err.code === 'SACRIFICE_OVERHEAL') {
+      return res.status(400).json({
+        error: 'SACRIFICE_OVERHEAL',
+        message: err.userMessage || 'Целевая карта уже на максимуме HP',
+      });
+    }
     res.status(400).json({ error: err.message });
   }
 });

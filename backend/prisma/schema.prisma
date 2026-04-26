@@ -61,6 +61,11 @@ model User {
   avatarUrl     String?
   expoPushToken String?
   refreshToken  String? // FIX: stored for revocation support
+  // Phase 4 / 04-02 / B-M2 — expiry stamp written at issuance (login/register/refresh
+  // rotation). NULL means "legacy token issued before this column existed"; backfill
+  // migration sets such rows to createdAt + 30d so the historical fleet does not
+  // retain unbounded validity.
+  refreshTokenExpiresAt DateTime?
   mbPoints      Int        @default(0)
   status        UserStatus @default(STANDARD)
   isAdmin       Boolean    @default(false)
@@ -130,6 +135,11 @@ model Transaction {
   user        User         @relation(fields: [userId], references: [id])
   fromAccount BankAccount? @relation("TransFrom", fields: [fromAccountId], references: [id])
   toAccount   BankAccount? @relation("TransTo", fields: [toAccountId], references: [id])
+
+  // Phase 4 / 04-02 / B-M4 — paired with hand-written CONCURRENT index migration
+  // (20260427_idx_transaction_user_created). `map:` aligns Prisma's expected name
+  // with the SQL we ship so `prisma migrate diff` does not propose a duplicate.
+  @@index([userId, createdAt(sort: Desc)], map: "Transaction_userId_createdAt_idx")
 }
 
 model CollectionCard {
@@ -167,6 +177,11 @@ model UserCard {
   deckCards      DeckCard[]
 
   @@unique([userId, collectionCardId])
+  // Phase 4 / 04-02 / B-M4 — paired with 20260427_idx_user_card_user CONCURRENT
+  // migration. The (userId, collectionCardId) unique already implicitly indexes
+  // userId-prefix queries, but Prisma's diff-engine treats explicit @@index as
+  // the contract for `map:` alignment with the SQL.
+  @@index([userId], map: "UserCard_userId_idx")
 }
 
 model Deck {
@@ -280,6 +295,10 @@ model Notification {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
+
+  // Phase 4 / 04-02 / B-M4 — paired with 20260427_idx_notification_user_created
+  // CONCURRENT migration; supports the listing query "user notifications most-recent-first".
+  @@index([userId, createdAt(sort: Desc)], map: "Notification_userId_createdAt_idx")
 }
 
 model SystemConfig {

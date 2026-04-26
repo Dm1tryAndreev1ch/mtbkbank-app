@@ -15,6 +15,11 @@ module.exports = {
   AUTH_INVALID_CREDENTIALS: 'Неверный телефон или ПИН-код',
   AUTH_TOKEN_INVALID:      'Сессия недействительна',
   AUTH_TOKEN_EXPIRED:      'Сессия истекла',
+  // Phase 4 / 04-02 / B-M2 — distinct from AUTH_TOKEN_EXPIRED so the mobile client
+  // can branch: AUTH_TOKEN_EXPIRED → silent refresh; REFRESH_TOKEN_EXPIRED → kick to login.
+  REFRESH_TOKEN_EXPIRED:   'Сессия истекла, войдите снова',
+  // Phase 4 / 04-02 / B-M7 — sacrifice attempt against an already-full target card.
+  SACRIFICE_OVERHEAL:      'Целевая карта уже на максимуме HP',
   AUTH_FORBIDDEN:          'Доступ запрещён',
   // Phase 3 / SEC-08 / D-06 — stale admin JWT (DB says isAdmin:false or status:BLOCKED)
   ADMIN_FLAG_REVOKED:      'Сессия администратора недействительна. Войдите снова.',

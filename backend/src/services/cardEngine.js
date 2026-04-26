@@ -385,9 +385,20 @@ async function sacrificeCard(prisma, userId, sacrificeId, targetId) {
   if (!targetCard) throw new Error('Целевая карта не найдена');
   if (sacrificeId === targetId) throw new Error('Нельзя жертвовать карту самой себе');
 
+  // Phase 4 / 04-02 / B-M7 — reject sacrifice when target is already at maxHealth.
+  // Without this guard the user wastes a card to gain 0 HP. The route handler
+  // surfaces err.message as 400 already (routes/cards.js POST /sacrifice).
+  if (targetCard.health >= targetCard.collectionCard.maxHealth) {
+    const e = new Error('SACRIFICE_OVERHEAL');
+    e.code = 'SACRIFICE_OVERHEAL';
+    e.userMessage = 'Целевая карта уже на максимуме HP';
+    throw e;
+  }
+
   const rarity = sacrificeCard.collectionCard.rarity;
   const healMultiplier = RARITY_CONFIG[rarity].healMultiplier;
   const healAmount = Math.floor(sacrificeCard.collectionCard.maxHealth * healMultiplier);
+  // Math.min cap ensures newHealth never exceeds maxHealth even if healAmount overshoots.
   const newHealth = Math.min(targetCard.collectionCard.maxHealth, targetCard.health + healAmount);
 
   const resultData = await prisma.$transaction(async (tx) => {
