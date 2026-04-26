@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
 import { useToken } from './auth/TokenContext';
+import { AppError } from './errors/AppError';
+import { lookup as lookupErrorMessage } from './errors/codebook';
 
 const API = '/api/admin';
 
@@ -47,9 +49,18 @@ async function apiFetch(token, path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const msg = String(err.error || `HTTP ${res.status}`).slice(0, 200);
-    throw new Error(msg);
+    let body = {};
+    try { body = await res.json(); } catch { /* non-JSON 5xx */ }
+    const code = typeof body.error === 'string' ? body.error : 'GENERIC';
+    // body.message is server-supplied. Do NOT render it directly — codebook
+    // resolves UI text. Carry it for Sentry breadcrumb only.
+    throw new AppError({
+      code,
+      message: typeof body.message === 'string' ? body.message : code,
+      status: res.status,
+      requestId: typeof body.requestId === 'string' ? body.requestId : null,
+      issues: Array.isArray(body.issues) ? body.issues : null,
+    });
   }
   return res.json();
 }
@@ -141,7 +152,24 @@ function PageErrorBanner({ message }) {
 }
 
 function formatPageError(e) {
-  return String(e?.message || 'Ошибка').slice(0, 240);
+  // SEC-07: AppError → codebook. Raw backend strings never reach JSX.
+  if (e && e.name === 'AppError') {
+    const base = lookupErrorMessage(e.code);
+    if (e.code === 'VALIDATION_FAILED' && Array.isArray(e.issues) && e.issues.length) {
+      const fields = e.issues
+        .slice(0, 5)
+        .map((i) => (Array.isArray(i.path) ? i.path.join('.') : String(i.path || 'field')))
+        .join(', ');
+      return `${base}: ${fields}`.slice(0, 240);
+    }
+    return base;
+  }
+  // Network / JSON-parse / unknown — never echo raw message into JSX.
+  try {
+    // eslint-disable-next-line no-console
+    console.warn('[admin] non-AppError surfaced to UI', e);
+  } catch { /* noop */ }
+  return 'Нет соединения с сервером. Проверьте, что backend запущен.';
 }
 
 function DashboardPage() {
