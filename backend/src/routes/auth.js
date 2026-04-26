@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const { authMiddleware } = require('../middleware/auth');
 const { logger } = require('../logger');
 const { env } = require('../env');
+const { luhnCheck } = require('../schemas/_helpers/luhn');
 const router = express.Router();
 
 const ACCESS_TTL = '15m';
@@ -23,23 +24,9 @@ function digitsOnlyPan(cardNumber) {
   return String(cardNumber ?? '').replace(/\D/g, '');
 }
 
-/** Алгоритм Луна для банковского номера карты. */
-function luhnValid(pan) {
-  if (!pan || pan.length < 13 || pan.length > 19) return false;
-  let sum = 0;
-  let alt = false;
-  for (let i = pan.length - 1; i >= 0; i -= 1) {
-    let n = parseInt(pan[i], 10);
-    if (Number.isNaN(n)) return false;
-    if (alt) {
-      n *= 2;
-      if (n > 9) n -= 9;
-    }
-    sum += n;
-    alt = !alt;
-  }
-  return sum % 10 === 0;
-}
+// luhnCheck is now imported from ../schemas/_helpers/luhn (Phase 3 / D-11 single source of truth).
+// Local alias preserved for callsite legibility.
+const luhnValid = luhnCheck;
 
 function signAccess(userId, isAdmin) {
   return jwt.sign(
