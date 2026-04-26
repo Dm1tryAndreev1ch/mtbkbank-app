@@ -104,6 +104,112 @@ check "setTimeout in mobile/app/login.tsx" \
   '\bsetTimeout\b' \
   'mobile/app/login.tsx'
 
+echo "=== Phase 3 gates ==="
+# These gates are STAGED RED today and will go GREEN as plans 03-01..03-16 land:
+#   - SEC-11 / S-3 : process.env.JWT_SECRET outside backend/src/env.js
+#   - REL-09       : connectedUsers Map in backend/src/websocket/index.js
+#   - D-13/D-14    : duplicate rate-limit defs at app level (backend/src/index.js)
+#   - D-08         : requireFreshAdmin wired on /api/admin
+#   - D-12         : legacy login literal 'Неверный телефон или PIN'
+#   - SEC-13       : docs/adr/ADR-001-no-csrf-middleware.md
+#   - D-09         : backend/src/schemas/ directory
+#   - SEC-06       : module-level tokenRef / setToken in admin/src/App.jsx
+#   - SEC-07       : raw String(e?.message) in admin/src/App.jsx + codebook file
+#   - REL-08       : processCardDrop receives transaction.id (not raw amount)
+
+# Phase-3 SEC-11 / S-3: process.env.JWT_SECRET must NOT appear outside backend/src/env.js
+if git grep -nP 'process\.env\.JWT_SECRET' -- 'backend/src/' ':!backend/src/env.js' 2>/dev/null; then
+  echo "FAIL  Phase-3 SEC-11/S-3: process.env.JWT_SECRET leaked outside env.js"
+  FAIL=1
+else
+  echo "OK    Phase-3 SEC-11/S-3: process.env.JWT_SECRET only in env.js"
+fi
+
+# Phase-3 REL-09: connectedUsers Map must be gone from websocket/index.js
+if git grep -nP 'connectedUsers\s*=\s*new\s+Map' -- 'backend/src/websocket/index.js' 2>/dev/null; then
+  echo "FAIL  Phase-3 REL-09: connectedUsers Map still present in websocket/index.js"
+  FAIL=1
+else
+  echo "OK    Phase-3 REL-09: connectedUsers Map removed"
+fi
+
+# Phase-3 D-13/D-14 / Pitfall 4: app-level rate-limiters at index.js must be removed
+if git grep -nP '^\s*const\s+(loginLimiter|registerLimiter|refreshLimiter)\s*=' -- 'backend/src/index.js' 2>/dev/null; then
+  echo "FAIL  Phase-3 D-13/D-14: duplicate rate-limit definitions at app level — must be route-mounted only"
+  FAIL=1
+else
+  echo "OK    Phase-3 D-13/D-14: no duplicate app-level rate-limit definitions"
+fi
+
+# Phase-3 D-08: /api/admin must chain requireFreshAdmin
+if git grep -nP 'requireFreshAdmin' -- 'backend/src/index.js' 'backend/src/routes/admin.js' >/dev/null 2>&1; then
+  echo "OK    Phase-3 D-08: requireFreshAdmin wired on /api/admin"
+else
+  echo "FAIL  Phase-3 D-08: requireFreshAdmin not wired on /api/admin"
+  FAIL=1
+fi
+
+# Phase-3 D-12: legacy login literal 'Неверный телефон или PIN' (with capital PIN, no «-»)
+# must be replaced by AUTH_INVALID_CREDENTIALS path
+if git grep -nP "'Неверный телефон или PIN'" -- 'backend/src/routes/auth.js' 2>/dev/null; then
+  echo "FAIL  Phase-3 D-12: legacy login error literal still in auth.js — use AUTH_INVALID_CREDENTIALS codebook"
+  FAIL=1
+else
+  echo "OK    Phase-3 D-12: legacy login literal replaced (AUTH_INVALID_CREDENTIALS)"
+fi
+
+# Phase-3 SEC-13: ADR-001 file must exist after Phase 3
+if [[ ! -f docs/adr/ADR-001-no-csrf-middleware.md ]]; then
+  echo "FAIL  Phase-3 SEC-13: docs/adr/ADR-001-no-csrf-middleware.md missing"
+  FAIL=1
+else
+  echo "OK    Phase-3 SEC-13: ADR-001 present"
+fi
+
+# Phase-3 D-09: zod schemas directory must exist
+if [[ ! -d backend/src/schemas ]]; then
+  echo "FAIL  Phase-3 D-09: backend/src/schemas/ missing"
+  FAIL=1
+else
+  echo "OK    Phase-3 D-09: backend/src/schemas/ present"
+fi
+
+# Phase-3 SEC-06: admin must not hold module-level mutable token state
+if git grep -nP '^(let|const)\s+tokenRef\b' -- 'admin/src/App.jsx' 2>/dev/null; then
+  echo "FAIL  Phase-3 SEC-06: module-level tokenRef still in admin/src/App.jsx"
+  FAIL=1
+else
+  echo "OK    Phase-3 SEC-06: no module-level tokenRef in admin/src/App.jsx"
+fi
+if git grep -nP '^function\s+setToken\s*\(' -- 'admin/src/App.jsx' 2>/dev/null; then
+  echo "FAIL  Phase-3 SEC-06: module-level setToken function still in admin/src/App.jsx"
+  FAIL=1
+else
+  echo "OK    Phase-3 SEC-06: no module-level setToken function in admin/src/App.jsx"
+fi
+
+# Phase-3 SEC-07: admin must not interpolate raw error.message into JSX path
+if git grep -nP 'String\(e\?\.message' -- 'admin/src/App.jsx' 2>/dev/null; then
+  echo "FAIL  Phase-3 SEC-07: raw String(e?.message) interpolation in admin/src/App.jsx — use codebook"
+  FAIL=1
+else
+  echo "OK    Phase-3 SEC-07: no raw String(e?.message) interpolation in admin/src/App.jsx"
+fi
+if [[ ! -f admin/src/errors/codebook.js ]]; then
+  echo "FAIL  Phase-3 SEC-07: admin/src/errors/codebook.js missing"
+  FAIL=1
+else
+  echo "OK    Phase-3 SEC-07: admin/src/errors/codebook.js present"
+fi
+
+# Phase-3 REL-08: cardEngine.processCardDrop must receive transactionId, not raw amount
+if git grep -nP 'processCardDrop\s*\(\s*[^,]+,\s*Number' -- 'backend/src/routes/admin.js' 2>/dev/null; then
+  echo "FAIL  Phase-3 REL-08: processCardDrop second arg looks like a Number — must be transaction.id"
+  FAIL=1
+else
+  echo "OK    Phase-3 REL-08: processCardDrop signature does not pass raw Number"
+fi
+
 if [[ $FAIL -ne 0 ]]; then
   echo ""
   echo "Regression-guard FAILED — fix the listed pattern(s) before committing."
