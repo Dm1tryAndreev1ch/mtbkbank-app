@@ -46,14 +46,32 @@ const ALLOWED_ORIGINS = env.ALLOWED_ORIGINS
   .map((o) => o.trim())
   .filter(Boolean);
 
+// SEC-02 / B-C1 — wildcard refusal. A literal '*' in env.ALLOWED_ORIGINS would
+// disable the allowlist entirely; refuse to boot rather than degrade silently.
+if (ALLOWED_ORIGINS.includes('*')) {
+  throw new Error("ALLOWED_ORIGINS must not contain '*' — set explicit origins for SEC-02");
+}
+
+// SEC-02 production guard: localhost/loopback origins are rejected in production
+// regardless of whether they appear in the allowlist (e.g. operator forgets to
+// strip dev origins from prod env).
+const isLocalhostOrigin = (origin) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(origin);
+
+function isOriginAllowed(origin) {
+  if (!origin) return true; // no-Origin (mobile / curl / s2s) always allowed
+  if (env.NODE_ENV === 'production' && isLocalhostOrigin(origin)) return false;
+  return ALLOWED_ORIGINS.includes(origin);
+}
+
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, server-to-server)
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
-    }
+    if (isOriginAllowed(origin)) return callback(null, true);
+    // Clean reject — passing an Error here would escalate through Express's
+    // default error handler and emit a 500. `false` lets the cors package
+    // simply omit the ACAO header; the reject middleware below converts
+    // the cross-origin denial into a definitive 403 response.
+    return callback(null, false);
   },
   credentials: true,
 };
@@ -61,6 +79,18 @@ const corsOptions = {
 app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors(corsOptions));
+// SEC-02 — `cors` with callback(null, false) only omits the ACAO header on
+// simple requests; the request would otherwise reach the route and return 200.
+// This middleware turns disallowed Origins into a definitive 403 so the
+// allowlist actually blocks instead of degrading to "no-CORS-header but body
+// served".  Preflight (OPTIONS) is already short-circuited by `cors`.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && !isOriginAllowed(origin)) {
+    return res.status(403).json({ error: 'CORS_FORBIDDEN', message: 'Origin not allowed' });
+  }
+  return next();
+});
 app.use(pinoHttp({
   logger,
   genReqId: (req, res) => {
