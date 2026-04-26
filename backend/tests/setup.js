@@ -5,8 +5,9 @@
  */
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.DATABASE_URL =
-  process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/test';
-process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+  process.env.DATABASE_URL ||
+  'postgresql://mtbank_test:mtbank_test_password@localhost:5433/mtbank_test';
+process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6380';
 process.env.JWT_SECRET =
   process.env.JWT_SECRET || 'test-jwt-secret-do-not-use-in-prod';
 process.env.JWT_REFRESH_SECRET =
