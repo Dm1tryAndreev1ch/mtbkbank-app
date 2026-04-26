@@ -93,7 +93,7 @@ describe('Phase-1 regression guard — staging pins (RED today, GREEN after Phas
   // FAILING because .failing inverted the expectation. Flip .failing → standard `test(...)`
   // in Phase 2 (REL-04) to keep them green.
 
-  test.failing('mobile/services/api.ts has no empty `catch {}` (Phase-2 REL-04 fixes this)', () => {
+  test('mobile/services/api.ts has no empty `catch {}` (Phase-2 REL-04 — flipped GREEN by plan 02-04)', () => {
     const file = readRepoFile('mobile/services/api.ts');
     expect(file).not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
   });
