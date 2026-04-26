@@ -118,7 +118,14 @@ describe('PUT /api/decks/:id', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ cardIds: [...userCards.map((c) => c.id), sixth.id] });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/5/);
+    // Phase 3 (03-04 + 03-11): reqValidator(deckUpdateSchema) rejects with
+    // { error: 'VALIDATION_FAILED', message: <generic codebook>, issues: [{path:['cardIds'], message:'Максимум 5 карт в колоде'}] }.
+    // The Zod issue surfaces the over-cap signal — pin both the code and the issue path/message.
+    expect(res.body.error).toBe('VALIDATION_FAILED');
+    expect(Array.isArray(res.body.issues)).toBe(true);
+    const cardIdsIssue = res.body.issues.find((i) => Array.isArray(i.path) && i.path.includes('cardIds'));
+    expect(cardIdsIssue).toBeDefined();
+    expect(cardIdsIssue.message).toMatch(/5/);
     const deckCardCount = await prisma.deckCard.count({ where: { deckId: deck.id } });
     expect(deckCardCount).toBe(0);
   });

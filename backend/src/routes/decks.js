@@ -1,8 +1,10 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const { calculateDeckCashback } = require('../services/cardEngine');
+const { updateDeckCards } = require('../services/deckMutation');
+const { reqValidator } = require('../middleware/reqValidator');
+const { deckUpdateSchema } = require('../schemas/decks');
 const { getCached, setCached, invalidatePattern } = require('../cache');
-const { logger } = require('../logger');
 const router = express.Router();
 
 router.use(authMiddleware);
@@ -61,72 +63,22 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/decks/:id
-router.put('/:id', async (req, res) => {
+// REL-06 / B-H2: validate→deleteMany→createMany are wrapped in a single
+// prisma.$transaction inside services/deckMutation.js → no orphan-row window.
+// reqValidator(deckUpdateSchema) enforces { name?, cardIds? max 5 } at the edge.
+router.put('/:id', reqValidator(deckUpdateSchema), async (req, res, next) => {
   try {
-    const { name, cardIds } = req.body;
-    const deck = await req.prisma.deck.findFirst({
-      where: { id: req.params.id, userId: req.userId },
+    const updated = await updateDeckCards(req.prisma, {
+      deckId: req.params.id,
+      userId: req.userId,
+      name: req.validated.name,
+      cardIds: req.validated.cardIds,
     });
-    if (!deck) return res.status(404).json({ error: 'Колода не найдена' });
-
-    if (name) {
-      await req.prisma.deck.update({
-        where: { id: deck.id },
-        data: { name },
-      });
-    }
-
-    if (cardIds) {
-      if (cardIds.length > 5) {
-        return res.status(400).json({ error: 'Максимум 5 карт в колоде' });
-      }
-
-      // Verify all cards belong to user
-      const userCards = await req.prisma.userCard.findMany({
-        where: { id: { in: cardIds }, userId: req.userId },
-      });
-      if (userCards.length !== cardIds.length) {
-        return res.status(400).json({ error: 'Некоторые карты не найдены' });
-      }
-
-      // Check cards aren't in other decks
-      const existingDeckCards = await req.prisma.deckCard.findMany({
-        where: {
-          userCardId: { in: cardIds },
-          deckId: { not: deck.id },
-        },
-      });
-      if (existingDeckCards.length > 0) {
-        return res.status(400).json({ error: 'Некоторые карты уже в другой колоде' });
-      }
-
-      // Clear existing and set new
-      await req.prisma.deckCard.deleteMany({ where: { deckId: deck.id } });
-      await req.prisma.deckCard.createMany({
-        data: cardIds.map((cardId, index) => ({
-          deckId: deck.id,
-          userCardId: cardId,
-          slotIndex: index,
-        })),
-      });
-    }
-
-    const updated = await req.prisma.deck.findUnique({
-      where: { id: deck.id },
-      include: {
-        deckCards: {
-          include: { userCard: { include: { collectionCard: true } } },
-          orderBy: { slotIndex: 'asc' },
-        },
-      },
-    });
-
-    const { totalCashback, breakdown } = await calculateDeckCashback(req.prisma, deck.id);
-    await invalidatePattern(`deck:cashback:${deck.id}`);
+    const { totalCashback, breakdown } = await calculateDeckCashback(req.prisma, updated.id);
+    await invalidatePattern(`deck:cashback:${updated.id}`);
     res.json({ ...updated, totalCashback, cashbackBreakdown: breakdown });
   } catch (err) {
-    (req.log ?? logger).error({ err }, 'Deck update error');
-    res.status(500).json({ error: 'Ошибка сервера' });
+    next(err);
   }
 });
 
