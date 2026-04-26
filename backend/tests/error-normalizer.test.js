@@ -111,6 +111,99 @@ describe('errorNormalizer — Prisma branch', () => {
   });
 });
 
+describe('errorNormalizer — VALIDATION_FAILED issues[] propagation (D-10, plan 03-05)', () => {
+  test('AppError(VALIDATION_FAILED) with err.issues=[{...}] → response body includes issues[] alongside {error,message,requestId}', async () => {
+    const issues = [
+      { path: ['amount'], code: 'too_small', message: 'must be > 0' },
+      { path: ['phone'], code: 'invalid_string', message: 'bad phone' },
+    ];
+    const app = buildApp((a) => {
+      a.get('/zod', (_req, _res, next) => {
+        const e = new AppError('VALIDATION_FAILED', 400);
+        e.issues = issues;
+        next(e);
+      });
+    });
+    const res = await supertest(app).get('/zod');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('VALIDATION_FAILED');
+    expect(res.body.message).toBe('Проверьте введённые данные');
+    expect(res.body.issues).toEqual(issues);
+    expect(typeof res.body.requestId).toBe('string');
+  });
+
+  test('AppError without issues[] → response body has NO issues field (additive only)', async () => {
+    const app = buildApp((a) => {
+      a.get('/no-issues', (_req, _res, next) => next(new AppError('AUTH_INVALID_PIN', 401)));
+    });
+    const res = await supertest(app).get('/no-issues');
+    expect(res.body.issues).toBeUndefined();
+  });
+
+  test('non-array err.issues is ignored (defensive — never serialize non-array)', async () => {
+    const app = buildApp((a) => {
+      a.get('/bad-issues', (_req, _res, next) => {
+        const e = new AppError('VALIDATION_FAILED', 400);
+        e.issues = 'not-an-array';
+        next(e);
+      });
+    });
+    const res = await supertest(app).get('/bad-issues');
+    expect(res.body.issues).toBeUndefined();
+  });
+});
+
+describe('errorNormalizer — BALANCE_INSUFFICIENT (Postgres 23514, REL-07, Pitfall 9)', () => {
+  test('Prisma error w/ driverError.code=23514 + BankAccount_balance_nonneg_check → 400 BALANCE_INSUFFICIENT (NOT DB_ERROR)', async () => {
+    const app = buildApp((a) => {
+      a.get('/check', (_req, _res, next) => {
+        const err = new Prisma.PrismaClientKnownRequestError(
+          'new row for relation "BankAccount" violates check constraint "BankAccount_balance_nonneg_check"',
+          { code: 'P2010', clientVersion: 'test', meta: { driverError: { code: '23514', message: 'BankAccount_balance_nonneg_check' } } },
+        );
+        next(err);
+      });
+    });
+    const res = await supertest(app).get('/check');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('BALANCE_INSUFFICIENT');
+    expect(res.body.message).toBe('Недостаточно средств');
+    // Schema/constraint name must NOT leak to client
+    expect(JSON.stringify(res.body)).not.toContain('BankAccount_balance_nonneg_check');
+    expect(JSON.stringify(res.body)).not.toContain('23514');
+  });
+
+  test('Prisma error w/ 23514 in raw message but NOT BankAccount_balance_nonneg_check → falls through to DB_ERROR', async () => {
+    const app = buildApp((a) => {
+      a.get('/other-check', (_req, _res, next) => {
+        const err = new Prisma.PrismaClientKnownRequestError(
+          'check constraint "OtherTable_some_check" violated, code 23514',
+          { code: 'P2010', clientVersion: 'test' },
+        );
+        next(err);
+      });
+    });
+    const res = await supertest(app).get('/other-check');
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('DB_ERROR');
+  });
+
+  test('PrismaClientUnknownRequestError carrying BankAccount_balance_nonneg_check + 23514 also maps to BALANCE_INSUFFICIENT', async () => {
+    const app = buildApp((a) => {
+      a.get('/unknown-check', (_req, _res, next) => {
+        const err = new Prisma.PrismaClientUnknownRequestError(
+          'raw query failed: ERROR: 23514: new row violates check constraint "BankAccount_balance_nonneg_check"',
+          { clientVersion: 'test' },
+        );
+        next(err);
+      });
+    });
+    const res = await supertest(app).get('/unknown-check');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('BALANCE_INSUFFICIENT');
+  });
+});
+
 describe('errorNormalizer — express-validator branch', () => {
   test('err.errors array shape → 400 / VALIDATION_FAILED', async () => {
     const app = buildApp((a) => {
