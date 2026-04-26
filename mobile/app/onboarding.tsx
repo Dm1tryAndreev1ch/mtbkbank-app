@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useThemeColor } from '../hooks/useThemeColor';
 import { Spacing, BorderRadius } from '../constants/theme';
-import * as SecureStore from 'expo-secure-store';
+import { setOnboarded } from '../services/secureStorageUiPrefs';
 
 const { width } = Dimensions.get('window');
 
@@ -39,13 +39,13 @@ export default function OnboardingScreen() {
     if (currentIndex < SLIDES.length - 1) {
       setCurrentIndex(c => c + 1);
     } else {
-      await SecureStore.setItemAsync('onboarded', 'true');
+      await setOnboarded(true);
       router.replace('/(tabs)');
     }
   };
 
   const handleSkip = async () => {
-    await SecureStore.setItemAsync('onboarded', 'true');
+    await setOnboarded(true);
     router.replace('/(tabs)');
   };
 
