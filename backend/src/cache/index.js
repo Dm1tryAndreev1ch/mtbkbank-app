@@ -8,14 +8,40 @@ const redisClient = createClient({
 let redisAvailable = false;
 
 redisClient.on('error', (err) => {
+  // SEC-03 / B-C3 — transition-only logging. Once redisAvailable=false the
+  // node-redis client retries on a backoff (multiple 'error' events per second
+  // when the broker is down); we MUST NOT spam logs/Sentry on every retry.
+  // The redisAvailable flag is the gate.
   if (redisAvailable) {
-    logger.error({ err }, '[redis] connection lost — cache will be bypassed');
+    logger.error(
+      { err: { message: err.message, code: err.code } },
+      '[redis] connection lost — cache will be bypassed'
+    );
     redisAvailable = false;
+    try {
+      const { Sentry } = require('../instrument');
+      if (Sentry?.addBreadcrumb) {
+        Sentry.addBreadcrumb({
+          category: 'redis',
+          level: 'warning',
+          message: 'connection lost',
+          data: { errMessage: String(err.message), code: err.code },
+        });
+      }
+    } catch (_e) {
+      // instrument may not be loaded in unit-test env — non-fatal.
+    }
   }
 });
 redisClient.on('connect', () => {
   logger.info('[redis] connected');
   redisAvailable = true;
+});
+redisClient.on('ready', () => {
+  if (!redisAvailable) {
+    logger.info({}, '[redis] connection restored');
+    redisAvailable = true;
+  }
 });
 redisClient.on('reconnecting', () => logger.info('[redis] reconnecting'));
 
@@ -33,6 +59,10 @@ redisClient.connect().catch(e => {
 });
 
 async function getCached(key) {
+  // SEC-03 — short-circuit on the in-memory flag BEFORE consulting the client.
+  // node-redis's isReady is true even mid-disconnect for a brief window, and
+  // can yield throw paths that surface as 5xx if the route forgot to await.
+  if (!redisAvailable) return null;
   try {
     if (!redisClient.isReady) return null;
     const data = await redisClient.get(key);
@@ -44,6 +74,7 @@ async function getCached(key) {
 }
 
 async function setCached(key, value, ttlSeconds) {
+  if (!redisAvailable) return;
   try {
     if (!redisClient.isReady) return;
     await redisClient.setEx(key, ttlSeconds, JSON.stringify(value));
@@ -53,6 +84,7 @@ async function setCached(key, value, ttlSeconds) {
 }
 
 async function invalidatePattern(pattern) {
+  if (!redisAvailable) return;
   try {
     if (!redisClient.isReady) return;
     const keys = await redisClient.keys(pattern);
