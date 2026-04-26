@@ -37,11 +37,29 @@ function errorNormalizer(err, req, res, _next) {
     }
   } else if (
     err instanceof Prisma.PrismaClientKnownRequestError ||
-    err instanceof Prisma.PrismaClientValidationError
+    err instanceof Prisma.PrismaClientValidationError ||
+    err instanceof Prisma.PrismaClientUnknownRequestError
   ) {
-    status = 500;
-    code = 'DB_ERROR';
-    message = messages.DB_ERROR;
+    // REL-07 / Pitfall 9 (plan 03-05): Postgres 23514 CHECK violation on
+    // BankAccount_balance_nonneg_check surfaces either as PrismaClientKnownRequestError
+    // (P2010 raw query) or PrismaClientUnknownRequestError. Match on driverError.code or
+    // a 23514 marker AND the constraint name — belt-and-suspenders. Must run BEFORE the
+    // generic DB_ERROR fallback so the typed BALANCE_INSUFFICIENT reaches clients (deck
+    // mutation $transaction in 03-11 + concurrent transfers).
+    const driverErr = err.meta && err.meta.driverError;
+    const errMsg = String(err.message || (driverErr && driverErr.message) || '');
+    const has23514 = (driverErr && driverErr.code === '23514') || /\b23514\b/.test(errMsg);
+    const hasBalanceCheck = /BankAccount_balance_nonneg_check/i.test(errMsg) ||
+      /BankAccount_balance_nonneg_check/i.test(String(driverErr && driverErr.message) || '');
+    if (has23514 && hasBalanceCheck) {
+      status = 400;
+      code = 'BALANCE_INSUFFICIENT';
+      message = messages.BALANCE_INSUFFICIENT;
+    } else {
+      status = 500;
+      code = 'DB_ERROR';
+      message = messages.DB_ERROR;
+    }
   } else if (err && (Array.isArray(err.errors) || typeof err.array === 'function')) {
     // express-validator failures (validationResult(req).throw())
     status = 400;
@@ -58,11 +76,19 @@ function errorNormalizer(err, req, res, _next) {
   const log = (req && req.log) || logger;
   log.error({ err, status, code, requestId: req && req.id }, 'request_error');
 
-  res.status(status).json({
+  const body = {
     error: code,
     message,
     requestId: req && req.id,
-  });
+  };
+  // D-10 (plan 03-05): VALIDATION_FAILED throw sites (Zod via reqValidator, manual
+  // AppError instantiations) attach err.issues = [{path, code, message}]. Surface them
+  // additively so mobile/admin can render top-level message in a banner AND highlight
+  // individual fields. Strictly array-typed; never leak non-array shapes.
+  if (err && Array.isArray(err.issues)) {
+    body.issues = err.issues;
+  }
+  res.status(status).json(body);
 }
 
 module.exports = { errorNormalizer, notFoundHandler };
