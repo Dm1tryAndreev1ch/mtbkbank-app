@@ -324,6 +324,117 @@ if [ -d backend/src/routes/admin ]; then
   echo "OK    Phase-4.5 D-01: no sub-router remounts admin auth middleware"
 fi
 
+echo "=== Phase-4.5 final regression-guard ==="
+
+# (a) every routes/admin/*.js mutation handler must call auditLog.withAudit
+#     (or writeAudit inside $transaction). Wave-final pin against the populated
+#     sub-routers from Plans 2-5.
+for f in backend/src/routes/admin/*.js; do
+  base=$(basename "$f")
+  [ "$base" = "index.js" ] && continue
+  [ "$base" = "dashboard.js" ] && continue
+  if grep -qE "router\.(post|put|patch|delete)" "$f"; then
+    if grep -qE "(prisma|tx)\.(user|transaction|bankAccount|bankCard|userCard|deck|quest|spendingLimit|payment|subscription|cardTrade|notification|collectionCard|deckCard)\.(create|createMany|update|updateMany|delete|deleteMany)" "$f"; then
+      if ! grep -qE "auditLog\.withAudit|auditLog\.writeAudit|withAudit\(|writeAudit\(" "$f"; then
+        echo "FAIL  Phase-4.5 D-03/D-04: $f mutates Prisma without audit wiring"
+        FAIL=1
+      fi
+    fi
+  fi
+done
+echo "OK    Phase-4.5 D-03/D-04: all routes/admin sub-router mutations wrap audit"
+
+# (b) backend/eslint.config.js MUST register destructive-prisma selectors for
+#     every D-02 (model, op) pair populated by Plans 2-5.
+for selector in \
+  "prisma\\.user\\.delete" \
+  "prisma\\.user\\.update" \
+  "prisma\\.transaction\\.delete" \
+  "prisma\\.transaction\\.update" \
+  "prisma\\.bankAccount\\.update" \
+  "prisma\\.bankAccount\\.delete" \
+  "prisma\\.bankCard\\.delete" \
+  "prisma\\.userCard\\.delete" \
+  "prisma\\.deck\\.delete" \
+  "prisma\\.quest\\.delete" \
+  "prisma\\.spendingLimit\\.delete" \
+  "prisma\\.payment\\.update" \
+  "prisma\\.subscription\\.delete" \
+  "prisma\\.cardTrade\\.update" \
+  "prisma\\.cardTrade\\.delete" \
+  "prisma\\.notification\\.delete" \
+; do
+  if ! grep -q "$selector" backend/eslint.config.js 2>/dev/null; then
+    echo "FAIL  Phase-4.5 D-02: backend/eslint.config.js missing $selector selector"
+    FAIL=1
+  fi
+done
+echo "OK    Phase-4.5 D-02: destructive-prisma ESLint selectors all registered"
+
+# (c) backend/src/routes/admin.js (singular file) MUST be deleted by Plan 1.
+#     (Already covered above; re-pin in the final-gate banner.)
+if [ -f backend/src/routes/admin.js ]; then
+  echo "FAIL  Phase-4.5 D-01: backend/src/routes/admin.js still exists"
+  FAIL=1
+else
+  echo "OK    Phase-4.5 D-01: backend/src/routes/admin.js (singular) absent"
+fi
+
+# (d) auth chain mount preservation in backend/src/index.js.
+if grep -qE "app\.use\(\s*['\"]/api/admin['\"]\s*,.*authMiddleware" backend/src/index.js 2>/dev/null; then
+  echo "OK    Phase-4.5 D-01: /api/admin authMiddleware mounted"
+else
+  echo "FAIL  Phase-4.5 D-01: /api/admin auth chain mount missing in backend/src/index.js"
+  FAIL=1
+fi
+if grep -qE "app\.use\(\s*['\"]/api/admin['\"]\s*,.*requireFreshAdmin" backend/src/index.js 2>/dev/null; then
+  echo "OK    Phase-4.5 D-01: /api/admin requireFreshAdmin in mount chain"
+else
+  echo "FAIL  Phase-4.5 D-01: /api/admin requireFreshAdmin not in mount chain"
+  FAIL=1
+fi
+
+# (e) absence of eslint-disable.*no-restricted-syntax in backend/src/**.
+if grep -rE "eslint-disable.*no-restricted-syntax" backend/src/ >/dev/null 2>&1; then
+  echo "FAIL  Phase-4.5 D-02: eslint-disable for no-restricted-syntax found in backend/src/**"
+  FAIL=1
+else
+  echo "OK    Phase-4.5 D-02: no eslint-disable bypass for no-restricted-syntax in backend/src/**"
+fi
+
+# (f) admin-audit-rollback.test.js must exist AND reference writeAudit/withAudit.
+if [ ! -f backend/tests/integration/admin-audit-rollback.test.js ]; then
+  echo "FAIL  Phase-4.5 D-04: backend/tests/integration/admin-audit-rollback.test.js missing"
+  FAIL=1
+elif ! grep -qE "writeAudit|withAudit" backend/tests/integration/admin-audit-rollback.test.js; then
+  echo "FAIL  Phase-4.5 D-04: admin-audit-rollback.test.js does not exercise writeAudit/withAudit"
+  FAIL=1
+else
+  echo "OK    Phase-4.5 D-04: admin-audit-rollback.test.js shipped + exercises writeAudit"
+fi
+
+# (g) cascade FK count pin — schema.prisma must retain >=9 onDelete: Cascade
+#     and >=3 onDelete: SetNull (Plan-1 Migration A; guards ADMIN-12 cascade
+#     against future schema drift).
+cascade_count=$(grep -c "onDelete: Cascade" backend/prisma/schema.prisma 2>/dev/null || echo 0)
+if [ "$cascade_count" -lt 9 ]; then
+  echo "FAIL  Phase-4.5 D-06: schema.prisma has $cascade_count onDelete: Cascade (expected >=9)"
+  FAIL=1
+else
+  echo "OK    Phase-4.5 D-06: $cascade_count onDelete: Cascade entries (>=9 required)"
+fi
+setnull_count=$(grep -c "onDelete: SetNull" backend/prisma/schema.prisma 2>/dev/null || echo 0)
+if [ "$setnull_count" -lt 3 ]; then
+  echo "FAIL  Phase-4.5 D-06: schema.prisma has $setnull_count onDelete: SetNull (expected >=3)"
+  FAIL=1
+else
+  echo "OK    Phase-4.5 D-06: $setnull_count onDelete: SetNull entries (>=3 required)"
+fi
+
+if [[ $FAIL -eq 0 ]]; then
+  echo "OK: Phase-4.5 final regression-guard"
+fi
+
 if [[ $FAIL -ne 0 ]]; then
   echo ""
   echo "Regression-guard FAILED — fix the listed pattern(s) before committing."
