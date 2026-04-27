@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/react-native';
 import * as api from '../services/api';
 import * as tokenStore from '../services/tokenStore';
 import { secureStorageUiPrefs } from '../services/secureStorageUiPrefs';
+import { mergeList } from './mergeByUpdatedAt';
 
 interface User {
   id: string;
@@ -390,7 +391,8 @@ export const useStore = create<AppState>()(
       loadAccounts: async () => {
         try {
           const { data } = await api.getAccounts();
-          set({ accounts: data });
+          // REL-12: HTTP loses ties; ws-pushed updates survive racing HTTP refresh.
+          set((s) => ({ accounts: mergeList(s.accounts ?? [], data ?? [], 'http') }));
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить счета') });
         }
@@ -399,7 +401,9 @@ export const useStore = create<AppState>()(
       loadTransactions: async (params) => {
         try {
           const { data } = await api.getTransactions(params);
-          set({ transactions: data.transactions });
+          set((s) => ({
+            transactions: mergeList(s.transactions ?? [], data.transactions ?? [], 'http'),
+          }));
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить транзакции') });
         }
@@ -408,7 +412,7 @@ export const useStore = create<AppState>()(
       loadCards: async (params) => {
         try {
           const { data } = await api.getInventory(params);
-          set({ cards: data });
+          set((s) => ({ cards: mergeList(s.cards ?? [], data ?? [], 'http') }));
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить карты') });
         }
@@ -417,7 +421,7 @@ export const useStore = create<AppState>()(
       loadDecks: async () => {
         try {
           const { data } = await api.getDecks();
-          set({ decks: data });
+          set((s) => ({ decks: mergeList(s.decks ?? [], data ?? [], 'http') }));
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить колоды') });
         }
@@ -453,7 +457,10 @@ export const useStore = create<AppState>()(
       loadNotifications: async () => {
         try {
           const { data } = await api.getNotifications();
-          set({ notifications: data.notifications, unreadCount: data.unreadCount });
+          set((s) => ({
+            notifications: mergeList(s.notifications ?? [], data.notifications ?? [], 'http'),
+            unreadCount: data.unreadCount,
+          }));
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить уведомления') });
         }
