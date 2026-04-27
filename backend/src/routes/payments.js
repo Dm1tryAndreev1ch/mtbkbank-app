@@ -2,6 +2,7 @@ const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const { processCardDrop } = require('../services/cardEngine');
 const { logger } = require('../logger');
+const { AppError } = require('../errors/AppError');
 const router = express.Router();
 
 const MAX_PAYMENT_AMOUNT = 1_000_000;
@@ -48,6 +49,9 @@ router.post('/', async (req, res) => {
       where: { id: accountId, userId: req.userId },
     });
     if (!account) return res.status(404).json({ error: 'Счёт не найден' });
+    // Phase 4.5 / 04.5-01 / Task 2 / ADMIN-01 — frozen-account debit guard.
+    // Frozen accounts must reject before scheduled OR live debit.
+    if (account.frozen) throw new AppError('ACCOUNT_FROZEN', 423);
 
     // Scheduled payment
     if (scheduledAt) {

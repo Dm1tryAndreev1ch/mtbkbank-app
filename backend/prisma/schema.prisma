@@ -54,23 +54,27 @@ enum QuestType {
 }
 
 model User {
-  id            String     @id @default(cuid())
-  name          String
-  phone         String     @unique
-  pin           String
-  avatarUrl     String?
-  expoPushToken String?
-  refreshToken  String? // FIX: stored for revocation support
+  id                    String     @id @default(cuid())
+  name                  String
+  phone                 String     @unique
+  pin                   String
+  avatarUrl             String?
+  expoPushToken         String?
+  refreshToken          String? // FIX: stored for revocation support
   // Phase 4 / 04-02 / B-M2 — expiry stamp written at issuance (login/register/refresh
   // rotation). NULL means "legacy token issued before this column existed"; backfill
   // migration sets such rows to createdAt + 30d so the historical fleet does not
   // retain unbounded validity.
   refreshTokenExpiresAt DateTime?
-  mbPoints      Int        @default(0)
-  status        UserStatus @default(STANDARD)
-  isAdmin       Boolean    @default(false)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  mbPoints              Int        @default(0)
+  status                UserStatus @default(STANDARD)
+  isAdmin               Boolean    @default(false)
+  // Phase 4.5 / 04.5-01 / ADMIN-12 — soft-delete tombstone. NULL = active. The
+  // hard-delete path in routes/admin/users.js (Plan 5) actually removes the
+  // row; soft-delete just stamps deletedAt and admin reads filter where: { deletedAt: null }.
+  deletedAt             DateTime?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
   accounts       BankAccount[]
   bankCards      BankCard[]
@@ -93,9 +97,13 @@ model BankAccount {
   type      String
   balance   Float    @default(0)
   currency  String   @default("RUB")
+  // Phase 4.5 / 04.5-01 / ADMIN-01 — admin freeze toggle. routes/transactions.js
+  // and routes/payments.js debit paths reject 423 ACCOUNT_FROZEN before any
+  // side effect runs.
+  frozen    Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user             User          @relation(fields: [userId], references: [id])
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   bankCards        BankCard[]
   transactionsFrom Transaction[] @relation("TransFrom")
   transactionsTo   Transaction[] @relation("TransTo")
@@ -111,8 +119,8 @@ model BankCard {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  user    User        @relation(fields: [userId], references: [id])
-  account BankAccount @relation(fields: [accountId], references: [id])
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 }
 
 model Transaction {
@@ -132,7 +140,7 @@ model Transaction {
   droppedCardId String?
   createdAt     DateTime        @default(now())
 
-  user        User         @relation(fields: [userId], references: [id])
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   fromAccount BankAccount? @relation("TransFrom", fields: [fromAccountId], references: [id])
   toAccount   BankAccount? @relation("TransTo", fields: [toAccountId], references: [id])
 
@@ -172,7 +180,7 @@ model UserCard {
   acquiredAt       DateTime   @default(now())
   lastWarningAt    DateTime? // REL-11 — null = never warned; updated by tickActiveDeckCardHealth on low-HP push
 
-  user           User           @relation(fields: [userId], references: [id])
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   collectionCard CollectionCard @relation(fields: [collectionCardId], references: [id])
   deckCards      DeckCard[]
 
@@ -191,7 +199,7 @@ model Deck {
   isActive  Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user      User       @relation(fields: [userId], references: [id])
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   deckCards DeckCard[]
 }
 
@@ -210,7 +218,10 @@ model DeckCard {
 
 model CardTrade {
   id              String      @id @default(cuid())
-  fromUserId      String
+  // Phase 4.5 / 04.5-01 / ADMIN-12 — peer FKs nullable + onDelete: SetNull so a
+  // hard-deleted user's outbound/inbound trades survive with the FK tombstoned
+  // (Success Criterion 3 — peer-owned trade history is preserved).
+  fromUserId      String?
   toUserId        String?
   offeredCardId   String
   requestedCardId String?
@@ -220,8 +231,8 @@ model CardTrade {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  fromUser User  @relation("TradesFrom", fields: [fromUserId], references: [id])
-  toUser   User? @relation("TradesTo", fields: [toUserId], references: [id])
+  fromUser User? @relation("TradesFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser   User? @relation("TradesTo", fields: [toUserId], references: [id], onDelete: SetNull)
 }
 
 model Quest {
@@ -250,7 +261,7 @@ model UserQuest {
   completedAt DateTime?
   assignedAt  DateTime  @default(now())
 
-  user  User  @relation(fields: [userId], references: [id])
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   quest Quest @relation(fields: [questId], references: [id])
 
   @@unique([userId, questId, assignedAt])
@@ -268,7 +279,7 @@ model Subscription {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model SpendingLimit {
@@ -280,7 +291,7 @@ model SpendingLimit {
   period      String   @default("monthly")
   createdAt   DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, category])
 }
@@ -294,7 +305,7 @@ model Notification {
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Phase 4 / 04-02 / B-M4 — paired with 20260427_idx_notification_user_created
   // CONCURRENT migration; supports the listing query "user notifications most-recent-first".
@@ -309,8 +320,13 @@ model SystemConfig {
 
 model AuditLog {
   id         String   @id @default(cuid())
-  actorId    String
-  actor      User     @relation("AuditActor", fields: [actorId], references: [id])
+  // Phase 4.5 / 04.5-01 / ADMIN-12 / Pitfall 4 / A11 — actorId is nullable +
+  // onDelete: SetNull. When an admin user is hard-deleted, their historical
+  // audit rows survive with the actor reference tombstoned (Success Criterion
+  // 3 — audit history is preserved). The widget renders "(удалён)" when actor
+  // is null.
+  actorId    String?
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
   action     String // DOMAIN_REASON code, e.g. 'USER_HARD_DELETE', 'ACCOUNT_FREEZE'
   targetType String // 'User' | 'BankAccount' | 'Transaction' | …
   targetId   String?

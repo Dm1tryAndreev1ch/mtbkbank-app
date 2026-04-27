@@ -36,10 +36,108 @@ const adminUserCreateSchema = z.object({
 const { grantCardSchema, sourceSchema } = require('./cards');
 const adminGrantCardSchema = grantCardSchema;
 
+// =============================================================================
+// Phase 4.5 / 04.5-01 / Task 2 — admin Zod schema scaffold.
+// One schema per admin endpoint shipping in Plans 2-5. reqValidator(<schema>)
+// gates the body before the handler runs; the handler reads req.validated.
+// =============================================================================
+const adminAccountFreezeSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+const adminAccountUnfreezeSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+const adminBalanceAdjustSchema = z.object({
+  delta: z.number().finite(),
+  reason: z.string().min(3).max(500),
+});
+const adminTransactionReverseSchema = z.object({
+  reason: z.string().min(3).max(500),
+});
+const adminBankCardBlockSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+const adminBankCardIssueSchema = z.object({
+  userId: z.string().min(1),
+  accountId: z.string().min(1),
+  cardType: z.string().min(1),
+});
+const adminUserCardHpSchema = z.object({
+  health: z.number().int().nonnegative(),
+});
+const adminQuestCreateSchema = z.object({
+  code: z.string().min(1).max(64),
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).optional(),
+  reward: z.number().int().nonnegative(),
+  target: z.number().int().positive(),
+});
+const adminQuestUpdateSchema = adminQuestCreateSchema.partial();
+const adminLimitCreateSchema = z.object({
+  userId: z.string().min(1),
+  category: z.string().min(1),
+  amount: z.number().int().nonnegative(),
+  period: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']),
+});
+const adminLimitUpdateSchema = adminLimitCreateSchema.partial();
+const adminPaymentStatusSchema = z.object({
+  status: z.string().min(1),
+  reason: z.string().min(3).max(500),
+});
+const adminSubscriptionCreateSchema = z.object({
+  userId: z.string().min(1),
+  name: z.string().min(1).max(120),
+  amount: z.number().int().nonnegative(),
+  period: z.enum(['MONTHLY', 'YEARLY']).optional(),
+});
+const adminSubscriptionUpdateSchema = adminSubscriptionCreateSchema.partial();
+const adminNotificationBroadcastSchema = z.object({
+  audience: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('USER'), userId: z.string().min(1) }),
+    z.object({ type: z.literal('SEGMENT'), segment: z.literal('GOLD') }),
+  ]),
+  title: z.string().min(1).max(120),
+  body: z.string().min(1).max(500),
+  data: z.record(z.unknown()).optional(),
+});
+const adminTradeCancelSchema = z.object({
+  reason: z.string().min(3).max(500),
+});
+const adminUserHardDeleteSchema = z.object({
+  mode: z.enum(['soft', 'hard']).default('soft'),
+  confirmPhone: z.string().optional(),
+});
+const adminDeckBreakActiveSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+const adminUserQuestResetSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+
 module.exports = {
   adminUserUpdateSchema,
   adminUserCreateSchema,
   adminGrantCardSchema,
   userStatusSchema,
   sourceSchema,
+  // Phase 4.5 / 04.5-01 / Task 2 — admin domain schemas (Plans 2-5 consume).
+  adminAccountFreezeSchema,
+  adminAccountUnfreezeSchema,
+  adminBalanceAdjustSchema,
+  adminTransactionReverseSchema,
+  adminBankCardBlockSchema,
+  adminBankCardIssueSchema,
+  adminUserCardHpSchema,
+  adminQuestCreateSchema,
+  adminQuestUpdateSchema,
+  adminLimitCreateSchema,
+  adminLimitUpdateSchema,
+  adminPaymentStatusSchema,
+  adminSubscriptionCreateSchema,
+  adminSubscriptionUpdateSchema,
+  adminNotificationBroadcastSchema,
+  adminTradeCancelSchema,
+  adminUserHardDeleteSchema,
+  adminDeckBreakActiveSchema,
+  adminUserQuestResetSchema,
 };
