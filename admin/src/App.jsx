@@ -11,6 +11,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { EmptyState } from './components/EmptyState';
 import { useZodForm } from './lib/useZodForm';
 import { loginSchema, phoneSchema, pinSchema, nameSchema } from './lib/schemas';
+import { actionToRussianLabel, actionIsDestructive } from './lib/auditCodebook';
 import { z } from 'zod';
 
 // Toast helpers — push backend message verbatim on error, Russian success copy on mutation.
@@ -222,6 +223,96 @@ function formatPageError(e) {
   return 'Нет соединения с сервером. Проверьте, что backend запущен.';
 }
 
+// ==================== AUDIT LOG WIDGET ====================
+// Phase 4.5 / 04.5-04 / D-09 Plan 4 / D-12 — read-only "last 50" widget.
+// 4 columns (Время / Администратор / Действие / Цель) with destructive red dot.
+// Russian copy locked per UI-SPEC §"Audit-Log Dashboard Widget".
+function AuditLogWidget() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    apiFetch(token, `${API}/dashboard/audit`)
+      .then((r) => { if (!cancelled) setItems(Array.isArray(r.items) ? r.items : []); })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  return (
+    <div className="table-container" style={{ marginTop: 32 }}>
+      <div className="table-header">
+        <span className="table-title">Последние действия администраторов</span>
+      </div>
+      {err ? (
+        <PageErrorBanner message={'Не удалось загрузить аудит-лог.'} />
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: 160 }}>Время</th>
+              <th style={{ width: 180 }}>Администратор</th>
+              <th style={{ width: 220 }}>Действие</th>
+              <th>Цель</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <SkeletonRow columns={4} rows={5} />
+            ) : items.length === 0 ? (
+              <tr><td colSpan={4}>
+                <EmptyState
+                  heading="Действий пока нет"
+                  body="Здесь появятся записи аудит-лога после первой операции."
+                  icon="history"
+                />
+              </td></tr>
+            ) : items.map((row) => {
+              const destructive = actionIsDestructive(row.action);
+              const label = actionToRussianLabel(row.action);
+              const actorName = row.actor?.name || '— (удалён)';
+              const targetText = row.targetType
+                ? `${row.targetType}: ${row.targetId ? row.targetId.slice(-8) : '—'}`
+                : '—';
+              return (
+                <tr key={row.id}>
+                  <td style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>
+                    {new Date(row.createdAt).toLocaleString('ru-RU')}
+                  </td>
+                  <td>{actorName}</td>
+                  <td>
+                    {destructive ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            display: 'inline-block',
+                            width: 8, height: 8, borderRadius: 4,
+                            background: 'var(--error, #d32f2f)',
+                          }}
+                        />
+                        {label}
+                      </span>
+                    ) : (
+                      <span style={{ paddingLeft: 16 }}>{label}</span>
+                    )}
+                  </td>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{targetText}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function DashboardPage() {
   const { token } = useToken();
   const [stats, setStats] = useState(null);
@@ -286,6 +377,10 @@ function DashboardPage() {
             Throw test error (DEV)
           </button>
         )}
+
+        {/* ==================== AUDIT LOG WIDGET ==================== */}
+        {/* Phase 4.5 / 04.5-04 / D-09 Plan 4 — last 50 entries, read-only */}
+        <AuditLogWidget />
 
         {extended && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, marginTop: 32, marginBottom: 16 }}>

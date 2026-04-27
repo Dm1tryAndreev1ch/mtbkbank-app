@@ -34,6 +34,8 @@ router.use('/users',         require('./users'));
 const dashboard = require('./dashboard');
 router.get('/dashboard',          dashboard.summary);
 router.get('/dashboard/extended', dashboard.extended);
+// Phase 4.5 / 04.5-04 / D-09 Plan 4 — audit-log "last 50 entries" widget feed.
+router.get('/dashboard/audit',    dashboard.audit);
 
 // Legacy paths preserved until Plans 2-5 migrate the admin SPA off them.
 // /api/admin/cards/* — collection-card templates. Phase 4.5 / 04.5-03 split
