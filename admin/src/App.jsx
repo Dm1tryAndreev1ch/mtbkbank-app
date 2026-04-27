@@ -1728,11 +1728,669 @@ function SubscriptionsPage() {
   );
 }
 
+// ==================== BANK CARDS PAGE ====================
+// Phase 4.5 / 04.5-03 / ADMIN-03 — BankCard block/unblock/issue/delete.
+// Plan calls for integration into Users detail; Users page has no detail panel
+// in the current single-file SPA, so this lands as a standalone page filtered
+// by userId. Russian copy per UI-SPEC.
+function BankCardsPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [showIssue, setShowIssue] = useState(false);
+  const [confirmBlock, setConfirmBlock] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [mutatingId, setMutatingId] = useState(null);
+  const [reload, setReload] = useState(0);
+  const [form, setForm] = useState({ userId: '', accountId: '', type: 'debit', tier: 'standard', maskedNumber: '' });
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setErr(null);
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (userIdFilter) params.set('userId', userIdFilter);
+    apiFetch(token, `${API}/bankCards?${params.toString()}`)
+      .then((r) => {
+        if (cancelled) return;
+        setItems(Array.isArray(r.items) ? r.items : []);
+        setTotal(typeof r.total === 'number' ? r.total : 0);
+      })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, page, userIdFilter, reload]);
+
+  const doBlock = async () => {
+    if (!confirmBlock) return;
+    setMutatingId(confirmBlock.id);
+    try {
+      const path = confirmBlock.isActive
+        ? `${API}/bankCards/${confirmBlock.id}/block`
+        : `${API}/bankCards/${confirmBlock.id}/unblock`;
+      await apiFetch(token, path, { method: 'POST', body: {} });
+      toastSuccess(confirmBlock.isActive ? 'Карта заблокирована' : 'Карта разблокирована');
+      setConfirmBlock(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось изменить карту');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+  const doDelete = async () => {
+    if (!confirmDelete) return;
+    setMutatingId(confirmDelete.id);
+    try {
+      await apiFetch(token, `${API}/bankCards/${confirmDelete.id}`, { method: 'DELETE' });
+      toastSuccess('Карта удалена');
+      setConfirmDelete(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось удалить карту');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+  const doIssue = async (e) => {
+    e?.preventDefault?.();
+    setMutatingId('__issue__');
+    try {
+      const body = {
+        userId: form.userId,
+        accountId: form.accountId,
+        type: form.type,
+        tier: form.tier,
+      };
+      if (form.maskedNumber) body.maskedNumber = form.maskedNumber;
+      await apiFetch(token, `${API}/bankCards`, { method: 'POST', body });
+      toastSuccess('Карта выпущена');
+      setShowIssue(false);
+      setForm({ userId: '', accountId: '', type: 'debit', tier: 'standard', maskedNumber: '' });
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось выпустить карту');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
+          <div><h1 className="page-title">Банковские карты</h1><p className="page-subtitle">Block / unblock / issue / delete</p></div>
+          <button className="btn btn-primary" onClick={() => setShowIssue(true)}>
+            <span className="material-icons-outlined" style={{ fontSize: 18 }}>add</span> Выпустить карту
+          </button>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить карты.'} />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <input type="text" className="form-input" placeholder="ID пользователя" value={userIdFilter}
+              onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }} style={{ maxWidth: 220 }} />
+          </div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Пользователь</th><th>Счёт</th><th>Номер</th><th>Тип</th><th>Тариф</th><th>Статус</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={7} rows={5} />
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={7}>
+                    <EmptyState heading="Банковских карт нет" body="У пользователя пока нет банковских карт." icon="credit_card" />
+                  </td></tr>
+                ) : items.map((c) => (
+                  <tr key={c.id} style={mutatingId === c.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{c.userId.slice(-8)}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{c.accountId.slice(-8)}</td>
+                    <td>{c.maskedNumber}</td>
+                    <td>{c.type}</td>
+                    <td>{c.tier}</td>
+                    <td>{c.isActive ? 'Активна' : 'Заблокирована'}</td>
+                    <td style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-sm" onClick={() => setConfirmBlock(c)}>{c.isActive ? 'Заблокировать' : 'Разблокировать'}</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => setConfirmDelete(c)}>Удалить</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, justifyContent: 'flex-end' }}>
+            <span style={{ color: 'var(--on-surface-variant)' }}>Стр. {page} из {Math.max(1, Math.ceil(total / limit))} · Всего: {total}</span>
+            <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
+            <button className="btn btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage((p) => p + 1)}>Вперёд →</button>
+          </div>
+        </div>
+      </div>
+
+      {showIssue && (
+        <div className="modal-overlay" onClick={() => setShowIssue(false)}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={doIssue}>
+            <h2 className="modal-title">Выпустить карту</h2>
+            <div className="form-group"><label className="form-label">ID пользователя</label>
+              <input className="form-input" value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">ID счёта</label>
+              <input className="form-input" value={form.accountId} onChange={(e) => setForm({ ...form, accountId: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Тип</label>
+              <select className="form-select" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                <option value="debit">debit</option><option value="credit">credit</option>
+              </select></div>
+            <div className="form-group"><label className="form-label">Тариф</label>
+              <input className="form-input" value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Маскированный номер (необязательно)</label>
+              <input className="form-input" value={form.maskedNumber} onChange={(e) => setForm({ ...form, maskedNumber: e.target.value })} placeholder="**** 1234" /></div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => setShowIssue(false)}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === '__issue__'} className="btn btn-primary">Выпустить</SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmBlock}
+        title={confirmBlock?.isActive ? 'Заблокировать карту?' : 'Разблокировать карту?'}
+        message={confirmBlock?.isActive
+          ? `Карта ${confirmBlock?.maskedNumber || ''} будет заблокирована. Пользователь не сможет ей платить.`
+          : `Карта ${confirmBlock?.maskedNumber || ''} будет разблокирована.`}
+        confirmLabel={confirmBlock?.isActive ? 'Заблокировать' : 'Разблокировать'}
+        cancelLabel="Отмена"
+        destructive={confirmBlock?.isActive}
+        onConfirm={doBlock}
+        onCancel={() => (mutatingId ? null : setConfirmBlock(null))}
+      />
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Удалить карту?"
+        message="Карта будет полностью удалена из системы. Это действие необратимо."
+        confirmLabel="Удалить"
+        cancelLabel="Отмена"
+        destructive
+        onConfirm={doDelete}
+        onCancel={() => (mutatingId ? null : setConfirmDelete(null))}
+      />
+    </>
+  );
+}
+
+// ==================== USER CARDS PAGE ====================
+// Phase 4.5 / 04.5-03 / ADMIN-04 — UserCard inventory: revoke + HP edit.
+function UserCardsPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const [confirmRevoke, setConfirmRevoke] = useState(null);
+  const [editHp, setEditHp] = useState(null);
+  const [hpValue, setHpValue] = useState('');
+  const [mutatingId, setMutatingId] = useState(null);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    if (!userIdFilter) { setItems([]); return; }
+    let cancelled = false;
+    setLoading(true); setErr(null);
+    apiFetch(token, `${API}/userCards/by-user/${encodeURIComponent(userIdFilter)}`)
+      .then((r) => {
+        if (cancelled) return;
+        setItems(Array.isArray(r.items) ? r.items : []);
+      })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, userIdFilter, reload]);
+
+  const doRevoke = async () => {
+    if (!confirmRevoke) return;
+    setMutatingId(confirmRevoke.id);
+    try {
+      await apiFetch(token, `${API}/userCards/${confirmRevoke.id}`, { method: 'DELETE' });
+      toastSuccess('Карта изъята');
+      setConfirmRevoke(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось изъять карту');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+  const doHpEdit = async (e) => {
+    e?.preventDefault?.();
+    if (!editHp) return;
+    const v = Number(hpValue);
+    if (!Number.isFinite(v) || v < 0) {
+      toastErrorFromAppError({ code: 'VALIDATION_FAILED' }, 'Введите неотрицательное число');
+      return;
+    }
+    setMutatingId(editHp.id);
+    try {
+      await apiFetch(token, `${API}/userCards/${editHp.id}/health`, { method: 'PUT', body: { health: v } });
+      toastSuccess('HP обновлено');
+      setEditHp(null); setHpValue('');
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось обновить HP');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ flexShrink: 0 }}>
+          <h1 className="page-title">Инвентарь карт-коллекции</h1>
+          <p className="page-subtitle">Изъять карту из инвентаря или скорректировать HP</p>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить инвентарь.'} />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+            <input type="text" className="form-input" placeholder="ID пользователя"
+              value={userIdFilter} onChange={(e) => setUserIdFilter(e.target.value)} style={{ maxWidth: 320 }} />
+          </div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Карта</th><th>HP</th><th>Источник</th><th>Получена</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={5} rows={5} />
+                ) : !userIdFilter ? (
+                  <tr><td colSpan={5}>
+                    <EmptyState heading="Введите ID пользователя" body="Инвентарь подгружается по конкретному пользователю." icon="search" />
+                  </td></tr>
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={5}>
+                    <EmptyState heading="Карт нет" body="У пользователя пока нет карт-коллекции." icon="style" />
+                  </td></tr>
+                ) : items.map((u) => (
+                  <tr key={u.id} style={mutatingId === u.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontWeight: 600 }}>{u.collectionCard?.name || u.collectionCardId.slice(-8)}</td>
+                    <td>{u.health}</td>
+                    <td>{u.source}</td>
+                    <td>{new Date(u.acquiredAt).toLocaleDateString('ru-RU')}</td>
+                    <td style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-sm" onClick={() => { setEditHp(u); setHpValue(String(u.health)); }}>Изменить HP</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => setConfirmRevoke(u)}>Изъять</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {editHp && (
+        <div className="modal-overlay" onClick={() => setEditHp(null)}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={doHpEdit}>
+            <h2 className="modal-title">Изменить HP карты</h2>
+            <div className="form-group">
+              <label className="form-label">HP</label>
+              <input className="form-input" type="number" value={hpValue}
+                onChange={(e) => setHpValue(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => setEditHp(null)}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === editHp.id} className="btn btn-primary">Сохранить</SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmRevoke}
+        title="Изъять карту?"
+        message={`Карта-коллекция «${confirmRevoke?.collectionCard?.name || ''}» будет изъята из инвентаря пользователя.`}
+        confirmLabel="Изъять"
+        cancelLabel="Отмена"
+        destructive
+        onConfirm={doRevoke}
+        onCancel={() => (mutatingId ? null : setConfirmRevoke(null))}
+      />
+    </>
+  );
+}
+
+// ==================== DECKS PAGE ====================
+// Phase 4.5 / 04.5-03 / ADMIN-05 — view by user + break-active.
+function DecksPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const [confirmBreak, setConfirmBreak] = useState(null);
+  const [mutatingId, setMutatingId] = useState(null);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    if (!userIdFilter) { setItems([]); return; }
+    let cancelled = false;
+    setLoading(true); setErr(null);
+    apiFetch(token, `${API}/decks/by-user/${encodeURIComponent(userIdFilter)}`)
+      .then((r) => {
+        if (cancelled) return;
+        setItems(Array.isArray(r.items) ? r.items : []);
+      })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, userIdFilter, reload]);
+
+  const doBreak = async () => {
+    if (!confirmBreak) return;
+    setMutatingId(confirmBreak.id);
+    try {
+      await apiFetch(token, `${API}/decks/${confirmBreak.id}/break-active`, { method: 'POST', body: {} });
+      toastSuccess('Активная колода сброшена');
+      setConfirmBreak(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось сбросить колоду');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ flexShrink: 0 }}>
+          <h1 className="page-title">Колоды</h1>
+          <p className="page-subtitle">Просмотр и сброс активной колоды пользователя</p>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить колоды.'} />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+            <input type="text" className="form-input" placeholder="ID пользователя"
+              value={userIdFilter} onChange={(e) => setUserIdFilter(e.target.value)} style={{ maxWidth: 320 }} />
+          </div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Название</th><th>Активна</th><th>Карт</th><th>Создана</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={5} rows={3} />
+                ) : !userIdFilter ? (
+                  <tr><td colSpan={5}>
+                    <EmptyState heading="Введите ID пользователя" body="Список колод подгружается по конкретному пользователю." icon="search" />
+                  </td></tr>
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={5}>
+                    <EmptyState heading="Колод нет" body="У пользователя пока нет колод." icon="layers" />
+                  </td></tr>
+                ) : items.map((d) => (
+                  <tr key={d.id} style={mutatingId === d.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontWeight: 600 }}>{d.name}</td>
+                    <td>{d.isActive ? 'Да' : 'Нет'}</td>
+                    <td>{d._count?.deckCards ?? d.deckCards?.length ?? 0}</td>
+                    <td>{new Date(d.createdAt).toLocaleDateString('ru-RU')}</td>
+                    <td>
+                      {d.isActive ? (
+                        <button className="btn btn-sm btn-danger" onClick={() => setConfirmBreak(d)}>Сбросить активную</button>
+                      ) : <span style={{ color: 'var(--on-surface-variant)' }}>—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={!!confirmBreak}
+        title="Сбросить активную колоду?"
+        message="Активная колода будет деактивирована. При следующем заходе пользователя система пересоберёт колоду по умолчанию."
+        confirmLabel="Сбросить"
+        cancelLabel="Отмена"
+        destructive
+        onConfirm={doBreak}
+        onCancel={() => (mutatingId ? null : setConfirmBreak(null))}
+      />
+    </>
+  );
+}
+
+// ==================== QUESTS PAGE ====================
+// Phase 4.5 / 04.5-03 / ADMIN-06 — Quest CRUD (soft-delete via isActive=false)
+// + UserQuest reset.
+function QuestsPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editFor, setEditFor] = useState(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [showResetUQ, setShowResetUQ] = useState(false);
+  const [mutatingId, setMutatingId] = useState(null);
+  const [reload, setReload] = useState(0);
+  const [form, setForm] = useState({ title: '', description: '', icon: 'flag', rewardMB: 0, type: 'PURCHASE', condition: '{}' });
+  const [uqForm, setUqForm] = useState({ userQuestId: '' });
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setErr(null);
+    apiFetch(token, `${API}/quests?page=${page}&limit=${limit}`)
+      .then((r) => {
+        if (cancelled) return;
+        setItems(Array.isArray(r.items) ? r.items : []);
+        setTotal(typeof r.total === 'number' ? r.total : 0);
+      })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, page, reload]);
+
+  const doCreate = async (e) => {
+    e?.preventDefault?.();
+    setMutatingId('__create__');
+    try {
+      const body = {
+        title: form.title,
+        description: form.description,
+        icon: form.icon,
+        rewardMB: Number(form.rewardMB) || 0,
+        type: form.type,
+        condition: form.condition || '{}',
+      };
+      await apiFetch(token, `${API}/quests`, { method: 'POST', body });
+      toastSuccess('Квест создан');
+      setShowCreate(false); setForm({ title: '', description: '', icon: 'flag', rewardMB: 0, type: 'PURCHASE', condition: '{}' });
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось создать квест');
+    } finally { setMutatingId(null); }
+  };
+  const doUpdate = async (e) => {
+    e?.preventDefault?.();
+    if (!editFor) return;
+    setMutatingId(editFor.id);
+    try {
+      const body = {};
+      if (form.title) body.title = form.title;
+      if (form.description) body.description = form.description;
+      if (form.icon) body.icon = form.icon;
+      if (form.rewardMB !== '') body.rewardMB = Number(form.rewardMB);
+      if (form.type) body.type = form.type;
+      if (form.condition) body.condition = form.condition;
+      await apiFetch(token, `${API}/quests/${editFor.id}`, { method: 'PUT', body });
+      toastSuccess('Квест сохранён');
+      setEditFor(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось обновить квест');
+    } finally { setMutatingId(null); }
+  };
+  const doDeactivate = async () => {
+    if (!confirmDeactivate) return;
+    setMutatingId(confirmDeactivate.id);
+    try {
+      await apiFetch(token, `${API}/quests/${confirmDeactivate.id}/deactivate`, { method: 'POST', body: {} });
+      toastSuccess('Квест деактивирован');
+      setConfirmDeactivate(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось деактивировать');
+    } finally { setMutatingId(null); }
+  };
+  const doDelete = async () => {
+    if (!confirmDelete) return;
+    setMutatingId(confirmDelete.id);
+    try {
+      await apiFetch(token, `${API}/quests/${confirmDelete.id}`, { method: 'DELETE' });
+      toastSuccess('Квест удалён');
+      setConfirmDelete(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось удалить квест');
+    } finally { setMutatingId(null); }
+  };
+  const doResetUQ = async (e) => {
+    e?.preventDefault?.();
+    setMutatingId('__resetuq__');
+    try {
+      await apiFetch(token, `${API}/quests/user-quest/${encodeURIComponent(uqForm.userQuestId)}/reset`, { method: 'POST', body: {} });
+      toastSuccess('Прогресс квеста сброшен');
+      setShowResetUQ(false); setUqForm({ userQuestId: '' });
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось сбросить прогресс');
+    } finally { setMutatingId(null); }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
+          <div><h1 className="page-title">Квесты</h1><p className="page-subtitle">Каталог квестов + сброс прогресса</p></div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" onClick={() => setShowResetUQ(true)}>Сбросить UserQuest</button>
+            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+              <span className="material-icons-outlined" style={{ fontSize: 18 }}>add</span> Создать квест
+            </button>
+          </div>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить квесты.'} />}
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Название</th><th>Тип</th><th>Награда MB</th><th>Активен</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={5} rows={5} />
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={5}>
+                    <EmptyState heading="Квестов нет" body="Создайте первый квест." icon="flag" />
+                  </td></tr>
+                ) : items.map((q) => (
+                  <tr key={q.id} style={mutatingId === q.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontWeight: 600 }}>{q.title}</td>
+                    <td>{q.type}</td>
+                    <td>{q.rewardMB}</td>
+                    <td>{q.isActive ? 'Да' : 'Нет'}</td>
+                    <td style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-sm" onClick={() => { setEditFor(q); setForm({ title: q.title, description: q.description, icon: q.icon, rewardMB: String(q.rewardMB), type: q.type, condition: q.condition }); }}>Изменить</button>
+                      {q.isActive && <button className="btn btn-sm" onClick={() => setConfirmDeactivate(q)}>Деактивировать</button>}
+                      <button className="btn btn-sm btn-danger" onClick={() => setConfirmDelete(q)}>Удалить</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, justifyContent: 'flex-end' }}>
+            <span style={{ color: 'var(--on-surface-variant)' }}>Стр. {page} из {Math.max(1, Math.ceil(total / limit))} · Всего: {total}</span>
+            <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
+            <button className="btn btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage((p) => p + 1)}>Вперёд →</button>
+          </div>
+        </div>
+      </div>
+
+      {(showCreate || editFor) && (
+        <div className="modal-overlay" onClick={() => { setShowCreate(false); setEditFor(null); }}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={editFor ? doUpdate : doCreate}>
+            <h2 className="modal-title">{editFor ? 'Изменить квест' : 'Новый квест'}</h2>
+            <div className="form-group"><label className="form-label">Название</label>
+              <input className="form-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Описание</label>
+              <input className="form-input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Иконка</label>
+              <input className="form-input" value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Тип</label>
+              <select className="form-select" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                <option value="PURCHASE">PURCHASE</option><option value="TRANSFER">TRANSFER</option><option value="OTHER">OTHER</option>
+              </select></div>
+            <div className="form-group"><label className="form-label">Награда MB</label>
+              <input className="form-input" type="number" value={form.rewardMB} onChange={(e) => setForm({ ...form, rewardMB: e.target.value })} /></div>
+            <div className="form-group"><label className="form-label">Условие (JSON)</label>
+              <input className="form-input" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} /></div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => { setShowCreate(false); setEditFor(null); }}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === '__create__' || (editFor && mutatingId === editFor.id)} className="btn btn-primary">Сохранить</SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showResetUQ && (
+        <div className="modal-overlay" onClick={() => setShowResetUQ(false)}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={doResetUQ}>
+            <h2 className="modal-title">Сбросить прогресс квеста</h2>
+            <div className="form-group"><label className="form-label">ID UserQuest</label>
+              <input className="form-input" value={uqForm.userQuestId} onChange={(e) => setUqForm({ userQuestId: e.target.value })} /></div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => setShowResetUQ(false)}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === '__resetuq__'} className="btn btn-primary">Сбросить</SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmDeactivate}
+        title="Деактивировать квест?"
+        message="Квест перестанет быть доступным новым пользователям. Существующий прогресс сохранится."
+        confirmLabel="Деактивировать"
+        cancelLabel="Отмена"
+        destructive
+        onConfirm={doDeactivate}
+        onCancel={() => (mutatingId ? null : setConfirmDeactivate(null))}
+      />
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Удалить квест?"
+        message="Квест будет удалён. Прогресс пользователей по нему сохранится только в audit-логе."
+        confirmLabel="Удалить"
+        cancelLabel="Отмена"
+        destructive
+        onConfirm={doDelete}
+        onCancel={() => (mutatingId ? null : setConfirmDelete(null))}
+      />
+    </>
+  );
+}
+
 // ===== APP SHELL =====
 const NAV_ITEMS = [
   { key: 'dashboard',     label: 'Дашборд', icon: 'dashboard' },
   { key: 'users',         label: 'Пользователи', icon: 'people' },
-  { key: 'cards',         label: 'Карты', icon: 'style' },
+  { key: 'cards',         label: 'Карты-коллекции', icon: 'style' },
+  { key: 'bankCards',     label: 'Банковские карты', icon: 'credit_card' },
+  { key: 'userCards',     label: 'Инвентарь', icon: 'inventory_2' },
+  { key: 'decks',         label: 'Колоды', icon: 'layers' },
+  { key: 'quests',        label: 'Квесты', icon: 'flag' },
   { key: 'accounts',      label: 'Счета', icon: 'account_balance' },
   { key: 'transactions',  label: 'Операции', icon: 'receipt_long' },
   { key: 'payments',      label: 'Платежи', icon: 'payments' },
@@ -1843,6 +2501,10 @@ export default function App() {
         {page === 'dashboard'     && <DashboardPage />}
         {page === 'users'         && <UsersPage />}
         {page === 'cards'         && <CardsPage />}
+        {page === 'bankCards'     && <BankCardsPage />}
+        {page === 'userCards'     && <UserCardsPage />}
+        {page === 'decks'         && <DecksPage />}
+        {page === 'quests'        && <QuestsPage />}
         {page === 'accounts'      && <AccountsPage />}
         {page === 'transactions'  && <TransactionsPage />}
         {page === 'payments'      && <PaymentsPage />}

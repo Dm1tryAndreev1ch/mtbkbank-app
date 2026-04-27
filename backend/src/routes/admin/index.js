@@ -36,8 +36,10 @@ router.get('/dashboard',          dashboard.summary);
 router.get('/dashboard/extended', dashboard.extended);
 
 // Legacy paths preserved until Plans 2-5 migrate the admin SPA off them.
-// /api/admin/cards/* — collection-card templates (lives in bankCards.js).
-router.use('/cards', require('./bankCards'));
+// /api/admin/cards/* — collection-card templates. Phase 4.5 / 04.5-03 split
+// these out of bankCards.js into a dedicated cardTemplates.js so bankCards.js
+// can host real BankCard CRUD per ADMIN-03.
+router.use('/cards', require('./cardTemplates'));
 // /api/admin/grant-card — UserCard grant (lives in userCards.js as grantCardHandler).
 router.post('/grant-card', require('./userCards').grantCardHandler);
 // /api/admin/simulate-transaction — Transaction simulate (lives in transactions.js).

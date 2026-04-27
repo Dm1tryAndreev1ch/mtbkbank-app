@@ -57,10 +57,16 @@ const adminTransactionReverseSchema = z.object({
 const adminBankCardBlockSchema = z.object({
   reason: z.string().max(500).optional(),
 });
+// Phase 4.5 / 04.5-03 / ADMIN-03 — Plan-1 scaffold originally specified
+// `cardType` but the BankCard Prisma model has columns `type`, `tier`,
+// `maskedNumber` (no `cardType`). Schema corrected here (deviation Rule 3).
+// `maskedNumber` is optional — handler synthesizes "**** {last4}" when omitted.
 const adminBankCardIssueSchema = z.object({
   userId: z.string().min(1),
   accountId: z.string().min(1),
-  cardType: z.string().min(1),
+  type: z.string().min(1),
+  tier: z.string().min(1),
+  maskedNumber: z.string().min(1).max(64).optional(),
 });
 const adminUserCardHpSchema = z.object({
   health: z.number().int().nonnegative(),
