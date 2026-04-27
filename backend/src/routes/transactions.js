@@ -308,6 +308,14 @@ router.post('/transfer', async (req, res) => {
     if (err.message === 'INSUFFICIENT') {
       return res.status(400).json({ error: 'Недостаточно средств на момент списания' });
     }
+    // Phase 4.5 / 04.5-02 / Rule-1 fix — surface AppError (e.g. ACCOUNT_FROZEN
+    // from the frozen-debit guard above) with its real status + code instead
+    // of swallowing it as 500. The guard was wired in Plan 1 but the catch
+    // returned a generic 500 envelope, breaking the integration test in
+    // admin-accounts.test.js (frozen account → 423 ACCOUNT_FROZEN contract).
+    if (err && err.isAppError) {
+      return res.status(err.status || 500).json({ error: err.code, message: err.message });
+    }
     (req.log ?? logger).error({ err }, 'Transfer error');
     res.status(500).json({ error: 'Ошибка сервера' });
   }
@@ -375,6 +383,10 @@ router.post('/transfer-own', async (req, res) => {
   } catch (err) {
     if (err.message === 'INSUFFICIENT') {
       return res.status(400).json({ error: 'Недостаточно средств на момент списания' });
+    }
+    // Phase 4.5 / 04.5-02 / Rule-1 fix — surface AppError (e.g. ACCOUNT_FROZEN).
+    if (err && err.isAppError) {
+      return res.status(err.status || 500).json({ error: err.code, message: err.message });
     }
     (req.log ?? logger).error({ err }, 'Transfer-own error');
     res.status(500).json({ error: 'Ошибка сервера' });

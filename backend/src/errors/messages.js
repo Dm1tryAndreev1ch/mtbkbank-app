@@ -28,6 +28,9 @@ module.exports = {
   // routes/transactions.js + routes/payments.js throw 423 LOCKED before any
   // side effect runs.
   ACCOUNT_FROZEN:          'Счёт заморожен; списания невозможны',
+  // Phase 4.5 / 04.5-02 / ADMIN-02 — transaction reverse guards.
+  TRANSACTION_NOT_REVERSIBLE:   'Операция не может быть отменена в текущем статусе',
+  TRANSACTION_ALREADY_REVERSED: 'Операция уже была отменена',
   DECK_VALIDATION_FAILED:  'Колода не прошла проверку',
   RATE_LIMIT_EXCEEDED:     'Слишком много запросов. Попробуйте позже.',
   VALIDATION_FAILED:       'Проверьте введённые данные',
