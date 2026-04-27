@@ -71,12 +71,20 @@ const adminBankCardIssueSchema = z.object({
 const adminUserCardHpSchema = z.object({
   health: z.number().int().nonnegative(),
 });
+// Phase 4.5 / 04.5-03 / ADMIN-06 — Plan-1 scaffold originally specified
+// `{code, name, reward, target}` which doesn't match the Quest Prisma model
+// (`{title, description, icon, rewardMB, rewardCardId?, type, condition,
+// isActive}`). Schema corrected here (deviation Rule 3, anticipated by
+// Plan 3 prompt for the parallel BankCard fix).
 const adminQuestCreateSchema = z.object({
-  code: z.string().min(1).max(64),
-  name: z.string().min(1).max(120),
-  description: z.string().max(500).optional(),
-  reward: z.number().int().nonnegative(),
-  target: z.number().int().positive(),
+  title: z.string().min(1).max(120),
+  description: z.string().min(1).max(500),
+  icon: z.string().min(1).max(64),
+  rewardMB: z.number().int().nonnegative().default(0),
+  rewardCardId: z.string().min(1).optional(),
+  type: z.enum(['DAILY', 'WEEKLY']),
+  condition: z.string().min(1).max(2000),
+  isActive: z.boolean().optional(),
 });
 const adminQuestUpdateSchema = adminQuestCreateSchema.partial();
 const adminLimitCreateSchema = z.object({
