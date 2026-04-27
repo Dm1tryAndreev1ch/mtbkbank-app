@@ -10,7 +10,11 @@
 const express = require('express');
 const auditLog = require('../../services/auditLog');
 const { reqValidator } = require('../../middleware/reqValidator');
-const { adminGrantCardSchema } = require('../../schemas/admin');
+const {
+  adminGrantCardSchema,
+  adminUserCardHpSchema,
+} = require('../../schemas/admin');
+const { AppError } = require('../../errors/AppError');
 const { logger } = require('../../logger');
 
 const router = express.Router();
@@ -77,6 +81,113 @@ const grantCardHandler = [
 // We expose POST /grant here so future tests can use the canonical URL even
 // before the legacy /grant-card path is removed.
 router.post('/grant', ...grantCardHandler);
+
+// ---------------------------------------------------------------------------
+// Phase 4.5 / 04.5-03 / ADMIN-04 — UserCard inventory endpoints.
+// ---------------------------------------------------------------------------
+
+// GET /api/admin/userCards/by-user/:userId — list a user's collection inventory.
+router.get('/by-user/:userId', async (req, res, next) => {
+  try {
+    const userId = String(req.params.userId);
+    const items = await req.prisma.userCard.findMany({
+      where: { userId },
+      orderBy: { acquiredAt: 'desc' },
+      include: { collectionCard: true },
+    });
+    res.json({ items, total: items.length });
+  } catch (err) {
+    (req.log ?? logger).error({ err }, 'Admin userCards by-user error');
+    next(err);
+  }
+});
+
+// DELETE /api/admin/userCards/:id — revoke a UserCard.
+// T-04.5-03-01 mitigation: clean up DeckCard rows referencing this UserCard
+// inside the same withAudit tx BEFORE deleting the UserCard so the FK is
+// satisfied. (DeckCard.userCardId now ON DELETE CASCADE per Migration A,
+// but we delete explicitly so the audit payload captures the affected slots
+// and rollback semantics are deterministic.)
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const result = await auditLog.withAudit(
+      req.prisma,
+      {
+        actorId: req.userId,
+        action: auditLog.AUDIT_ACTIONS.USERCARD_REVOKE,
+        targetType: 'UserCard',
+        targetId: id,
+        requestId: req.id,
+      },
+      async (tx, setAudit) => {
+        const before = await tx.userCard.findUnique({
+          where: { id },
+          include: { deckCards: true },
+        });
+        if (!before) throw new AppError('NOT_FOUND', 404);
+        // FK cleanup before user-card delete (T-04.5-03-01).
+        await tx.deckCard.deleteMany({ where: { userCardId: id } });
+        await tx.userCard.delete({ where: { id } });
+        setAudit({
+          before: {
+            id: before.id,
+            userId: before.userId,
+            collectionCardId: before.collectionCardId,
+            health: before.health,
+            deckCardCount: before.deckCards?.length || 0,
+          },
+          after: null,
+        });
+        return { id, deleted: true };
+      }
+    );
+    res.json(result);
+  } catch (err) {
+    (req.log ?? logger).error({ err }, 'Admin userCard revoke error');
+    next(err);
+  }
+});
+
+// PUT /api/admin/userCards/:id/health — admin HP edit (clamped to [0, maxHealth]).
+router.put('/:id/health', reqValidator(adminUserCardHpSchema), async (req, res, next) => {
+    try {
+      const id = String(req.params.id);
+      const { health } = req.validated;
+      const result = await auditLog.withAudit(
+        req.prisma,
+        {
+          actorId: req.userId,
+          action: auditLog.AUDIT_ACTIONS.USERCARD_HP_EDIT,
+          targetType: 'UserCard',
+          targetId: id,
+          requestId: req.id,
+        },
+        async (tx, setAudit) => {
+          const before = await tx.userCard.findUnique({
+            where: { id },
+            include: { collectionCard: { select: { maxHealth: true } } },
+          });
+          if (!before) throw new AppError('NOT_FOUND', 404);
+          const maxHp = before.collectionCard?.maxHealth ?? Number.MAX_SAFE_INTEGER;
+          const clamped = Math.max(0, Math.min(Number(health), maxHp));
+          const after = await tx.userCard.update({
+            where: { id },
+            data: { health: clamped },
+          });
+          setAudit({
+            before: { health: before.health },
+            after: { health: after.health },
+          });
+          return after;
+        }
+      );
+    res.json(result);
+  } catch (err) {
+    (req.log ?? logger).error({ err }, 'Admin userCard HP edit error');
+    next(err);
+  }
+});
 
 module.exports = router;
 module.exports.grantCardHandler = grantCardHandler;
