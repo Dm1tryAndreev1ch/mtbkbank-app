@@ -122,8 +122,11 @@ const adminNotificationBroadcastSchema = z.object({
   body: z.string().min(1).max(500),
   data: z.record(z.unknown()).optional(),
 });
+// Phase 4.5 / 04.5-04 / ADMIN-11 — trade cancel reason is optional per plan
+// interfaces block (audit row already records actorId + before/after status).
+// When provided, must be at least 3 chars to avoid empty/whitespace abuse.
 const adminTradeCancelSchema = z.object({
-  reason: z.string().min(3).max(500),
+  reason: z.string().min(3).max(500).optional(),
 });
 const adminUserHardDeleteSchema = z.object({
   mode: z.enum(['soft', 'hard']).default('soft'),

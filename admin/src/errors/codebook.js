@@ -34,6 +34,10 @@ export const CODEBOOK = Object.freeze({
   TRANSACTION_NOT_REVERSIBLE:   'Операция не может быть отменена в текущем статусе',
   TRANSACTION_ALREADY_REVERSED: 'Операция уже была отменена',
   NOT_FOUND: 'Запись не найдена',
+  // Phase 4.5 / 04.5-04 / ADMIN-10 — notification broadcast: no recipients matched.
+  NOTIFICATION_NO_RECIPIENTS: 'Получатели не найдены',
+  // Phase 4.5 / 04.5-04 / ADMIN-11 — trade cancel: trade is not in PENDING status.
+  TRADE_NOT_CANCELLABLE: 'Обмен нельзя отменить в текущем статусе',
   CONFLICT: 'Конфликт данных. Обновите страницу и попробуйте снова.',
   DB_ERROR: 'Ошибка базы данных. Попробуйте позже.',
 

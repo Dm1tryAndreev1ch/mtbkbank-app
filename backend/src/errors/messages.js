@@ -37,4 +37,8 @@ module.exports = {
   DB_ERROR:                'Ошибка базы данных',
   NOT_FOUND:               'Ресурс не найден',
   INTERNAL_ERROR:          'Внутренняя ошибка сервера',
+  // Phase 4.5 / 04.5-04 / ADMIN-10 — notification broadcast: no recipients matched.
+  NOTIFICATION_NO_RECIPIENTS: 'Получатели не найдены',
+  // Phase 4.5 / 04.5-04 / ADMIN-11 — trade cancel: trade is not in PENDING status.
+  TRADE_NOT_CANCELLABLE: 'Обмен нельзя отменить в текущем статусе',
 };
