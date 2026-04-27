@@ -84,10 +84,18 @@ const adminPaymentStatusSchema = z.object({
   status: z.string().min(1),
   reason: z.string().min(3).max(500),
 });
+// Phase 4.5 / 04.5-02 / ADMIN-09 — extended to include `icon`, `category`,
+// `nextPayment` because the underlying Subscription Prisma model requires
+// `icon` and `nextPayment` (Plan 1 scaffold under-specified vs schema.prisma;
+// deviation Rule 3). `amount` widened from int → number to accept Float
+// (Subscription.amount is Float in the DB).
 const adminSubscriptionCreateSchema = z.object({
   userId: z.string().min(1),
   name: z.string().min(1).max(120),
-  amount: z.number().int().nonnegative(),
+  amount: z.number().nonnegative(),
+  icon: z.string().min(1).max(64).optional().default('subscriptions'),
+  category: z.string().min(1).max(120).optional(),
+  nextPayment: z.string().datetime().optional(),
   period: z.enum(['MONTHLY', 'YEARLY']).optional(),
 });
 const adminSubscriptionUpdateSchema = adminSubscriptionCreateSchema.partial();
