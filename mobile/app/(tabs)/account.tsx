@@ -12,11 +12,14 @@ import { Fonts, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import DevSentryButton from '../../components/DevSentryButton';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 
 export default function AccountScreen() {
   const { user, loadUser, logout, unreadCount, theme, setTheme } = useStore();
   const [stats, setStats] = useState<any>(null);
   const [loadingStats, setLoadingStats] = useState(true);
+  // Phase-4 gap-1: logout uses ConfirmDialog instead of Alert.alert (UX-03).
+  const [logoutConfirmVisible, setLogoutConfirmVisible] = useState(false);
 
   const colors = useThemeColor();
   const styles = useMemo(() => getStyles(colors), [colors]);
@@ -67,10 +70,13 @@ export default function AccountScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Выйти', 'Вы уверены, что хотите завершить сессию?', [
-      { text: 'Отмена', style: 'cancel' },
-      { text: 'Выйти', style: 'destructive', onPress: () => { logout(); router.replace('/login'); } },
-    ]);
+    setLogoutConfirmVisible(true);
+  };
+
+  const confirmLogout = () => {
+    setLogoutConfirmVisible(false);
+    logout();
+    router.replace('/login');
   };
 
   const handleThemeToggle = () => {
@@ -233,6 +239,17 @@ export default function AccountScreen() {
 
         {__DEV__ && <DevSentryButton />}
       </ScrollView>
+      <ConfirmDialog
+        visible={logoutConfirmVisible}
+        onDismiss={() => setLogoutConfirmVisible(false)}
+        title="Выйти"
+        message="Вы уверены, что хотите завершить сессию?"
+        confirmLabel="Выйти"
+        cancelLabel="Отмена"
+        confirmButton={{ onPress: confirmLogout }}
+        cancelButton={{ onPress: () => setLogoutConfirmVisible(false) }}
+        isDestructive
+      />
     </SafeAreaView>
   );
 }
