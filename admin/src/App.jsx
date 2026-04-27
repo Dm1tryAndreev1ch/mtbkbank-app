@@ -439,6 +439,22 @@ const userEditAdminSchema = z.object({
   status: z.enum(['STANDARD', 'SILVER', 'GOLD', 'PLATINUM', 'BLOCKED']),
 });
 
+// Phase 4.5 / 04.5-05 / ADMIN-12 — decode JWT payload to expose currentAdminId
+// for the self-delete UI guard. JSON.parse(atob(payload)) is enough — we never
+// trust the result for authorisation; the backend self-delete gate
+// (USER_SELF_DELETE_FORBIDDEN) is the source of truth.
+function decodeJwtUserId(token) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const json = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof json.userId === 'string' ? json.userId : null;
+  } catch {
+    return null;
+  }
+}
+
 function UsersPage() {
   const { token } = useToken();
   const [users, setUsers] = useState([]);
@@ -448,6 +464,10 @@ function UsersPage() {
   const [pageError, setPageError] = useState(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  // Phase 4.5 / 04.5-05 / ADMIN-12 — soft/hard delete state.
+  const [confirm, setConfirm] = useState(null); // { kind: 'soft'|'hard', user } | null
+  const [mutatingId, setMutatingId] = useState(null);
+  const currentAdminId = decodeJwtUserId(token);
 
   // A-M1/A-M3 — Zod forms.
   const editForm = useZodForm(userEditAdminSchema, { name: '', mbPoints: 0, status: 'STANDARD' });
@@ -496,6 +516,36 @@ function UsersPage() {
     }
   });
 
+  // Phase 4.5 / 04.5-05 / ADMIN-12 — soft/hard delete handlers.
+  async function softDelete(id) {
+    setMutatingId(id);
+    try {
+      await apiFetch(token, `${API}/users/${id}?mode=soft`, { method: 'DELETE' });
+      toastSuccess('Пользователь архивирован');
+      load();
+    } catch (err) {
+      setPageError(formatPageError(err));
+      toastErrorFromAppError(err, 'Не удалось архивировать пользователя');
+    } finally {
+      setMutatingId(null);
+      setConfirm(null);
+    }
+  }
+  async function hardDelete(id) {
+    setMutatingId(id);
+    try {
+      await apiFetch(token, `${API}/users/${id}?mode=hard`, { method: 'DELETE' });
+      toastSuccess('Пользователь удалён');
+      load();
+    } catch (err) {
+      setPageError(formatPageError(err));
+      toastErrorFromAppError(err, 'Не удалось удалить пользователя');
+    } finally {
+      setMutatingId(null);
+      setConfirm(null);
+    }
+  }
+
   return (
     <>
       <div className="admin-page">
@@ -522,12 +572,30 @@ function UsersPage() {
                     <td><span className={`badge badge-${u.status?.toLowerCase()}`}>{u.status}</span></td>
                     <td>{u._count?.userCards || 0}</td>
                     <td>
-                      <button className="btn btn-sm btn-primary" onClick={() => {
-                        setEditing(u.id);
-                        editForm.reset({ name: u.name, mbPoints: u.mbPoints ?? 0, status: u.status || 'STANDARD' });
-                      }}>
-                        Изменить
-                      </button>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <button className="btn btn-sm btn-primary" onClick={() => {
+                          setEditing(u.id);
+                          editForm.reset({ name: u.name, mbPoints: u.mbPoints ?? 0, status: u.status || 'STANDARD' });
+                        }}>
+                          Изменить
+                        </button>
+                        {/* Phase 4.5 / 04.5-05 / ADMIN-12 — soft/hard delete CTAs. */}
+                        <button
+                          className="btn btn-sm btn-warning"
+                          onClick={() => setConfirm({ kind: 'soft', user: u })}
+                          disabled={mutatingId === u.id}
+                        >
+                          Архивировать
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => setConfirm({ kind: 'hard', user: u })}
+                          disabled={mutatingId === u.id || u.id === currentAdminId}
+                          title={u.id === currentAdminId ? 'Невозможно удалить свой аккаунт' : undefined}
+                        >
+                          Удалить навсегда
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -623,6 +691,36 @@ function UsersPage() {
             </div>
           </form>
         </div>
+      )}
+
+      {/* Phase 4.5 / 04.5-05 / ADMIN-12 — soft/hard delete ConfirmDialogs.
+          Russian copy verbatim per UI-SPEC § "Hard-delete typed-confirmation"
+          + § "Destructive confirmation copy" USER_SOFT_DELETE row. */}
+      {confirm?.kind === 'soft' && (
+        <ConfirmDialog
+          open
+          title="Архивировать пользователя?"
+          message="Пользователь будет архивирован. Вход будет запрещён, данные сохранятся."
+          confirmLabel="Архивировать пользователя"
+          cancelLabel="Отмена"
+          destructive
+          onConfirm={() => softDelete(confirm.user.id)}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+      {confirm?.kind === 'hard' && (
+        <ConfirmDialog
+          open
+          title="Удалить пользователя навсегда?"
+          message="Будут удалены: счета, банковские карты, карты-коллекции, колоды, refresh-токены. История обменов сохранится с обнулённой ссылкой. Действие необратимо."
+          confirmLabel="Удалить навсегда"
+          cancelLabel="Отмена"
+          destructive
+          requireTypedConfirmation={confirm.user.phone}
+          typedPrompt={`Введите номер телефона ${confirm.user.phone} для подтверждения:`}
+          onConfirm={() => hardDelete(confirm.user.id)}
+          onCancel={() => setConfirm(null)}
+        />
       )}
     </>
   );

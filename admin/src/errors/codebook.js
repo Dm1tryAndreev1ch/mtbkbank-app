@@ -38,6 +38,9 @@ export const CODEBOOK = Object.freeze({
   NOTIFICATION_NO_RECIPIENTS: 'Получатели не найдены',
   // Phase 4.5 / 04.5-04 / ADMIN-11 — trade cancel: trade is not in PENDING status.
   TRADE_NOT_CANCELLABLE: 'Обмен нельзя отменить в текущем статусе',
+  // Phase 4.5 / 04.5-05 / ADMIN-12 — user soft/hard delete (Plan 5).
+  USER_ALREADY_DELETED:       'Пользователь уже архивирован',
+  USER_SELF_DELETE_FORBIDDEN: 'Невозможно удалить самого себя',
   CONFLICT: 'Конфликт данных. Обновите страницу и попробуйте снова.',
   DB_ERROR: 'Ошибка базы данных. Попробуйте позже.',
 
