@@ -66,4 +66,32 @@ async function extended(req, res) {
   }
 }
 
-module.exports = { summary, extended };
+// ---------------------------------------------------------------------------
+// Phase 4.5 / 04.5-04 / D-09 Plan 4 / D-12 — audit-log "last 50 entries" widget.
+//
+// Read-only endpoint backing the DashboardPage audit widget (UI-SPEC
+// §"Audit-Log Dashboard Widget"). LIMIT 50 ORDER BY createdAt DESC, with a
+// projected actor join so the widget can render `actor.name` (or "(удалён)"
+// when the actor row was nullified by Migration A's onDelete: SetNull).
+//
+// PII redaction is the WRITER's job — payload is returned verbatim because
+// scrubObject already redacted forbidden keys (pin/password/cardNumber/...)
+// at write time (Phase 3 D-03). T-04.5-04-05.
+//
+// Skips withAudit by design — read-only endpoints don't write audit rows.
+// ---------------------------------------------------------------------------
+async function audit(req, res, next) {
+  try {
+    const items = await req.prisma.auditLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { actor: { select: { id: true, name: true } } },
+    });
+    res.json({ items, total: items.length, page: 1, limit: 50 });
+  } catch (err) {
+    (req.log ?? logger).error({ err }, 'Admin dashboard audit error');
+    next(err);
+  }
+}
+
+module.exports = { summary, extended, audit };

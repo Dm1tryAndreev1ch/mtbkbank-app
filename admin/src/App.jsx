@@ -11,6 +11,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { EmptyState } from './components/EmptyState';
 import { useZodForm } from './lib/useZodForm';
 import { loginSchema, phoneSchema, pinSchema, nameSchema } from './lib/schemas';
+import { actionToRussianLabel, actionIsDestructive } from './lib/auditCodebook';
 import { z } from 'zod';
 
 // Toast helpers — push backend message verbatim on error, Russian success copy on mutation.
@@ -222,6 +223,96 @@ function formatPageError(e) {
   return 'Нет соединения с сервером. Проверьте, что backend запущен.';
 }
 
+// ==================== AUDIT LOG WIDGET ====================
+// Phase 4.5 / 04.5-04 / D-09 Plan 4 / D-12 — read-only "last 50" widget.
+// 4 columns (Время / Администратор / Действие / Цель) with destructive red dot.
+// Russian copy locked per UI-SPEC §"Audit-Log Dashboard Widget".
+function AuditLogWidget() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    apiFetch(token, `${API}/dashboard/audit`)
+      .then((r) => { if (!cancelled) setItems(Array.isArray(r.items) ? r.items : []); })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  return (
+    <div className="table-container" style={{ marginTop: 32 }}>
+      <div className="table-header">
+        <span className="table-title">Последние действия администраторов</span>
+      </div>
+      {err ? (
+        <PageErrorBanner message={'Не удалось загрузить аудит-лог.'} />
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: 160 }}>Время</th>
+              <th style={{ width: 180 }}>Администратор</th>
+              <th style={{ width: 220 }}>Действие</th>
+              <th>Цель</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <SkeletonRow columns={4} rows={5} />
+            ) : items.length === 0 ? (
+              <tr><td colSpan={4}>
+                <EmptyState
+                  heading="Действий пока нет"
+                  body="Здесь появятся записи аудит-лога после первой операции."
+                  icon="history"
+                />
+              </td></tr>
+            ) : items.map((row) => {
+              const destructive = actionIsDestructive(row.action);
+              const label = actionToRussianLabel(row.action);
+              const actorName = row.actor?.name || '— (удалён)';
+              const targetText = row.targetType
+                ? `${row.targetType}: ${row.targetId ? row.targetId.slice(-8) : '—'}`
+                : '—';
+              return (
+                <tr key={row.id}>
+                  <td style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>
+                    {new Date(row.createdAt).toLocaleString('ru-RU')}
+                  </td>
+                  <td>{actorName}</td>
+                  <td>
+                    {destructive ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            display: 'inline-block',
+                            width: 8, height: 8, borderRadius: 4,
+                            background: 'var(--error, #d32f2f)',
+                          }}
+                        />
+                        {label}
+                      </span>
+                    ) : (
+                      <span style={{ paddingLeft: 16 }}>{label}</span>
+                    )}
+                  </td>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{targetText}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function DashboardPage() {
   const { token } = useToken();
   const [stats, setStats] = useState(null);
@@ -286,6 +377,10 @@ function DashboardPage() {
             Throw test error (DEV)
           </button>
         )}
+
+        {/* ==================== AUDIT LOG WIDGET ==================== */}
+        {/* Phase 4.5 / 04.5-04 / D-09 Plan 4 — last 50 entries, read-only */}
+        <AuditLogWidget />
 
         {extended && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, marginTop: 32, marginBottom: 16 }}>
@@ -2382,6 +2477,294 @@ function QuestsPage() {
   );
 }
 
+// ==================== NOTIFICATIONS PAGE ====================
+// Phase 4.5 / 04.5-04 / ADMIN-10 — ad-hoc broadcast.
+// Audience: single user OR `status: GOLD` segment (CONTEXT D-09 v1.0 lock).
+// On success: USER → toast "Уведомление отправлено"; SEGMENT → toast
+// "Отправлено уведомлений: {ok}, ошибок: {error}".
+function NotificationsPage() {
+  const { token } = useToken();
+  const [audienceType, setAudienceType] = useState('USER');
+  const [userId, setUserId] = useState('');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const onSubmit = async (e) => {
+    e?.preventDefault?.();
+    setSending(true);
+    try {
+      const audience = audienceType === 'USER'
+        ? { type: 'USER', userId }
+        : { type: 'SEGMENT', segment: 'GOLD' };
+      const res = await apiFetch(token, `${API}/notifications/broadcast`, {
+        method: 'POST',
+        body: { audience, title, body },
+      });
+      if (audienceType === 'USER') {
+        toastSuccess('Уведомление отправлено');
+      } else {
+        toastSuccess(`Отправлено уведомлений: ${res.ok ?? 0}, ошибок: ${res.error ?? 0}`);
+      }
+      setTitle('');
+      setBody('');
+      if (audienceType === 'USER') setUserId('');
+    } catch (err) {
+      toastErrorFromAppError(err, 'Не удалось отправить уведомление.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="admin-page">
+      <div className="page-header">
+        <h1 className="page-title">Уведомления</h1>
+        <p className="page-subtitle">Отправка уведомлений пользователям</p>
+      </div>
+      <div className="admin-page-scroll">
+        <form onSubmit={onSubmit} style={{ maxWidth: 640 }}>
+          <div className="form-group">
+            <label className="form-label">Получатель</label>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="radio"
+                  name="audienceType"
+                  value="USER"
+                  checked={audienceType === 'USER'}
+                  onChange={() => setAudienceType('USER')}
+                />
+                Один пользователь
+              </label>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  type="radio"
+                  name="audienceType"
+                  value="SEGMENT"
+                  checked={audienceType === 'SEGMENT'}
+                  onChange={() => setAudienceType('SEGMENT')}
+                />
+                Сегмент GOLD
+              </label>
+            </div>
+          </div>
+          {audienceType === 'USER' ? (
+            <div className="form-group">
+              <label className="form-label">ID пользователя</label>
+              <input
+                className="form-input"
+                placeholder="ID пользователя"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="form-group">
+              <label className="form-label">Сегмент</label>
+              <select className="form-select" value="GOLD" onChange={() => {}} disabled>
+                <option value="GOLD">GOLD</option>
+              </select>
+            </div>
+          )}
+          <div className="form-group">
+            <label className="form-label">Заголовок</label>
+            <input
+              className="form-input"
+              placeholder="Заголовок"
+              maxLength={120}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Текст уведомления</label>
+            <textarea
+              className="form-input"
+              placeholder="Текст уведомления"
+              maxLength={500}
+              rows={5}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+            />
+          </div>
+          <SpinnerButton type="submit" loading={sending} className="btn btn-primary">
+            Отправить уведомление
+          </SpinnerButton>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ==================== TRADES PAGE ====================
+// Phase 4.5 / 04.5-04 / ADMIN-11 — paged list + cancel PENDING trade.
+// Confirm copy verbatim per UI-SPEC; success toast "Обмен отменён";
+// 409 surfaces TRADE_NOT_CANCELLABLE Russian message from backend codebook.
+function TradesPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [statusFilter, setStatusFilter] = useState('');
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [confirmCancel, setConfirmCancel] = useState(null);
+  const [mutatingId, setMutatingId] = useState(null);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (statusFilter) params.set('status', statusFilter);
+    if (userIdFilter) params.set('userId', userIdFilter);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    apiFetch(token, `${API}/trades?${params.toString()}`)
+      .then((r) => {
+        if (cancelled) return;
+        setItems(Array.isArray(r.items) ? r.items : []);
+        setTotal(typeof r.total === 'number' ? r.total : 0);
+      })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, page, statusFilter, userIdFilter, from, to, reload]);
+
+  const doCancel = async () => {
+    if (!confirmCancel) return;
+    setMutatingId(confirmCancel.id);
+    try {
+      await apiFetch(token, `${API}/trades/${confirmCancel.id}/cancel`, {
+        method: 'POST',
+        body: {},
+      });
+      toastSuccess('Обмен отменён');
+      setConfirmCancel(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось отменить обмен.');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header">
+          <h1 className="page-title">Обмены</h1>
+          <p className="page-subtitle">Обмены карт между пользователями</p>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить обмены.'} />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <select
+              className="form-select"
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              style={{ maxWidth: 200 }}
+            >
+              <option value="">Все статусы</option>
+              <option value="PENDING">PENDING</option>
+              <option value="ACCEPTED">ACCEPTED</option>
+              <option value="REJECTED">REJECTED</option>
+              <option value="CANCELLED">CANCELLED</option>
+            </select>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="ID пользователя"
+              value={userIdFilter}
+              onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }}
+              style={{ maxWidth: 220 }}
+            />
+            <input
+              type="date"
+              className="form-input"
+              value={from}
+              onChange={(e) => { setFrom(e.target.value); setPage(1); }}
+              style={{ maxWidth: 180 }}
+            />
+            <input
+              type="date"
+              className="form-input"
+              value={to}
+              onChange={(e) => { setTo(e.target.value); setPage(1); }}
+              style={{ maxWidth: 180 }}
+            />
+          </div>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th><th>Создан</th><th>От кого</th><th>Кому</th><th>Статус</th><th>Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={6} rows={5} />
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={6}>
+                    <EmptyState heading="Обменов не найдено" body="Активных или завершённых обменов нет." icon="swap_horiz" />
+                  </td></tr>
+                ) : items.map((t) => {
+                  const fromName = t.fromUser?.name || '— (удалён)';
+                  const toName = t.toUser?.name || '— (удалён)';
+                  return (
+                    <tr key={t.id} style={mutatingId === t.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                      <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{t.id.slice(-8)}</td>
+                      <td>{new Date(t.createdAt).toLocaleString('ru-RU')}</td>
+                      <td>{fromName}</td>
+                      <td>{toName}</td>
+                      <td>{t.status}</td>
+                      <td>
+                        {t.status === 'PENDING' && (
+                          <button
+                            className="btn btn-sm btn-danger"
+                            onClick={() => setConfirmCancel({ id: t.id, fromName, toName })}
+                          >
+                            Отменить обмен
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, justifyContent: 'flex-end' }}>
+            <span style={{ color: 'var(--on-surface-variant)' }}>
+              Стр. {page} из {Math.max(1, Math.ceil(total / limit))} · Всего: {total}
+            </span>
+            <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
+            <button className="btn btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage((p) => p + 1)}>Вперёд →</button>
+          </div>
+        </div>
+      </div>
+      <ConfirmDialog
+        open={!!confirmCancel}
+        title="Отменить обмен?"
+        message={confirmCancel
+          ? `Обмен между ${confirmCancel.fromName} и ${confirmCancel.toName} будет отменён. Карты вернутся к владельцам.`
+          : ''}
+        confirmLabel="Отменить обмен"
+        cancelLabel="Закрыть"
+        destructive
+        onConfirm={doCancel}
+        onCancel={() => (mutatingId ? null : setConfirmCancel(null))}
+      />
+    </>
+  );
+}
+
 // ===== APP SHELL =====
 const NAV_ITEMS = [
   { key: 'dashboard',     label: 'Дашборд', icon: 'dashboard' },
@@ -2396,6 +2779,8 @@ const NAV_ITEMS = [
   { key: 'payments',      label: 'Платежи', icon: 'payments' },
   { key: 'limits',        label: 'Лимиты', icon: 'speed' },
   { key: 'subscriptions', label: 'Подписки', icon: 'subscriptions' },
+  { key: 'notifications', label: 'Уведомления', icon: 'notifications' },
+  { key: 'trades',        label: 'Обмены', icon: 'swap_horiz' },
   { key: 'simulate',      label: 'Симуляция', icon: 'play_circle' },
 ];
 
@@ -2510,6 +2895,8 @@ export default function App() {
         {page === 'payments'      && <PaymentsPage />}
         {page === 'limits'        && <LimitsPage />}
         {page === 'subscriptions' && <SubscriptionsPage />}
+        {page === 'notifications' && <NotificationsPage />}
+        {page === 'trades'        && <TradesPage />}
         {page === 'simulate'      && <SimulatePage />}
       </main>
       <ToastHost />
