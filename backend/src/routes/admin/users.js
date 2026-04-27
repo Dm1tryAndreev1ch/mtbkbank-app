@@ -1,14 +1,18 @@
-// Phase 4.5 / 04.5-01 / D-01 — Admin users sub-router.
+// backend/src/routes/admin/users.js
 //
-// Migrated VERBATIM from the singular routes/admin.js (users CRUD block).
-// The PUT /:id mutation now uses auditLog.withAudit (D-03) instead of an
-// inline prisma.$transaction + writeAudit pair.
+// Phase 4.5 / 04.5-01 / D-01 — users sub-router (Plan 5 will extend with
+// soft/hard delete + cascade integration test). Plan 1 migrates the existing
+// users CRUD (LIST, PUT, POST) and /users/:id/accounts from the deleted
+// singular routes/admin.js, replacing $transaction+writeAudit with
+// auditLog.withAudit per D-03.
 //
-// Plan 5 will extend this with soft/hard delete (cascade) using
-// adminUserHardDeleteSchema.
+// Auth chain mounted app-level in src/index.js — do NOT remount here.
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
+// IMPORTANT: require the auditLog MODULE (not destructured). The Plan-6 D-04
+// rollback test monkey-patches auditLog.writeAudit; destructured imports
+// freeze the reference and the patch becomes a no-op (Pitfall 2).
 const auditLog = require('../../services/auditLog');
 const { reqValidator } = require('../../middleware/reqValidator');
 const {
@@ -18,8 +22,7 @@ const {
 const { requireFreshAdmin } = require('../../middleware/requireFreshAdmin');
 const { AppError } = require('../../errors/AppError');
 const { logger } = require('../../logger');
-// Phase-4.5 D-01 — auth chain mounted app-level; do NOT remount middleware here.
-// <Plan 1 owns this file; Plan 5 extends with hard-delete cascade>
+
 const router = express.Router();
 
 // GET /api/admin/users
@@ -47,7 +50,7 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/admin/users/:id — Phase 3 / 03-10 / SEC-14 + SEC-10 + D-07
-// Phase 4.5 / D-03 — mutation now wrapped in auditLog.withAudit().
+// Phase 4.5 / 04.5-01 / D-03 — rewrapped with auditLog.withAudit.
 router.put(
   '/:id',
   reqValidator(adminUserUpdateSchema),
@@ -88,7 +91,7 @@ router.put(
         }
       );
 
-      // D-07 — drop the freshness cache entry so demote/promote takes effect immediately
+      // D-07 — drop the freshness cache entry so demote/promote takes effect immediately.
       if ('isAdmin' in data) requireFreshAdmin.invalidate(req.params.id);
 
       res.json(updated);
@@ -99,7 +102,7 @@ router.put(
 );
 
 // POST /api/admin/users — Phase 3 / 03-10 / SEC-14 + SEC-10
-// Phase 4.5 / D-03 — wrapped in auditLog.withAudit().
+// Phase 4.5 / 04.5-01 / D-03 — rewrapped with auditLog.withAudit.
 router.post(
   '/',
   reqValidator(adminUserCreateSchema),
@@ -152,7 +155,7 @@ router.post(
   }
 );
 
-// GET /api/admin/users/:id/accounts — preserved from legacy admin.js
+// GET /api/admin/users/:id/accounts
 router.get('/:id/accounts', async (req, res) => {
   try {
     const accounts = await req.prisma.bankAccount.findMany({

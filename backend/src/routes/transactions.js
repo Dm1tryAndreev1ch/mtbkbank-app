@@ -2,6 +2,7 @@ const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
 const { getCached, setCached } = require('../cache');
 const { logger } = require('../logger');
+const { AppError } = require('../errors/AppError');
 const router = express.Router();
 
 const MAX_TRANSFER_AMOUNT = 1_000_000;
@@ -172,6 +173,11 @@ router.post('/transfer', async (req, res) => {
       where: { id: fromAccountId, userId: req.userId },
     });
     if (!fromAccount) return res.status(404).json({ error: 'Счёт отправителя не найден' });
+    // Phase 4.5 / 04.5-01 / Task 2 / ADMIN-01 — frozen-account debit guard. The
+    // BankAccount.frozen column lands in Migration A; admin freeze/unfreeze
+    // toggles it. Outbound transfers must reject 423 LOCKED before any side
+    // effect runs.
+    if (fromAccount.frozen) throw new AppError('ACCOUNT_FROZEN', 423);
 
     // --- Resolve toAccountId ---
     let toAccountId = explicitToAccountId;
@@ -333,6 +339,8 @@ router.post('/transfer-own', async (req, res) => {
     ]);
     if (!fromAcc) return res.status(404).json({ error: 'Счёт списания не найден' });
     if (!toAcc) return res.status(404).json({ error: 'Счёт зачисления не найден' });
+    // Phase 4.5 / 04.5-01 / Task 2 / ADMIN-01 — frozen-account debit guard.
+    if (fromAcc.frozen) throw new AppError('ACCOUNT_FROZEN', 423);
     if (fromAcc.currency !== toAcc.currency) {
       return res.status(400).json({ error: 'Перевод между разными валютами не поддерживается' });
     }

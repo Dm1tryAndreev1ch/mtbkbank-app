@@ -72,7 +72,9 @@ async function withAudit(prisma, ctxBase, mutationFn) {
       auditExtras = { ...auditExtras, ...extras };
     };
     const result = await mutationFn(tx, setAudit);
-    // Reference module.exports.writeAudit so monkey-patches in tests apply.
+    // Reference module.exports.writeAudit so monkey-patches in tests apply
+    // (Pitfall 2 — destructured imports freeze the reference; the rollback
+    // test in Plan 6 swaps writeAudit at runtime).
     await module.exports.writeAudit(tx, { ...ctxBase, ...auditExtras });
     return result;
   });

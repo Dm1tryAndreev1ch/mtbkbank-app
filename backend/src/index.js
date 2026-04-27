@@ -1,7 +1,8 @@
 // IMPORTANT: must be FIRST require — Sentry's @sentry/node@10 installs OpenTelemetry-style
 // instrumentation via require() interception. ANY require above this line means Express
 // (or whichever module loads first) misses its patches and HTTP transactions are absent.
-// eslint-disable-next-line import/first
+// Phase 4.5 / 04.5-01 — eslint-disable directive removed because backend's
+// new flat-config (no import plugin) reports the unused-disable as a warning.
 require('./instrument');
 require('dotenv').config(); // populate process.env from .env BEFORE envalid runs
 

@@ -1,7 +1,12 @@
-// Phase 4.5 / 04.5-01 — Admin dashboard handlers (migrated from routes/admin.js).
-// Read-only summary + extended stats; no audit-log writes.
+// backend/src/routes/admin/dashboard.js
 //
-// Plan 4 will extend this with the audit-log "last 50 entries" widget.
+// Phase 4.5 / 04.5-01 / D-01 — dashboard sub-module.
+// Handlers migrated VERBATIM from the deleted singular routes/admin.js
+// (only the require paths gained one `..` segment for the new depth).
+//
+// Auth chain mounted app-level in src/index.js — do NOT remount middleware here.
+//
+// Plan 4 (Ops cluster) extends this with the audit-log "last 50 entries" widget.
 
 const { logger } = require('../../logger');
 

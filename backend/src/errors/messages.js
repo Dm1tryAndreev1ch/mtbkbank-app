@@ -24,6 +24,10 @@ module.exports = {
   // Phase 3 / SEC-08 / D-06 — stale admin JWT (DB says isAdmin:false or status:BLOCKED)
   ADMIN_FLAG_REVOKED:      'Сессия администратора недействительна. Войдите снова.',
   BALANCE_INSUFFICIENT:    'Недостаточно средств',
+  // Phase 4.5 / 04.5-01 / ADMIN-01 — admin-frozen account; debit paths in
+  // routes/transactions.js + routes/payments.js throw 423 LOCKED before any
+  // side effect runs.
+  ACCOUNT_FROZEN:          'Счёт заморожен; списания невозможны',
   DECK_VALIDATION_FAILED:  'Колода не прошла проверку',
   RATE_LIMIT_EXCEEDED:     'Слишком много запросов. Попробуйте позже.',
   VALIDATION_FAILED:       'Проверьте введённые данные',

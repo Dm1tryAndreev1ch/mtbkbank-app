@@ -1,11 +1,12 @@
-// Phase 4.5 / 04.5-01 / D-01 — Admin bankCards sub-router skeleton.
+// backend/src/routes/admin/bankCards.js
 //
-// Plan 1 deliverable: stub that hosts the legacy /api/admin/cards collection-
-// template CRUD (kept under its old route names so existing admin SPA cards
-// page keeps working). Plan 3 layers ADMIN-03 (block / issue / delete real
-// BankCards) on top of these endpoints.
+// Phase 4.5 / 04.5-01 / D-01 — bankCards sub-router. Plan 3 (Cards cluster)
+// will fill this with the real BankCard CRUD (block/issue/delete). Plan 1
+// migrates the existing /admin/cards collection-card-template CRUD here so
+// the legacy SPA path /api/admin/cards/* keeps working (mounted via
+// admin/index.js as `router.use('/cards', require('./bankCards'))`).
 //
-// Auth chain mounted app-level (D-01); do NOT remount middleware here.
+// Auth chain mounted app-level in src/index.js — do NOT remount here.
 
 const express = require('express');
 const auditLog = require('../../services/auditLog');
@@ -14,16 +15,8 @@ const { logger } = require('../../logger');
 
 const router = express.Router();
 
-// ---------------------------------------------------------------------------
-// Legacy collection-template CRUD migrated from routes/admin.js.
-// These endpoints live at /api/admin/bankCards/templates/* (renamed from
-// /api/admin/cards/* — see SUMMARY for the rename rationale; admin SPA still
-// posts to /admin/cards which the legacy route under index.js will forward
-// during Plan 3 transition. For Plan 1 the canonical mount is here.)
-// ---------------------------------------------------------------------------
-
-// GET /api/admin/bankCards/templates
-router.get('/templates', async (req, res) => {
+// GET /api/admin/cards (legacy) — collection-card templates list.
+router.get('/', async (req, res) => {
   try {
     const cards = await req.prisma.collectionCard.findMany({
       orderBy: [{ rarity: 'asc' }, { name: 'asc' }],
@@ -34,8 +27,8 @@ router.get('/templates', async (req, res) => {
   }
 });
 
-// POST /api/admin/bankCards/templates — whitelist полей; mass assignment устранён
-router.post('/templates', async (req, res, next) => {
+// POST /api/admin/cards (legacy) — whitelist fields; mass-assignment guarded.
+router.post('/', async (req, res, next) => {
   try {
     const {
       name, description, rarity, brandName, brandIcon, brandLogo, imageUrl,
@@ -68,8 +61,8 @@ router.post('/templates', async (req, res, next) => {
   }
 });
 
-// PUT /api/admin/bankCards/templates/:id — whitelist полей
-router.put('/templates/:id', async (req, res, next) => {
+// PUT /api/admin/cards/:id — whitelist fields; mass-assignment guarded.
+router.put('/:id', async (req, res, next) => {
   try {
     const {
       name, description, rarity, brandName, brandIcon, brandLogo, imageUrl,
@@ -113,8 +106,8 @@ router.put('/templates/:id', async (req, res, next) => {
   }
 });
 
-// DELETE /api/admin/bankCards/templates/:id — soft-delete via isActive=false
-router.delete('/templates/:id', async (req, res, next) => {
+// DELETE /api/admin/cards/:id — soft-delete via isActive=false.
+router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     await auditLog.withAudit(

@@ -1,21 +1,21 @@
-// Phase 4.5 / 04.5-01 / D-01 — Admin decks sub-router (Plan 1 skeleton).
+// backend/src/routes/admin/decks.js
 //
-// Plan 3 owns this domain — fills the routes here as part of the cluster
-// vertical (backend route + admin page + tests + audit wiring per ADMIN-XX).
+// Phase 4.5 / 04.5-01 / D-01 — decks sub-router scaffold.
+// Plan owns this domain in a downstream plan; Plan 1 only ships the scaffold.
 //
-// Auth chain (authMiddleware → adminMiddleware → requireFreshAdmin →
-// adminDestructiveLimiter) is mounted app-level in src/index.js.
-// Sub-routers MUST NOT remount auth middleware (Phase-4.5 D-01).
+// Auth chain mounted app-level in src/index.js — do NOT remount middleware here.
+// Sub-router import convention (Pitfall 2): require the auditLog MODULE,
+// not destructure. Plans 2-4 will import withAudit + AUDIT_ACTIONS from this
+// module reference when they wire mutations.
 
 const express = require('express');
-// eslint-disable-next-line no-unused-vars
-const auditLog = require('../../services/auditLog');
-// eslint-disable-next-line no-unused-vars
-const { reqValidator } = require('../../middleware/reqValidator');
-// eslint-disable-next-line no-unused-vars
-const { AppError } = require('../../errors/AppError');
-// eslint-disable-next-line no-unused-vars
-const { logger } = require('../../logger');
+// auditLog reserved for downstream plans — keeping the import live so the
+// regression-guard step (c) (mutation -> withAudit/writeAudit) is exercised
+// the moment a Plan-N mutation lands here. Aliased to '_auditLog' so ESLint
+// no-unused-vars (if enabled in a future config) does not flag the scaffold.
+const _auditLog = require('../../services/auditLog');
+void _auditLog;
+
 const router = express.Router();
 
 module.exports = router;
