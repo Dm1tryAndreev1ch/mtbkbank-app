@@ -30,6 +30,9 @@ export const CODEBOOK = Object.freeze({
   BALANCE_INSUFFICIENT: 'Недостаточно средств на счёте',
   // Phase 4.5 / 04.5-01 / ADMIN-01 — admin-frozen account.
   ACCOUNT_FROZEN:       'Счёт заморожен; списания невозможны',
+  // Phase 4.5 / 04.5-02 / ADMIN-02 — transaction reverse guards.
+  TRANSACTION_NOT_REVERSIBLE:   'Операция не может быть отменена в текущем статусе',
+  TRANSACTION_ALREADY_REVERSED: 'Операция уже была отменена',
   NOT_FOUND: 'Запись не найдена',
   CONFLICT: 'Конфликт данных. Обновите страницу и попробуйте снова.',
   DB_ERROR: 'Ошибка базы данных. Попробуйте позже.',

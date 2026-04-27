@@ -140,6 +140,17 @@ model Transaction {
   droppedCardId String?
   createdAt     DateTime        @default(now())
 
+  // Phase 4.5 / 04.5-02 / ADMIN-02 — admin reverse idempotency.
+  // When a TRANSACTION_REVERSE creates a compensating transaction, the
+  // original row's reversedById is set to the compensator's id. The UNIQUE
+  // index makes a second reverse attempt collide on P2002 — we translate
+  // that into 409 TRANSACTION_ALREADY_REVERSED for race-safety.
+  // Self-relation onDelete: SetNull preserves history if a compensator is
+  // ever deleted (audit trail intact via AuditLog rows).
+  reversedById  String?         @unique
+  reversedBy    Transaction?    @relation("TxReverse", fields: [reversedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  reverses      Transaction?    @relation("TxReverse")
+
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   fromAccount BankAccount? @relation("TransFrom", fields: [fromAccountId], references: [id])
   toAccount   BankAccount? @relation("TransTo", fields: [toAccountId], references: [id])
