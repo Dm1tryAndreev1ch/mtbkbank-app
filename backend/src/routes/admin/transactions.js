@@ -94,11 +94,15 @@ router.post('/:id/reverse', reqValidator(adminTransactionReverseSchema), async (
       async (tx, setAudit) => {
         const original = await tx.transaction.findUnique({ where: { id } });
         if (!original) throw new AppError('NOT_FOUND', 404);
-        if (original.status !== 'completed') {
-          throw new AppError('TRANSACTION_NOT_REVERSIBLE', 409);
-        }
+        // Idempotency check FIRST — a successful reverse flips status to
+        // 'reversed', so a second attempt would otherwise hit the
+        // not-reversible branch instead of the more specific
+        // already-reversed message.
         if (original.reversedById) {
           throw new AppError('TRANSACTION_ALREADY_REVERSED', 409);
+        }
+        if (original.status !== 'completed') {
+          throw new AppError('TRANSACTION_NOT_REVERSIBLE', 409);
         }
 
         const compensating = await tx.transaction.create({
