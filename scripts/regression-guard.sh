@@ -267,6 +267,63 @@ else
   echo "OK    Phase-4 D-09: OfflineBanner/ToastHost mounted"
 fi
 
+echo "=== Phase-4.5 regression-guard ==="
+
+# (a) backend/src/routes/admin.js (singular file) MUST be deleted by Plan 1 (D-01).
+if [ -f backend/src/routes/admin.js ]; then
+  echo "FAIL  Phase-4.5 D-01: backend/src/routes/admin.js still exists; sub-router split required"
+  FAIL=1
+else
+  echo "OK    Phase-4.5 D-01: backend/src/routes/admin.js (singular file) absent"
+fi
+
+# (b) backend/eslint.config.js MUST exist with destructive-prisma selectors (D-02).
+if ! grep -q "no-restricted-syntax" backend/eslint.config.js 2>/dev/null; then
+  echo "FAIL  Phase-4.5 D-02: backend/eslint.config.js missing no-restricted-syntax rule"
+  FAIL=1
+else
+  echo "OK    Phase-4.5 D-02: backend/eslint.config.js has destructive-prisma rule"
+fi
+if ! grep -q "prisma.user.delete" backend/eslint.config.js 2>/dev/null; then
+  echo "FAIL  Phase-4.5 D-02: backend/eslint.config.js missing prisma.user.delete selector"
+  FAIL=1
+else
+  echo "OK    Phase-4.5 D-02: prisma.user.delete selector present"
+fi
+if ! grep -q "spendingLimit" backend/eslint.config.js 2>/dev/null; then
+  echo "FAIL  Phase-4.5 D-02: backend/eslint.config.js missing spendingLimit selector (RESEARCH ADMIN-07 reconciliation)"
+  FAIL=1
+else
+  echo "OK    Phase-4.5 D-02: spendingLimit selector present"
+fi
+
+# (c) every routes/admin/*.js mutation handler must call auditLog.withAudit (or writeAudit
+#     inside $transaction). Skip the index.js mount file and pure scaffolds with no mutations.
+if [ -d backend/src/routes/admin ]; then
+  for f in backend/src/routes/admin/*.js; do
+    [ "$(basename "$f")" = "index.js" ] && continue
+    if grep -qE "(prisma|tx)\.(user|transaction|bankAccount|bankCard|userCard|deck|quest|spendingLimit|payment|subscription|cardTrade|notification)\.(create|update|delete)" "$f"; then
+      if ! grep -qE "withAudit|writeAudit" "$f"; then
+        echo "FAIL  Phase-4.5 D-03: $f mutates Prisma without audit wiring"
+        FAIL=1
+      fi
+    fi
+  done
+  echo "OK    Phase-4.5 D-03: every routes/admin mutation handler routes through withAudit/writeAudit"
+fi
+
+# (d) sub-routers MUST NOT remount auth middleware (D-01 lock). Strip comments before grepping
+#     so commentary in index.js documenting the rule does not trigger the guard.
+if [ -d backend/src/routes/admin ]; then
+  for f in backend/src/routes/admin/*.js; do
+    if sed 's|//.*||' "$f" | grep -qE "router\.use\(.*authMiddleware|router\.use\(.*adminMiddleware|router\.use\(.*requireFreshAdmin"; then
+      echo "FAIL  Phase-4.5 D-01: $f re-mounts admin auth middleware; chain stays at app-level only"
+      FAIL=1
+    fi
+  done
+  echo "OK    Phase-4.5 D-01: no sub-router remounts admin auth middleware"
+fi
+
 if [[ $FAIL -ne 0 ]]; then
   echo ""
   echo "Regression-guard FAILED — fix the listed pattern(s) before committing."
