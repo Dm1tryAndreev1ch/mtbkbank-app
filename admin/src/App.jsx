@@ -8,6 +8,7 @@ import { ToastHost, useAdminToast } from './components/Toast';
 import { SkeletonRow } from './components/SkeletonRow';
 import { SpinnerButton } from './components/SpinnerButton';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { EmptyState } from './components/EmptyState';
 import { useZodForm } from './lib/useZodForm';
 import { loginSchema, phoneSchema, pinSchema, nameSchema } from './lib/schemas';
 import { z } from 'zod';
@@ -851,12 +852,893 @@ function SimulatePage() {
   );
 }
 
+// ==================== ACCOUNTS PAGE ====================
+// Phase 4.5 / 04.5-02 / ADMIN-01 — admin BankAccount page (freeze/unfreeze/balance-adjust).
+function AccountsPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [q, setQ] = useState('');
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [frozenFilter, setFrozenFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [mutatingId, setMutatingId] = useState(null);
+  const [confirmFreeze, setConfirmFreeze] = useState(null);
+  const [adjustFor, setAdjustFor] = useState(null);
+  const [adjustDelta, setAdjustDelta] = useState('');
+  const [adjustReason, setAdjustReason] = useState('');
+  const [adjustErr, setAdjustErr] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    const t = setTimeout(() => {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (q) params.set('q', q);
+      if (userIdFilter) params.set('userId', userIdFilter);
+      if (frozenFilter) params.set('frozen', frozenFilter);
+      apiFetch(token, `${API}/accounts?${params.toString()}`)
+        .then((r) => {
+          if (cancelled) return;
+          setItems(Array.isArray(r.items) ? r.items : []);
+          setTotal(typeof r.total === 'number' ? r.total : 0);
+        })
+        .catch((e) => { if (!cancelled) setErr(e); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [token, page, q, userIdFilter, frozenFilter]);
+
+  const doFreeze = async () => {
+    if (!confirmFreeze) return;
+    const { acc, action } = confirmFreeze;
+    setMutatingId(acc.id);
+    try {
+      await apiFetch(token, `${API}/accounts/${acc.id}/${action}`, { method: 'POST', body: {} });
+      toastSuccess(action === 'freeze' ? 'Счёт заморожен' : 'Счёт разморожен');
+      setConfirmFreeze(null);
+      setItems((prev) => prev.map((a) => (a.id === acc.id ? { ...a, frozen: action === 'freeze' } : a)));
+    } catch (e) {
+      toastErrorFromAppError(e, 'Не удалось обновить счёт');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  const doAdjust = async (e) => {
+    e?.preventDefault?.();
+    if (!adjustFor) return;
+    setAdjustErr('');
+    const delta = Number(adjustDelta);
+    if (!Number.isFinite(delta)) { setAdjustErr('Введите число'); return; }
+    if (!adjustReason || adjustReason.length < 3) { setAdjustErr('Укажите причину (минимум 3 символа)'); return; }
+    setMutatingId(adjustFor.id);
+    try {
+      const updated = await apiFetch(token, `${API}/accounts/${adjustFor.id}/balance-adjust`, {
+        method: 'POST',
+        body: { delta, reason: adjustReason },
+      });
+      toastSuccess('Баланс обновлён');
+      setItems((prev) => prev.map((a) => (a.id === adjustFor.id ? { ...a, balance: updated.balance } : a)));
+      setAdjustFor(null); setAdjustDelta(''); setAdjustReason('');
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось скорректировать баланс');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ flexShrink: 0 }}>
+          <h1 className="page-title">Счета</h1>
+          <p className="page-subtitle">Заморозка и корректировка балансов</p>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить счета. Попробуйте обновить страницу.'} />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <input type="search" className="form-input" placeholder="Поиск" value={q}
+              onChange={(e) => { setQ(e.target.value); setPage(1); }} style={{ maxWidth: 220 }} />
+            <input type="text" className="form-input" placeholder="ID пользователя" value={userIdFilter}
+              onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }} style={{ maxWidth: 220 }} />
+            <select className="form-select" value={frozenFilter}
+              onChange={(e) => { setFrozenFilter(e.target.value); setPage(1); }} style={{ maxWidth: 180 }}>
+              <option value="">Все</option>
+              <option value="true">Заморожен</option>
+              <option value="false">Активен</option>
+            </select>
+          </div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>ID</th><th>Пользователь</th><th>Тип</th><th>Баланс</th><th>Статус</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={6} rows={5} />
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={6}>
+                    <EmptyState heading="Счетов не найдено" body="Измените фильтры или поисковый запрос." icon="search_off" />
+                  </td></tr>
+                ) : items.map((a) => (
+                  <tr key={a.id} style={mutatingId === a.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{a.id.slice(-8)}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{a.userId.slice(-8)}</td>
+                    <td>{a.type}</td>
+                    <td style={{ fontWeight: 700 }}>₽ {Number(a.balance).toLocaleString('ru-RU')}</td>
+                    <td>{a.frozen ? <span className="badge" style={{ color: 'var(--error)' }}>Заморожен</span> : <span className="badge" style={{ color: 'var(--success)' }}>Активен</span>}</td>
+                    <td style={{ display: 'flex', gap: 8 }}>
+                      {a.frozen ? (
+                        <button className="btn btn-sm" onClick={() => setConfirmFreeze({ acc: a, action: 'unfreeze' })}>Разморозить</button>
+                      ) : (
+                        <button className="btn btn-sm btn-danger" onClick={() => setConfirmFreeze({ acc: a, action: 'freeze' })}>Заморозить</button>
+                      )}
+                      <button className="btn btn-sm" onClick={() => { setAdjustFor(a); setAdjustDelta(''); setAdjustReason(''); setAdjustErr(''); }}>Скорректировать баланс</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, justifyContent: 'flex-end' }}>
+            <span style={{ color: 'var(--on-surface-variant)' }}>Стр. {page} из {Math.max(1, Math.ceil(total / limit))} · Всего: {total}</span>
+            <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
+            <button className="btn btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage((p) => p + 1)}>Вперёд →</button>
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={!!confirmFreeze}
+        title={confirmFreeze?.action === 'freeze' ? 'Заморозить счёт?' : 'Разморозить счёт?'}
+        message={
+          confirmFreeze?.action === 'freeze'
+            ? `Счёт ${confirmFreeze?.acc?.id?.slice(-8)} будет заморожен. Списания невозможны до разморозки.`
+            : 'Счёт будет разморожен и снова доступен для списаний.'
+        }
+        confirmLabel={confirmFreeze?.action === 'freeze' ? 'Заморозить' : 'Разморозить'}
+        cancelLabel="Отмена"
+        destructive={confirmFreeze?.action === 'freeze'}
+        onConfirm={doFreeze}
+        onCancel={() => setConfirmFreeze(null)}
+      />
+
+      {adjustFor && (
+        <div className="modal-overlay" onClick={() => setAdjustFor(null)}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={doAdjust}>
+            <h2 className="modal-title">Скорректировать баланс</h2>
+            <p style={{ fontSize: 13, color: 'var(--on-surface-variant)', marginBottom: 16 }}>
+              Текущий баланс: ₽ {Number(adjustFor.balance).toLocaleString('ru-RU')}
+            </p>
+            <div className="form-group">
+              <label className="form-label">Изменение (delta)</label>
+              <input className="form-input" type="number" step="0.01" autoFocus
+                value={adjustDelta} onChange={(e) => setAdjustDelta(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Причина</label>
+              <input className="form-input" value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} />
+            </div>
+            {adjustErr && <p style={{ color: 'var(--error)', fontSize: 12 }}>{adjustErr}</p>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="button" className="btn" onClick={() => setAdjustFor(null)}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === adjustFor.id} className="btn btn-primary">Сохранить</SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ==================== TRANSACTIONS PAGE ====================
+// Phase 4.5 / 04.5-02 / ADMIN-02 — admin Transaction page (paged search + reverse).
+function TransactionsPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [q, setQ] = useState('');
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [accountIdFilter, setAccountIdFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [confirmReverse, setConfirmReverse] = useState(null);
+  const [reverseReason, setReverseReason] = useState('');
+  const [mutatingId, setMutatingId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    const t = setTimeout(() => {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (q) params.set('q', q);
+      if (userIdFilter) params.set('userId', userIdFilter);
+      if (accountIdFilter) params.set('accountId', accountIdFilter);
+      if (typeFilter) params.set('type', typeFilter);
+      if (statusFilter) params.set('status', statusFilter);
+      if (fromDate) params.set('from', fromDate);
+      if (toDate) params.set('to', toDate);
+      apiFetch(token, `${API}/transactions?${params.toString()}`)
+        .then((r) => {
+          if (cancelled) return;
+          setItems(Array.isArray(r.items) ? r.items : []);
+          setTotal(typeof r.total === 'number' ? r.total : 0);
+        })
+        .catch((e) => { if (!cancelled) setErr(e); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [token, page, q, userIdFilter, accountIdFilter, typeFilter, statusFilter, fromDate, toDate]);
+
+  const doReverse = async () => {
+    if (!confirmReverse) return;
+    if (!reverseReason || reverseReason.length < 3) return;
+    setMutatingId(confirmReverse.id);
+    try {
+      await apiFetch(token, `${API}/transactions/${confirmReverse.id}/reverse`, {
+        method: 'POST',
+        body: { reason: reverseReason },
+      });
+      toastSuccess('Операция отменена');
+      setConfirmReverse(null); setReverseReason('');
+      setPage(1);
+    } catch (e) {
+      if (e?.code === 'TRANSACTION_ALREADY_REVERSED') {
+        useAdminToast.getState().push({ type: 'error', message: 'Операция уже была отменена' });
+      } else {
+        toastErrorFromAppError(e, 'Не удалось отменить операцию');
+      }
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ flexShrink: 0 }}>
+          <h1 className="page-title">Операции</h1>
+          <p className="page-subtitle">Поиск и отмена транзакций</p>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить операции.'} />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <input type="search" className="form-input" placeholder="Поиск" value={q}
+              onChange={(e) => { setQ(e.target.value); setPage(1); }} style={{ maxWidth: 200 }} />
+            <input type="text" className="form-input" placeholder="ID пользователя" value={userIdFilter}
+              onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }} style={{ maxWidth: 200 }} />
+            <input type="text" className="form-input" placeholder="ID счёта" value={accountIdFilter}
+              onChange={(e) => { setAccountIdFilter(e.target.value); setPage(1); }} style={{ maxWidth: 200 }} />
+            <select className="form-select" value={typeFilter}
+              onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }} style={{ maxWidth: 170 }}>
+              <option value="">Все типы</option>
+              <option value="PURCHASE">Покупка</option>
+              <option value="TRANSFER_OUT">Перевод исх.</option>
+              <option value="TRANSFER_IN">Перевод вх.</option>
+              <option value="TOPUP">Пополнение</option>
+              <option value="PAYMENT">Платёж</option>
+            </select>
+            <select className="form-select" value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={{ maxWidth: 170 }}>
+              <option value="">Все статусы</option>
+              <option value="completed">Завершено</option>
+              <option value="pending">В обработке</option>
+              <option value="scheduled">Запланировано</option>
+              <option value="failed">Ошибка</option>
+              <option value="reversed">Отменена</option>
+            </select>
+            <input type="date" className="form-input" value={fromDate}
+              onChange={(e) => { setFromDate(e.target.value); setPage(1); }} style={{ maxWidth: 160 }} />
+            <input type="date" className="form-input" value={toDate}
+              onChange={(e) => { setToDate(e.target.value); setPage(1); }} style={{ maxWidth: 160 }} />
+          </div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>ID</th><th>Дата</th><th>Тип</th><th>Сумма</th><th>Статус</th><th>Reverses</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={7} rows={5} />
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={7}>
+                    <EmptyState heading="Операций не найдено" body="Уточните период или фильтры." icon="search_off" />
+                  </td></tr>
+                ) : items.map((t) => (
+                  <tr key={t.id} style={mutatingId === t.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{t.id.slice(-8)}</td>
+                    <td>{new Date(t.createdAt).toLocaleString('ru-RU')}</td>
+                    <td>{t.type}</td>
+                    <td style={{ fontWeight: 700 }}>₽ {Number(t.amount).toLocaleString('ru-RU')}</td>
+                    <td>{t.status}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{t.reversedById ? t.reversedById.slice(-8) : '—'}</td>
+                    <td>
+                      {t.status === 'completed' && !t.reversedById ? (
+                        <button className="btn btn-sm btn-danger" onClick={() => { setConfirmReverse(t); setReverseReason(''); }}>Отменить операцию</button>
+                      ) : (
+                        <span style={{ color: 'var(--on-surface-variant)', fontSize: 12 }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, justifyContent: 'flex-end' }}>
+            <span style={{ color: 'var(--on-surface-variant)' }}>Стр. {page} из {Math.max(1, Math.ceil(total / limit))} · Всего: {total}</span>
+            <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
+            <button className="btn btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage((p) => p + 1)}>Вперёд →</button>
+          </div>
+        </div>
+      </div>
+
+      {confirmReverse && (
+        <div className="modal-overlay" onClick={() => setConfirmReverse(null)}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); doReverse(); }}>
+            <h2 className="modal-title">Отменить операцию?</h2>
+            <p style={{ fontSize: 14, color: 'var(--on-surface-variant)', marginBottom: 16 }}>
+              Будет создана компенсирующая операция на сумму {Number(confirmReverse.amount).toLocaleString('ru-RU')} ₽. Действие необратимо.
+            </p>
+            <div className="form-group">
+              <label className="form-label">Причина</label>
+              <input className="form-input" autoFocus value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => setConfirmReverse(null)}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === confirmReverse.id} className="btn btn-danger" disabled={!reverseReason || reverseReason.length < 3}>
+                Отменить операцию
+              </SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ==================== PAYMENTS PAGE ====================
+// Phase 4.5 / 04.5-02 / ADMIN-08 — payments are stored as Transaction rows
+// with type='PAYMENT'. The status-override endpoint operates on Transaction.
+function PaymentsPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [editFor, setEditFor] = useState(null);
+  const [editStatus, setEditStatus] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [mutatingId, setMutatingId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setErr(null);
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (userIdFilter) params.set('userId', userIdFilter);
+    if (statusFilter) params.set('status', statusFilter);
+    if (fromDate) params.set('from', fromDate);
+    if (toDate) params.set('to', toDate);
+    apiFetch(token, `${API}/payments?${params.toString()}`)
+      .then((r) => {
+        if (cancelled) return;
+        setItems(Array.isArray(r.items) ? r.items : []);
+        setTotal(typeof r.total === 'number' ? r.total : 0);
+      })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, page, userIdFilter, statusFilter, fromDate, toDate]);
+
+  const doStatusOverride = async (e) => {
+    e?.preventDefault?.();
+    if (!editFor) return;
+    if (!editStatus || !editReason || editReason.length < 3) return;
+    setMutatingId(editFor.id);
+    try {
+      const updated = await apiFetch(token, `${API}/payments/${editFor.id}/status`, {
+        method: 'POST',
+        body: { status: editStatus, reason: editReason },
+      });
+      toastSuccess('Статус платежа обновлён');
+      setItems((prev) => prev.map((p) => (p.id === editFor.id ? { ...p, status: updated.status } : p)));
+      setEditFor(null); setEditStatus(''); setEditReason('');
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось обновить статус');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ flexShrink: 0 }}>
+          <h1 className="page-title">Платежи</h1>
+          <p className="page-subtitle">Список платежей и переопределение статуса</p>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить платежи.'} />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <input type="text" className="form-input" placeholder="ID пользователя" value={userIdFilter}
+              onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }} style={{ maxWidth: 220 }} />
+            <select className="form-select" value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={{ maxWidth: 200 }}>
+              <option value="">Все статусы</option>
+              <option value="completed">Завершено</option>
+              <option value="pending">В обработке</option>
+              <option value="scheduled">Запланировано</option>
+              <option value="failed">Ошибка</option>
+            </select>
+            <input type="date" className="form-input" value={fromDate}
+              onChange={(e) => { setFromDate(e.target.value); setPage(1); }} style={{ maxWidth: 160 }} />
+            <input type="date" className="form-input" value={toDate}
+              onChange={(e) => { setToDate(e.target.value); setPage(1); }} style={{ maxWidth: 160 }} />
+          </div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>ID</th><th>Дата</th><th>Мерчант</th><th>Сумма</th><th>Статус</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={6} rows={5} />
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={6}>
+                    <EmptyState heading="Платежей нет" body="Платежи появятся здесь после первой операции." icon="payments" />
+                  </td></tr>
+                ) : items.map((p) => (
+                  <tr key={p.id} style={mutatingId === p.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{p.id.slice(-8)}</td>
+                    <td>{new Date(p.createdAt).toLocaleString('ru-RU')}</td>
+                    <td>{p.merchant || '—'}</td>
+                    <td style={{ fontWeight: 700 }}>₽ {Number(p.amount).toLocaleString('ru-RU')}</td>
+                    <td>{p.status}</td>
+                    <td>
+                      <button className="btn btn-sm" onClick={() => { setEditFor(p); setEditStatus(p.status); setEditReason(''); }}>Изменить статус</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, justifyContent: 'flex-end' }}>
+            <span style={{ color: 'var(--on-surface-variant)' }}>Стр. {page} из {Math.max(1, Math.ceil(total / limit))} · Всего: {total}</span>
+            <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
+            <button className="btn btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage((p) => p + 1)}>Вперёд →</button>
+          </div>
+        </div>
+      </div>
+
+      {editFor && (
+        <div className="modal-overlay" onClick={() => setEditFor(null)}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={doStatusOverride}>
+            <h2 className="modal-title">Изменить статус платежа</h2>
+            <div className="form-group">
+              <label className="form-label">Новый статус</label>
+              <select className="form-select" value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
+                <option value="">— выберите —</option>
+                <option value="completed">completed</option>
+                <option value="pending">pending</option>
+                <option value="scheduled">scheduled</option>
+                <option value="failed">failed</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Причина</label>
+              <input className="form-input" autoFocus value={editReason} onChange={(e) => setEditReason(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => setEditFor(null)}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === editFor.id} className="btn btn-primary"
+                disabled={!editStatus || !editReason || editReason.length < 3}>
+                Изменить статус
+              </SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ==================== LIMITS PAGE ====================
+// Phase 4.5 / 04.5-02 / ADMIN-07 — SpendingLimit CRUD.
+function LimitsPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editFor, setEditFor] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [mutatingId, setMutatingId] = useState(null);
+  const [reload, setReload] = useState(0);
+  const [form, setForm] = useState({ userId: '', category: '', amount: '', period: 'MONTHLY' });
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setErr(null);
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (userIdFilter) params.set('userId', userIdFilter);
+    apiFetch(token, `${API}/limits?${params.toString()}`)
+      .then((r) => {
+        if (cancelled) return;
+        setItems(Array.isArray(r.items) ? r.items : []);
+        setTotal(typeof r.total === 'number' ? r.total : 0);
+      })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, page, userIdFilter, reload]);
+
+  const doCreate = async (e) => {
+    e?.preventDefault?.();
+    setMutatingId('__create__');
+    try {
+      await apiFetch(token, `${API}/limits`, { method: 'POST', body: {
+        userId: form.userId, category: form.category, amount: Number(form.amount), period: form.period,
+      }});
+      toastSuccess('Лимит сохранён');
+      setShowCreate(false); setForm({ userId: '', category: '', amount: '', period: 'MONTHLY' });
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось создать лимит');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+  const doUpdate = async (e) => {
+    e?.preventDefault?.();
+    if (!editFor) return;
+    setMutatingId(editFor.id);
+    try {
+      const body = {};
+      if (form.category) body.category = form.category;
+      if (form.amount !== '') body.amount = Number(form.amount);
+      if (form.period) body.period = form.period;
+      await apiFetch(token, `${API}/limits/${editFor.id}`, { method: 'PUT', body });
+      toastSuccess('Лимит сохранён');
+      setEditFor(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось обновить лимит');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+  const doDelete = async () => {
+    if (!confirmDelete) return;
+    setMutatingId(confirmDelete.id);
+    try {
+      await apiFetch(token, `${API}/limits/${confirmDelete.id}`, { method: 'DELETE' });
+      toastSuccess('Лимит удалён');
+      setConfirmDelete(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось удалить лимит');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
+          <div><h1 className="page-title">Лимиты</h1><p className="page-subtitle">Лимиты расходов по категориям</p></div>
+          <button className="btn btn-primary" onClick={() => { setShowCreate(true); setForm({ userId: '', category: '', amount: '', period: 'MONTHLY' }); }}>
+            <span className="material-icons-outlined" style={{ fontSize: 18 }}>add</span> Создать лимит
+          </button>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить лимиты.'} />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <input type="text" className="form-input" placeholder="ID пользователя" value={userIdFilter}
+              onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }} style={{ maxWidth: 220 }} />
+          </div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Пользователь</th><th>Категория</th><th>Лимит</th><th>Потрачено</th><th>Период</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={6} rows={5} />
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={6}>
+                    <EmptyState heading="Лимитов нет" body="Добавьте лимит, чтобы ограничить расходы пользователя." icon="speed" />
+                  </td></tr>
+                ) : items.map((l) => (
+                  <tr key={l.id} style={mutatingId === l.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{l.userId.slice(-8)}</td>
+                    <td>{l.category}</td>
+                    <td style={{ fontWeight: 700 }}>₽ {Number(l.limitAmount).toLocaleString('ru-RU')}</td>
+                    <td>₽ {Number(l.spentAmount).toLocaleString('ru-RU')}</td>
+                    <td>{l.period}</td>
+                    <td style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-sm" onClick={() => { setEditFor(l); setForm({ userId: l.userId, category: l.category, amount: String(l.limitAmount), period: (l.period || 'MONTHLY').toUpperCase() }); }}>Изменить</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => setConfirmDelete(l)}>Удалить</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, justifyContent: 'flex-end' }}>
+            <span style={{ color: 'var(--on-surface-variant)' }}>Стр. {page} из {Math.max(1, Math.ceil(total / limit))} · Всего: {total}</span>
+            <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
+            <button className="btn btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage((p) => p + 1)}>Вперёд →</button>
+          </div>
+        </div>
+      </div>
+
+      {(showCreate || editFor) && (
+        <div className="modal-overlay" onClick={() => { setShowCreate(false); setEditFor(null); }}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={editFor ? doUpdate : doCreate}>
+            <h2 className="modal-title">{editFor ? 'Изменить лимит' : 'Новый лимит'}</h2>
+            {!editFor && (
+              <div className="form-group">
+                <label className="form-label">ID пользователя</label>
+                <input className="form-input" value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })} />
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">Категория</label>
+              <input className="form-input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Лимит, ₽</label>
+              <input className="form-input" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Период</label>
+              <select className="form-select" value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })}>
+                <option value="DAILY">DAILY</option>
+                <option value="WEEKLY">WEEKLY</option>
+                <option value="MONTHLY">MONTHLY</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => { setShowCreate(false); setEditFor(null); }}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === '__create__' || (editFor && mutatingId === editFor.id)} className="btn btn-primary">Сохранить</SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Удалить лимит?"
+        message="Лимит будет удалён. Списания больше не будут ограничены."
+        confirmLabel="Удалить"
+        cancelLabel="Отмена"
+        destructive
+        onConfirm={doDelete}
+        onCancel={() => (mutatingId ? null : setConfirmDelete(null))}
+      />
+    </>
+  );
+}
+
+// ==================== SUBSCRIPTIONS PAGE ====================
+// Phase 4.5 / 04.5-02 / ADMIN-09 — Subscription CRUD.
+function SubscriptionsPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editFor, setEditFor] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [mutatingId, setMutatingId] = useState(null);
+  const [reload, setReload] = useState(0);
+  const [form, setForm] = useState({ userId: '', name: '', amount: '', icon: 'subscriptions', nextPayment: '' });
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setErr(null);
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (userIdFilter) params.set('userId', userIdFilter);
+    apiFetch(token, `${API}/subscriptions?${params.toString()}`)
+      .then((r) => {
+        if (cancelled) return;
+        setItems(Array.isArray(r.items) ? r.items : []);
+        setTotal(typeof r.total === 'number' ? r.total : 0);
+      })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, page, userIdFilter, reload]);
+
+  const doCreate = async (e) => {
+    e?.preventDefault?.();
+    setMutatingId('__create__');
+    try {
+      const body = {
+        userId: form.userId, name: form.name,
+        amount: Number(form.amount),
+        icon: form.icon || 'subscriptions',
+      };
+      if (form.nextPayment) body.nextPayment = new Date(form.nextPayment).toISOString();
+      await apiFetch(token, `${API}/subscriptions`, { method: 'POST', body });
+      toastSuccess('Подписка сохранена');
+      setShowCreate(false);
+      setForm({ userId: '', name: '', amount: '', icon: 'subscriptions', nextPayment: '' });
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось создать подписку');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+  const doUpdate = async (e) => {
+    e?.preventDefault?.();
+    if (!editFor) return;
+    setMutatingId(editFor.id);
+    try {
+      const body = {};
+      if (form.name) body.name = form.name;
+      if (form.amount !== '') body.amount = Number(form.amount);
+      if (form.icon) body.icon = form.icon;
+      if (form.nextPayment) body.nextPayment = new Date(form.nextPayment).toISOString();
+      await apiFetch(token, `${API}/subscriptions/${editFor.id}`, { method: 'PUT', body });
+      toastSuccess('Подписка сохранена');
+      setEditFor(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось обновить подписку');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+  const doDelete = async () => {
+    if (!confirmDelete) return;
+    setMutatingId(confirmDelete.id);
+    try {
+      await apiFetch(token, `${API}/subscriptions/${confirmDelete.id}`, { method: 'DELETE' });
+      toastSuccess('Подписка удалена');
+      setConfirmDelete(null);
+      setReload((n) => n + 1);
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось удалить подписку');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
+          <div><h1 className="page-title">Подписки</h1><p className="page-subtitle">Регулярные списания пользователей</p></div>
+          <button className="btn btn-primary" onClick={() => { setShowCreate(true); setForm({ userId: '', name: '', amount: '', icon: 'subscriptions', nextPayment: '' }); }}>
+            <span className="material-icons-outlined" style={{ fontSize: 18 }}>add</span> Создать подписку
+          </button>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message={'Не удалось загрузить подписки.'} />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <input type="text" className="form-input" placeholder="ID пользователя" value={userIdFilter}
+              onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }} style={{ maxWidth: 220 }} />
+          </div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Пользователь</th><th>Название</th><th>Сумма</th><th>Следующее списание</th><th>Активна</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={6} rows={5} />
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={6}>
+                    <EmptyState heading="Подписок нет" body="Добавьте подписку для регулярных списаний." icon="subscriptions" />
+                  </td></tr>
+                ) : items.map((s) => (
+                  <tr key={s.id} style={mutatingId === s.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{s.userId.slice(-8)}</td>
+                    <td style={{ fontWeight: 700 }}>{s.name}</td>
+                    <td>₽ {Number(s.amount).toLocaleString('ru-RU')}</td>
+                    <td>{s.nextPayment ? new Date(s.nextPayment).toLocaleDateString('ru-RU') : '—'}</td>
+                    <td>{s.isActive ? <span style={{ color: 'var(--success)' }}>●</span> : <span style={{ color: 'var(--on-surface-variant)' }}>●</span>}</td>
+                    <td style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-sm" onClick={() => {
+                        setEditFor(s);
+                        setForm({
+                          userId: s.userId, name: s.name, amount: String(s.amount),
+                          icon: s.icon || 'subscriptions',
+                          nextPayment: s.nextPayment ? new Date(s.nextPayment).toISOString().slice(0, 10) : '',
+                        });
+                      }}>Изменить</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => setConfirmDelete(s)}>Удалить</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, justifyContent: 'flex-end' }}>
+            <span style={{ color: 'var(--on-surface-variant)' }}>Стр. {page} из {Math.max(1, Math.ceil(total / limit))} · Всего: {total}</span>
+            <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
+            <button className="btn btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage((p) => p + 1)}>Вперёд →</button>
+          </div>
+        </div>
+      </div>
+
+      {(showCreate || editFor) && (
+        <div className="modal-overlay" onClick={() => { setShowCreate(false); setEditFor(null); }}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={editFor ? doUpdate : doCreate}>
+            <h2 className="modal-title">{editFor ? 'Изменить подписку' : 'Новая подписка'}</h2>
+            {!editFor && (
+              <div className="form-group">
+                <label className="form-label">ID пользователя</label>
+                <input className="form-input" value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })} />
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">Название</label>
+              <input className="form-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Сумма, ₽</label>
+              <input className="form-input" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Иконка (Material Icon)</label>
+              <input className="form-input" value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Следующее списание</label>
+              <input className="form-input" type="date" value={form.nextPayment} onChange={(e) => setForm({ ...form, nextPayment: e.target.value })} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn" onClick={() => { setShowCreate(false); setEditFor(null); }}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === '__create__' || (editFor && mutatingId === editFor.id)} className="btn btn-primary">Сохранить</SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Удалить подписку?"
+        message="Подписка будет удалена. Регулярные списания прекратятся."
+        confirmLabel="Удалить"
+        cancelLabel="Отмена"
+        destructive
+        onConfirm={doDelete}
+        onCancel={() => (mutatingId ? null : setConfirmDelete(null))}
+      />
+    </>
+  );
+}
+
 // ===== APP SHELL =====
 const NAV_ITEMS = [
-  { key: 'dashboard', label: 'Дашборд', icon: 'dashboard' },
-  { key: 'users',     label: 'Пользователи', icon: 'people' },
-  { key: 'cards',     label: 'Карты', icon: 'style' },
-  { key: 'simulate',  label: 'Симуляция', icon: 'play_circle' },
+  { key: 'dashboard',     label: 'Дашборд', icon: 'dashboard' },
+  { key: 'users',         label: 'Пользователи', icon: 'people' },
+  { key: 'cards',         label: 'Карты', icon: 'style' },
+  { key: 'accounts',      label: 'Счета', icon: 'account_balance' },
+  { key: 'transactions',  label: 'Операции', icon: 'receipt_long' },
+  { key: 'payments',      label: 'Платежи', icon: 'payments' },
+  { key: 'limits',        label: 'Лимиты', icon: 'speed' },
+  { key: 'subscriptions', label: 'Подписки', icon: 'subscriptions' },
+  { key: 'simulate',      label: 'Симуляция', icon: 'play_circle' },
 ];
 
 function readStoredTheme() {
@@ -958,10 +1840,15 @@ export default function App() {
         </div>
       </aside>
       <main className="admin-main">
-        {page === 'dashboard' && <DashboardPage />}
-        {page === 'users'     && <UsersPage />}
-        {page === 'cards'     && <CardsPage />}
-        {page === 'simulate'  && <SimulatePage />}
+        {page === 'dashboard'     && <DashboardPage />}
+        {page === 'users'         && <UsersPage />}
+        {page === 'cards'         && <CardsPage />}
+        {page === 'accounts'      && <AccountsPage />}
+        {page === 'transactions'  && <TransactionsPage />}
+        {page === 'payments'      && <PaymentsPage />}
+        {page === 'limits'        && <LimitsPage />}
+        {page === 'subscriptions' && <SubscriptionsPage />}
+        {page === 'simulate'      && <SimulatePage />}
       </main>
       <ToastHost />
     </div>
