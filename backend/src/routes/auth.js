@@ -66,12 +66,12 @@ async function loginHandler(req, res, next) {
     // account. Branching on the boolean happens AFTER the compare resolves.
     const ok = await bcrypt.compare(pin, user?.pin || DUMMY_HASH);
 
-    if (!user || !ok || user.status === 'BLOCKED') {
+    if (!user || !ok || user.status === 'BLOCKED' || user.deletedAt) {
       // Single error code + Russian message regardless of branch.
-      // Note: BLOCKED users intentionally collapse into AUTH_INVALID_CREDENTIALS
-      // here too — leaking "this phone is BLOCKED" would itself be a phone-existence
-      // oracle. Status differentiation (was 403 for BLOCKED) is sacrificed for
-      // the side-channel closure per the threat model T-03-09-02.
+      // BLOCKED and soft-deleted (deletedAt != null) users collapse into
+      // AUTH_INVALID_CREDENTIALS — distinguishing them would leak phone-existence
+      // and "this phone was deleted" oracles. Closes the 04.5-05 soft-delete UI
+      // promise ("Вход будет запрещён") per the threat model T-03-09-02.
       throw new AppError('AUTH_INVALID_CREDENTIALS', 401);
     }
 

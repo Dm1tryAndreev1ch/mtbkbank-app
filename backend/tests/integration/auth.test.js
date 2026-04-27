@@ -80,6 +80,17 @@ describe('POST /api/auth/login', () => {
     expect(res.body.message).toBe('Неверный телефон или ПИН-код');
   });
 
+  test('soft-deleted user: returns 401 + AUTH_INVALID_CREDENTIALS (04.5-05 deletedAt enforcement)', async () => {
+    const u = await seedUser({ phone: '+79991234567', pin: '1234' });
+    await prisma.user.update({ where: { id: u.id }, data: { deletedAt: new Date() } });
+    const res = await supertest(app)
+      .post('/api/auth/login')
+      .send({ phone: '+79991234567', pin: '1234' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('AUTH_INVALID_CREDENTIALS');
+    expect(res.body.message).toBe('Неверный телефон или ПИН-код');
+  });
+
   test('missing fields: returns 400 + VALIDATION_FAILED (Zod via reqValidator)', async () => {
     const res = await supertest(app).post('/api/auth/login').send({});
     expect(res.status).toBe(400);
