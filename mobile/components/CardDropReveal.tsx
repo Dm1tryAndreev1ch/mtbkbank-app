@@ -136,12 +136,6 @@ export default function CardDropReveal({ card, onDismiss, onEquip }: CardDropRev
   const phaseRef = useRef<Phase>('IDLE');
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
-  // Mirror of registered SVs so the skip handler can cancelAnimation each one.
-  const svRef = useRef<SharedValue<number>[]>([
-    bgOpacity, orbTranslateY, orbScale, cardRotateY, cardScale,
-    cardTranslateY, burstOpacity, burstScale, detailsOpacity, detailsTranslateY,
-  ]);
-
   const c = card?.collectionCard || card;
   const rarity: string = c?.rarity || 'COMMON';
 
@@ -200,14 +194,26 @@ export default function CardDropReveal({ card, onDismiss, onEquip }: CardDropRev
   }, [reducedMotion]);
 
   // D-07 skip handler — fast-forward during DROP/REVEAL; dismiss during DONE.
+  // Each SV is cancelled individually to avoid storing an array of SharedValues
+  // in a ref, which causes "Tried to modify key N" worklet mutation warnings.
   const handleSkip = useCallback(() => {
     const cur = phaseRef.current;
     if (cur === 'DONE') {
       onDismiss();
       return;
     }
-    // Cancel all in-flight animations and jump to finals.
-    for (const sv of svRef.current) cancelAnimation(sv);
+    // Cancel all in-flight animations individually.
+    cancelAnimation(bgOpacity);
+    cancelAnimation(orbTranslateY);
+    cancelAnimation(orbScale);
+    cancelAnimation(cardRotateY);
+    cancelAnimation(cardScale);
+    cancelAnimation(cardTranslateY);
+    cancelAnimation(burstOpacity);
+    cancelAnimation(burstScale);
+    cancelAnimation(detailsOpacity);
+    cancelAnimation(detailsTranslateY);
+    // Jump to final state.
     bgOpacity.value = 1;
     cardRotateY.value = 1;
     cardScale.value = 1;
