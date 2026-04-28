@@ -93,12 +93,12 @@ export default function LoginScreen() {
                 style={styles.phoneInput}
                 value={phone}
                 onChangeText={setPhone}
-                placeholder="+7 (900) 123-45-67"
+                placeholder="+375291234567"
                 keyboardType="phone-pad"
                 placeholderTextColor={Colors.outlineVariant}
                 returnKeyType="done"
                 onSubmitEditing={() => Keyboard.dismiss()}
-                maxLength={12}
+                maxLength={16}
               />
             </View>
 
