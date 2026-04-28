@@ -29,16 +29,22 @@
 cd backend
 cp .env.example .env
 
-# Собрать dev-образ и поднять все сервисы
+# 1. Собрать dev-образ и поднять все сервисы
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
 
-# В отдельном терминале — применить миграции и залить seed (один раз)
+# 2. Применить миграции (один раз после первого up или после down -v)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:migrate:deploy
+
+# 3. Залить тестовые данные
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:seed
 
 # Проверка
 curl http://localhost:3000/healthz  # → {"status":"ok"}
 ```
+
+> **Важно:** `up --build` **не применяет миграции автоматически** — это сделано намеренно,
+> чтобы падение контейнера на середине миграции не оставляло БД в broken state.
+> Запускайте `db:migrate:deploy` вручную после старта.
 
 > `working_dir: /app` прописан в `docker-compose.yml`, поэтому все `exec`-команды
 > находят `prisma/schema.prisma` без дополнительных флагов.
@@ -79,8 +85,11 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
 # 2. Поднять заново с чистой БД
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
 
-# 3. Подождать 5–10 с пока postgres станет healthy, затем одной командой:
-#    migrate reset --force  +  seed
+# 3. Применить миграции + seed
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:migrate:deploy
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:seed
+
+# Или одной командой (migrate reset --force + seed):
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:reset
 
 # Проверка
@@ -94,13 +103,33 @@ curl http://localhost:3000/healthz  # → {"status":"ok"}
 > если в БД уже есть failed-запись в `_prisma_migrations` — Prisma не сможет
 > применить reset поверх сломанного состояния тома.
 
-### Частые ошибки миграций
+---
+
+## ⚠️ Частые ошибки миграций
 
 | Ошибка | Причина | Решение |
 |---|---|---|
-| `P3009` — failed migration | Том не был сброшен, старая запись в `_prisma_migrations` | `down -v` → `up` → `db:reset` |
+| `P3009` — failed migration | Том не был сброшен, старая запись о сбое в `_prisma_migrations` | `down -v` → `up --build` → `db:migrate:deploy` |
+| `P3009` — failed migration (повторно) | Предыдущий `resolve` снял блок, но следующая миграция тоже упала | Повторить `migrate resolve --rolled-back <имя>` → `db:migrate:deploy` либо сразу `down -v` |
+| `P3018` — 42704 `type "cardsource" does not exist` | `'CardSource'::regtype` бросает исключение если тип не найден в сессии — **исправлено** в `20260428000000_missing_columns` (используется безопасный `JOIN pg_type`) | Убедитесь что последний `git pull` получен, затем `down -v` → `up --build` → `db:migrate:deploy` |
+| `P3018` — `CREATE INDEX CONCURRENTLY` inside transaction | `CONCURRENTLY` нельзя использовать внутри транзакции — **исправлено** в `20260427000500_idx_user_card_user` (убран `CONCURRENTLY`) | Убедитесь что последний `git pull` получен, затем `down -v` → `up --build` → `db:migrate:deploy` |
 | `P3018` — column already exists | Контейнер упал после `COMMIT` DDL, до записи `finished_at` | `migrate resolve --applied <имя>` → `db:migrate:deploy` |
 | `P2022` — column does not exist | Колонка добавлена в `schema.prisma` без миграции | Создать миграцию вручную (`migrate dev`) |
+
+### Если `migrate deploy` падает с `P3009` на чистой БД
+
+Это означает что одна из миграций упала при предыдущем запуске и оставила запись в `_prisma_migrations`.
+Даже `down -v` + `up --build` не помогают если `git pull` не был выполнен перед пересборкой —
+контейнер собирается со старым кодом миграций.
+
+```bash
+# Правильный порядок полного сброса:
+git pull
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:migrate:deploy
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:seed
+```
 
 ---
 
@@ -148,7 +177,7 @@ gm-bank-app/
 │   ├── docker-compose.prod.yml      # Prod: healthchecks, Docker secrets, restart
 │   ├── prisma/
 │   │   ├── schema.prisma
-│   │   ├── migrations/              # 10 последовательных миграций, дублей нет
+│   │   ├── migrations/              # 11 последовательных миграций
 │   │   └── MIGRATIONS.md            # Expand-then-contract + CONCURRENT index policy
 │   ├── src/
 │   └── DEVELOPMENT.md               # Полный гайд по локальной разработке
