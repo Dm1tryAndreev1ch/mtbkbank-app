@@ -14,6 +14,7 @@ import {
 } from '../../constants/theme';
 import Animated2, {
   FadeIn,
+  runOnUI,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
@@ -714,6 +715,10 @@ export default function CardsScreen() {
   }, []);
 
   // Track which slots are empty (for the worklet's "empty-slot" filter).
+  // Use runOnUI to assign the new array on the UI thread — direct JS-thread
+  // assignment to a SharedValue<boolean[]> that has already been serialized
+  // and passed to a worklet triggers "Tried to modify key N" warnings because
+  // Reanimated marks the array immutable once it crosses into the UI runtime.
   useEffect(() => {
     const next: boolean[] = [false, false, false, false, false];
     for (let i = 0; i < 5; i++) {
@@ -721,7 +726,10 @@ export default function CardsScreen() {
         ?? activeDeck?.deckCards?.[i];
       next[i] = !deckCard?.userCard;
     }
-    slotEmptySV.value = next;
+    runOnUI((val: boolean[]) => {
+      'worklet';
+      slotEmptySV.value = val;
+    })(next);
   }, [activeDeck]);
 
   const handleStartSacrifice = (sacrificeCard: any) => {
