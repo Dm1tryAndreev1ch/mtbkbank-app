@@ -33,6 +33,13 @@ export interface ConfirmDialogProps {
   confirmButton?: ConfirmDialogButton;
   cancelButton?: ConfirmDialogButton;
   isDestructive?: boolean;
+  /**
+   * Когда true — кнопка подтверждения НЕ вызывает onDismiss автоматически.
+   * Используется для сценариев, где подтверждение запускает собственный флоу
+   * (анимацию, async-операцию) и управляет закрытием самостоятельно.
+   * По умолчанию false (обратная совместимость).
+   */
+  suppressDismissOnConfirm?: boolean;
 }
 
 export function ConfirmDialog({
@@ -45,6 +52,7 @@ export function ConfirmDialog({
   confirmButton,
   cancelButton,
   isDestructive = true,
+  suppressDismissOnConfirm = false,
 }: ConfirmDialogProps) {
   const scale = useSharedValue(0.7);
   const opacity = useSharedValue(0);
@@ -106,7 +114,12 @@ export function ConfirmDialog({
               style={[styles.btnBase, styles.btnPrimary, { backgroundColor: primaryBg }]}
               onPress={() => {
                 confirmButton?.onPress?.();
-                onDismiss();
+                // fix: если suppressDismissOnConfirm=true — НЕ вызываем onDismiss,
+                // чтобы не сбросить phase/state до завершения флоу (например,
+                // SacrificeOverlay управляет закрытием через onComplete).
+                if (!suppressDismissOnConfirm) {
+                  onDismiss();
+                }
               }}
               activeOpacity={0.85}
               accessibilityRole="button"

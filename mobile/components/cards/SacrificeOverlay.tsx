@@ -67,10 +67,10 @@ interface TargetCard {
 
 export interface SacrificeOverlayProps {
   visible: boolean;
-  sourceCard: SourceCard;
-  targetCard: TargetCard;
+  sourceCard: SourceCard | null;
+  targetCard: TargetCard | null;
   healAmount: number;
-  onDismiss: () => void;
+  onDismiss?: () => void;
   onComplete: () => void;
 }
 
@@ -143,7 +143,10 @@ export function SacrificeOverlay({
 
   // Reset phase when the overlay is re-shown.
   useEffect(() => {
-    if (visible) setPhase('CONFIRM');
+    if (visible) {
+      timeline.value = 0;
+      setPhase('CONFIRM');
+    }
   }, [visible]);
 
   const particles = useMemo<ParticleConfig[]>(
@@ -246,17 +249,34 @@ export function SacrificeOverlay({
     );
   };
 
+  // Внутренний dismiss: используется кнопкой «Отмена» внутри ConfirmDialog.
+  // Вызываем переданный onDismiss (если есть) только при фазе CONFIRM —
+  // в фазе ANIMATING dismiss не должен прерывать анимацию.
+  const handleDismiss = () => {
+    if (phase === 'CONFIRM') {
+      onDismiss?.();
+    }
+  };
+
   if (!visible) return null;
 
   if (phase === 'CONFIRM') {
+    // fix: sourceCard может быть null между ре-рендерами; guard предотвращает
+    // крэш при обращении к sourceCard.name.
+    if (!sourceCard) return null;
+
     return (
       <ConfirmDialog
         visible
-        onDismiss={onDismiss}
+        onDismiss={handleDismiss}
         title={`Пожертвовать карту «${sourceCard.name}»?`}
         message={`Цель восстановит +${healAmount} HP.`}
         confirmLabel="Пожертвовать"
         cancelLabel="Отмена"
+        // fix: suppressDismissOnConfirm=true — ConfirmDialog не вызывает
+        // onDismiss после нажатия кнопки подтверждения, чтобы не сбросить
+        // phase='ANIMATING' обратно в 'CONFIRM' через useEffect(visible).
+        suppressDismissOnConfirm
         confirmButton={{ onPress: handleConfirm }}
         isDestructive
       />
