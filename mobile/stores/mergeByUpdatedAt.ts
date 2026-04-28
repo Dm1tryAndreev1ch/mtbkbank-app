@@ -72,3 +72,75 @@ export function mergeList<T extends Mergeable>(
 
   return result;
 }
+
+// Plan 06-06 D-20/D-21 — opt-in wrapper around mergeList that protects in-flight
+// items via `skipPredicate` and reports server-confirmed removals via `onRemoved`.
+//
+// Behavior:
+//   (a) Any existing item where opts.skipPredicate(existing) === true is preserved
+//       verbatim — never replaced by an incoming entry, never reported as removed
+//       (D-20 — protects cards with `pendingExpire: true` mid-collapse animation).
+//   (b) Merging delegates to `mergeList(existing, incoming, source, idKey)` for all
+//       non-protected items.
+//   (c) Any item present in `existing` but absent from `incoming` AND not protected
+//       by skipPredicate is reported via opts.onRemoved(removed[]) — the
+//       reconciliation tail for dropped CARD_EXPIRED Socket.IO events (D-21).
+//
+// Existing callers of `mergeList` are untouched; this is a NEW export.
+export interface MergeListWithRemovalsOpts<T> {
+  skipPredicate?: (existing: T) => boolean;
+  onRemoved?: (removedItems: T[]) => void;
+  idKey?: keyof T;
+}
+
+export function mergeListWithRemovals<T extends Mergeable>(
+  existing: T[],
+  incoming: T[],
+  source: MergeSource,
+  opts?: MergeListWithRemovalsOpts<T>,
+): T[] {
+  const idKey = (opts?.idKey ?? ('id' as keyof T)) as keyof T;
+  const skip = opts?.skipPredicate;
+
+  // Partition existing into protected vs. mergeable. Protected items skip merging
+  // entirely AND are never considered "removed" — they retain their current state.
+  const protectedItems: T[] = [];
+  const mergeable: T[] = [];
+  for (const e of existing) {
+    if (skip && skip(e)) protectedItems.push(e);
+    else mergeable.push(e);
+  }
+
+  const incomingIds = new Set<string>();
+  for (const i of incoming) incomingIds.add(String(i[idKey]));
+
+  // Detect removals BEFORE merging: items in `mergeable` whose id is absent from
+  // `incoming`. (Protected items are intentionally excluded — D-20.)
+  const removed: T[] = [];
+  for (const e of mergeable) {
+    if (!incomingIds.has(String(e[idKey]))) removed.push(e);
+  }
+
+  // Drop removals BEFORE delegating to mergeList — `mergeList` preserves
+  // existing items not present in incoming (its contract; do not touch),
+  // so we filter them here so the wrapper's "server is source of truth for
+  // unprotected removals" semantic holds.
+  const removedIds = new Set(removed.map((r) => String(r[idKey])));
+  const mergeableMinusRemoved = mergeable.filter(
+    (e) => !removedIds.has(String(e[idKey])),
+  );
+  const merged = mergeList<T>(mergeableMinusRemoved, incoming, source, idKey);
+
+  // Re-prepend protected items so their ordering survives. mergeList preserves
+  // existing order for the items it received; protected items were filtered out
+  // BEFORE that call so we restore them at the head of the list. Callers that
+  // care about exact relative order can replace pendingExpire cards with a
+  // post-process re-sort if needed.
+  const result = protectedItems.concat(merged);
+
+  if (removed.length > 0 && opts?.onRemoved) {
+    opts.onRemoved(removed);
+  }
+
+  return result;
+}

@@ -6,7 +6,7 @@ import * as Sentry from '@sentry/react-native';
 import * as api from '../services/api';
 import * as tokenStore from '../services/tokenStore';
 import { secureStorageUiPrefs } from '../services/secureStorageUiPrefs';
-import { mergeList } from './mergeByUpdatedAt';
+import { mergeList, mergeListWithRemovals } from './mergeByUpdatedAt';
 
 interface User {
   id: string;
@@ -20,6 +20,24 @@ interface User {
 
 // D-06: structured error shape replacing the prior `string | null`.
 export type AppError = { code: string; message: string; requestId?: string } | null;
+
+// Plan 06-06 D-20 — local UserCard shape extended with the `pendingExpire` flag
+// that gates the per-card collapse animation in InventoryGrid. Set by the
+// `CARD_EXPIRED` Socket.IO listener (live event) OR by `queueLocalExpire` after
+// a `mergeListWithRemovals` reconciliation diff (replay tail). NEVER set by a UI
+// gesture — there is no optimistic local-only delete path (success criterion 4).
+export interface LocalUserCard {
+  id: string;
+  updatedAt?: string;
+  pendingExpire?: boolean;
+  // Open shape — backend payload includes `health`, `collectionCard`, etc. The
+  // CARD_EXPIRED listener and InventoryGrid grid render are the actual consumers.
+  // Typed as `any` (not `unknown`) so existing consumers that treat cards as
+  // loose objects (e.g. `card.health`, `card.collectionCard.name`) keep
+  // compiling without forced narrowing.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
 
 // Plan 04-01 D-01/D-02 — Toast slice driven by useStore; consumed by <ToastHost />.
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -71,7 +89,7 @@ interface AppState {
   isLoading: boolean;
   accounts: any[];
   transactions: any[];
-  cards: any[];
+  cards: LocalUserCard[];
   decks: any[];
   quests: any[];
   subscriptions: any[];
@@ -121,6 +139,14 @@ interface AppState {
   rateLimit: RateLimitMap;
   setRateLimit: (key: string, value: { until: number; remaining?: number }) => void;
   clearRateLimit: (key: string) => void;
+
+  // Plan 06-06 D-20 — flag a card mid-collapse animation. Reads stay local; never
+  // wired to a UI gesture (success criterion 4 — no optimistic local-only delete).
+  markCardPendingExpire: (userCardId: string) => void;
+  // Plan 06-06 D-19 — physically remove a card from the local store. Invoked
+  // ONLY by `queueLocalExpire` (server-confirmed CARD_EXPIRED OR reconciliation
+  // diff via mergeListWithRemovals). Never imported by any UI component.
+  removeCard: (userCardId: string) => void;
 }
 
 /**
@@ -202,6 +228,20 @@ export const useStore = create<AppState>()(
           delete next[key];
           return { rateLimit: next };
         }),
+
+      // Plan 06-06 — D-20: flag a card mid-collapse. Idempotent.
+      markCardPendingExpire: (userCardId) =>
+        set((s) => ({
+          cards: (s.cards ?? []).map((c) =>
+            c.id === userCardId && !c.pendingExpire ? { ...c, pendingExpire: true } : c,
+          ),
+        })),
+
+      // Plan 06-06 — D-19: physically remove a card. Caller must be queueLocalExpire.
+      removeCard: (userCardId) =>
+        set((s) => ({
+          cards: (s.cards ?? []).filter((c) => c.id !== userCardId),
+        })),
 
       setCardDesign: async (design) => {
         // D-09: UI pref persist failure is non-sensitive — keep silent but breadcrumb.
@@ -412,7 +452,15 @@ export const useStore = create<AppState>()(
       loadCards: async (params) => {
         try {
           const { data } = await api.getInventory(params);
-          set((s) => ({ cards: mergeList(s.cards ?? [], data ?? [], 'http') }));
+          set((s) => ({
+            cards: mergeListWithRemovals(s.cards ?? [], data ?? [], 'http', {
+              // Plan 06-06 D-20: never replace or remove a card mid-collapse.
+              skipPredicate: (existing) => existing.pendingExpire === true,
+              // Plan 06-06 D-21: server-confirmed reconciliation diff drives the
+              // same per-card collapse animation as a live CARD_EXPIRED event.
+              onRemoved: (removed) => queueLocalExpire(removed),
+            }),
+          }));
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить карты') });
         }
@@ -500,6 +548,26 @@ export const useStore = create<AppState>()(
     },
   ),
 );
+
+// Plan 06-06 D-21 — reconciliation tail. Called by `loadCards`'s onRemoved hook
+// when a server response is missing one or more cards we still hold locally
+// (i.e. a CARD_EXPIRED Socket.IO event was dropped). Stagger removals 200ms
+// apart so the user sees a sequence of collapse animations rather than the
+// whole inventory disappearing at once.
+//
+// Each removed card: (1) flag `pendingExpire` (drives the collapse animation in
+// InventoryGrid); (2) after 800ms (300ms collapse + buffer), remove from store.
+//
+// Exported for test wiring; in production it is invoked only by `loadCards`
+// onRemoved. There is no UI surface that imports this directly.
+export function queueLocalExpire(removed: LocalUserCard[]): void {
+  removed.forEach((card, i) => {
+    setTimeout(() => {
+      useStore.getState().markCardPendingExpire(card.id);
+      setTimeout(() => useStore.getState().removeCard(card.id), 800);
+    }, i * 200);
+  });
+}
 
 // REL-01: keep store.token / store.isAuthed in sync with tokenStore (the SSOT for auth tokens).
 // Singleton subscription registered at module-load time; re-registers automatically on hot reload
