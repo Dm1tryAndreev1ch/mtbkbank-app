@@ -544,14 +544,6 @@ export default function CardsScreen() {
   const slotRefsRef = useRef<Array<React.RefObject<any> | null>>(
     Array.from({ length: 5 }, () => null),
   );
-  // fix(worklets): slotEmptySV holds a boolean[] that gets serialised into the
-  // UI runtime by useDeckDragGesture. Any subsequent JS-thread write to
-  // slotEmptySV.value must go through runOnUI — direct assignment after the
-  // SharedValue has crossed into a worklet triggers
-  // "Tried to modify key N of an object which has been converted to a
-  //  serializable" WARN for every array index (0-4).
-  // The useEffect below uses runOnUI((val) => { 'worklet'; slotEmptySV.value = val; })(next)
-  // to ensure the mutation happens on the UI thread where the array lives.
   const slotEmptySV = register(useSharedValue<boolean[]>([true, true, true, true, true]));
   const dragOverlayStyle = useAnimatedStyle(() => ({
     opacity: dragOpacity.value,
@@ -580,8 +572,6 @@ export default function CardsScreen() {
 
   useEffect(() => { loadCards(); loadDecks(); loadQuests(); }, []);
 
-  // Set of collectionCard IDs already owned by the user — used by ShopTab
-  // to mark cards as already purchased even before this session
   const inventoryCollectionIds = useMemo<Set<string>>(
     () => new Set(cards.map((c: any) => c.collectionCardId as string)),
     [cards]
@@ -618,7 +608,6 @@ export default function CardsScreen() {
     }
   };
 
-  // P04 D-13 — open ConfirmDialog (replaces Alert.alert at former L563).
   const handleRemoveCard = (card: any) => {
     if (!activeDeck) return;
     setCardToRemove(card);
@@ -652,7 +641,6 @@ export default function CardsScreen() {
     else { setSelectedSlotIndex(index); setPickerModalVisible(true); }
   };
 
-  // P04 D-10/D-11 — equip-by-id helper for the drag-snap completion callback.
   const equipCardById = useCallback(async (cardId: string, slotIndex: number) => {
     if (!activeDeck) return;
     const card = (cards as any[]).find((c) => c.id === cardId);
@@ -660,24 +648,19 @@ export default function CardsScreen() {
     await handleEquipCard(card, slotIndex);
   }, [activeDeck, cards]);
 
-  // P04 D-12 — active-deck swap CTA: cross-fade out → activateDeck → cross-fade in.
   const handleSwapActiveDeck = useCallback(async (targetDeckId: string) => {
     if (swappingDeckId) return;
     setSwappingDeckId(targetDeckId);
     try {
       if (reducedMotion) {
-        // D-15 reduced-motion fallback: instant swap, no opacity transition.
         swapOpacity.value = 1;
         await apiClient.activateDeck(targetDeckId);
         await loadDecks();
       } else {
-        // Outgoing fade-out at 250ms (UI-SPEC L134).
         swapOpacity.value = withTiming(0, { duration: 250 });
         await new Promise((r) => setTimeout(r, 250));
         await apiClient.activateDeck(targetDeckId);
         await loadDecks();
-        // Incoming 5 cards mount with stable key + Layout.springify (SLOT_LAYOUT)
-        // — DeckSlotRow already wraps each slot in <Animated.View layout={SLOT_LAYOUT}>.
         swapOpacity.value = withTiming(1, { duration: 250 });
       }
     } catch (e: any) {
@@ -693,14 +676,6 @@ export default function CardsScreen() {
     }
   }, [reducedMotion, swappingDeckId]);
 
-  // P04 D-10/D-11 — per-card composed gesture builder (LongPress + Pan, simultaneous).
-  // Worklet bodies live in useDeckDragGesture (separate file) so cards.tsx —
-  // which reads useStore globally — does NOT contain a worklet directive (
-  // Phase-5 ANIM-03 belt-and-suspenders regression-guard requires that no file
-  // simultaneously contains useStore + the worklet directive). The hook composes:
-  //   Gesture.LongPress().minDuration(300)    — pickup gate (300ms)
-  //     .simultaneousWithExternalGesture(pan) — pan + longPress run together
-  // and uses GAMIFIED_SPRING for pickup scale + drag-snap (mirrors UI-SPEC L142).
   const cardGestureBuilder = useDeckDragGesture({
     dragX, dragY, dragScale, dragOpacity, draggingCardIdSV, slotEmptySV, slotRefsRef,
     reducedMotion,
@@ -710,23 +685,12 @@ export default function CardsScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }, []),
   });
-  // Belt-and-suspenders sanity ref — keeps GAMIFIED_SPRING + the gesture-name
-  // tokens reachable for grep / acceptance-criteria validation. The actual
-  // gesture composition above happens via useDeckDragGesture (which mirrors
-  // 06-PATTERNS.md §"Analog A — gesture composition" verbatim, including
-  // Gesture.LongPress().minDuration(300) and simultaneousWithExternalGesture).
   void GAMIFIED_SPRING;
 
-  // Wire DeckSlotRow refs into slotRefsRef so the worklet can measure() them.
   const handleSlotMeasured = useCallback((index: number, ref: React.RefObject<any>) => {
     slotRefsRef.current[index] = ref;
   }, []);
 
-  // Track which slots are empty (for the worklet's "empty-slot" filter).
-  // Use runOnUI to assign the new array on the UI thread — direct JS-thread
-  // assignment to a SharedValue<boolean[]> that has already been serialized
-  // and passed to a worklet triggers "Tried to modify key N" warnings because
-  // Reanimated marks the array immutable once it crosses into the UI runtime.
   useEffect(() => {
     const next: boolean[] = [false, false, false, false, false];
     for (let i = 0; i < 5; i++) {
@@ -746,14 +710,8 @@ export default function CardsScreen() {
     setSacrificeStep('pick_target');
   };
 
-  // P05-T2 — open SacrificeOverlay (replaces Alert.alert sacrifice flow).
-  // fix(B1+B2): health is a percentage (0-100); the missing HP is simply
-  // (100 - health). Using collectionCard.maxHealth here would mix units
-  // (absolute HP vs percentage) and produce wrong preview values.
   const handleConfirmSacrifice = (targetCard: any) => {
     if (!sacrificeSource) return;
-    // health is 0–100 (percentage). Preview heal = how many percentage points
-    // are missing from full HP, capped at 100.
     const preview = Math.max(0, Math.min(100, 100 - (targetCard.health ?? 0)));
     setSacrificeTarget(targetCard);
     setSacrificeHealAmount(preview);
@@ -761,18 +719,9 @@ export default function CardsScreen() {
     setSacrificeOverlayVisible(true);
   };
 
-  // P05-T2 — runs the sacrifice mutation after the overlay animation
-  // completes (or immediately under reduced-motion). All notifications
-  // route through the Toast slice — NO Alert.alert in the sacrifice path.
-  //
-  // fix(B3): capture source/target into local consts BEFORE any state
-  // mutations so that async-callback races (setTimeout / rAF inside the
-  // overlay animation) cannot observe a null value after setSacrificeSource(null).
   const runActualSacrifice = async () => {
     const src = sacrificeSource;
     const tgt = sacrificeTarget;
-    // Reset overlay + clear state up-front so re-renders triggered by
-    // setSacrificeOverlayVisible(false) don't race with the captured refs.
     setSacrificeOverlayVisible(false);
     setSacrificeSource(null);
     setSacrificeTarget(null);
@@ -782,7 +731,6 @@ export default function CardsScreen() {
       const res = await apiClient.sacrificeCard(src.id, tgt.id);
       await loadCards();
       await loadDecks();
-      // fix(B4): sync user balance (mbPoints) that may change on sacrifice.
       await loadUser();
       const healed = res?.data?.healAmount ?? sacrificeHealAmount;
       useStore.getState().toast.show(`+${healed} HP`, 'success');
@@ -794,10 +742,6 @@ export default function CardsScreen() {
     }
   };
 
-  // fix(B1): health is a percentage (0-100); a card is not at full HP when
-  // health < 100, regardless of collectionCard.maxHealth (absolute stat).
-  // Using c.health < c.collectionCard.maxHealth mixed units and would produce
-  // an always-empty list when maxHealth > 100 (e.g. 500).
   const sacrificeTargetCards = useMemo(() => {
     if (!sacrificeSource) return [];
     return cards.filter((c: any) => c.id !== sacrificeSource.id && c.health < 100);
@@ -819,11 +763,10 @@ export default function CardsScreen() {
       }));
   }, [activeDeck]);
 
-  // Called by ShopTab after a successful purchase
   const handlePurchaseSuccess = useCallback((newMbPoints: number) => {
     setLocalPoints(newMbPoints);
-    loadCards();  // refresh inventory so the new card appears immediately
-    loadUser();   // sync user.mbPoints in global store
+    loadCards();
+    loadUser();
   }, []);
 
   return (
@@ -915,7 +858,6 @@ export default function CardsScreen() {
                 />
               </Animated2.View>
 
-              {/* P04 D-12 — active-deck swap CTA host. List non-active decks; tap → cross-fade swap. */}
               {decks.length > 1 && (
                 <View style={styles.swapCtaRow}>
                   <Text style={styles.swapCtaLabel}>Сменить активную колоду</Text>
@@ -1006,10 +948,6 @@ export default function CardsScreen() {
             </View>
           </View>
 
-          {/* fix(B5): look up the card from the unfiltered `cards` store so
-              that a rarity filter applied to filteredCards cannot silently
-              drop the card the user tapped for sacrifice. If the card is
-              genuinely not found, show a toast instead of failing silently. */}
           <InventoryGrid
             cards={filteredCards as any}
             equippedCardIds={equippedCardIds}
@@ -1139,7 +1077,7 @@ export default function CardsScreen() {
         onCancel={() => { setRemoveConfirmVisible(false); setCardToRemove(null); }}
       />
 
-      {/* Detail Modal placeholder — populated by selectedCard */}
+      {/* Detail Modal */}
       {detailModalVisible && selectedCard && (
         <Modal visible animationType="slide" transparent>
           <View style={styles.modalOverlay}>
@@ -1165,12 +1103,14 @@ export default function CardsScreen() {
                     {selectedCard.collectionCard.description}
                   </Text>
                 )}
+                {/* Кнопка жертвования — увеличена до полноразмерной CTA */}
                 <TouchableOpacity
-                  style={[styles.actionRowBtn, { justifyContent: 'center', marginTop: Spacing.sm }]}
+                  style={styles.sacrificeBtn}
                   onPress={() => handleStartSacrifice(selectedCard)}
+                  activeOpacity={0.82}
                 >
-                  <MaterialIcons name="whatshot" size={18} color={colors.primary} />
-                  <Text style={[styles.actionRowBtnText, { color: colors.primary }]}>Принести в жертву</Text>
+                  <MaterialIcons name="whatshot" size={22} color="#fff" />
+                  <Text style={styles.sacrificeBtnText}>Принести в жертву</Text>
                 </TouchableOpacity>
               </ScrollView>
             </View>
@@ -1178,18 +1118,17 @@ export default function CardsScreen() {
         </Modal>
       )}
 
-      {/* Drag overlay — rendered last so it paints above all other layers */}
+      {/* Drag overlay */}
       <Animated2.View
         style={[StyleSheet.absoluteFill, dragOverlayStyle]}
         pointerEvents="none"
       >
-        {/* The dragged card ghost is rendered here by useDeckDragGesture internals */}
       </Animated2.View>
     </SafeAreaView>
   );
 }
 
-// ─── DeckSwapChip (extracted to avoid re-renders on parent state changes) ────
+// ─── DeckSwapChip ─────────────────────────────────────────────────────────────
 
 interface DeckSwapChipProps {
   deck: any;
@@ -1297,5 +1236,24 @@ function getStyles(colors: any) {
     pickerItemName: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: colors.onSurface },
     pickerItemDetails: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Medium', color: colors.onSurfaceVariant },
     pickerRarity: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-ExtraBold' },
+    // Кнопка жертвования — полноразмерная CTA, красный деструктивный стиль
+    sacrificeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: Spacing.sm,
+      backgroundColor: '#ef4444',
+      borderRadius: BorderRadius.base,
+      paddingVertical: 16,
+      marginTop: Spacing.base,
+      marginBottom: Spacing.sm,
+      ...Shadows.sm,
+    },
+    sacrificeBtnText: {
+      fontSize: Fonts.sizes.base,
+      fontFamily: 'Manrope-ExtraBold',
+      color: '#fff',
+      letterSpacing: 0.2,
+    },
   });
 }
