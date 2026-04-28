@@ -30,7 +30,7 @@ cd backend
 cp .env.example .env
 
 # Собрать dev-образ и поднять все сервисы
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
 
 # В отдельном терминале — применить миграции и залить seed (один раз)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:migrate:deploy
@@ -65,6 +65,45 @@ npm run dev
 
 ---
 
+## 🔄 Сброс БД с чистого листа
+
+Если база в плохом состоянии (миграция зависла, том устарел, `P3009` / `P3018`
+при `migrate deploy`) — единственный надёжный способ:
+
+```bash
+cd backend
+
+# 1. Уничтожить контейнеры И тома (postgres-данные удаляются физически)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v
+
+# 2. Поднять заново с чистой БД
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
+
+# 3. Подождать 5–10 с пока postgres станет healthy, затем одной командой:
+#    migrate reset --force  +  seed
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:reset
+
+# Проверка
+curl http://localhost:3000/healthz  # → {"status":"ok"}
+```
+
+> **`npm run db:reset`** = `prisma migrate reset --force` + `node src/seed/index.js`  
+> Дропает схему, прогоняет все миграции с нуля, заливает тестовые данные.
+
+> **Никогда не используйте `migrate reset` без предварительного `down -v`**,
+> если в БД уже есть failed-запись в `_prisma_migrations` — Prisma не сможет
+> применить reset поверх сломанного состояния тома.
+
+### Частые ошибки миграций
+
+| Ошибка | Причина | Решение |
+|---|---|---|
+| `P3009` — failed migration | Том не был сброшен, старая запись в `_prisma_migrations` | `down -v` → `up` → `db:reset` |
+| `P3018` — column already exists | Контейнер упал после `COMMIT` DDL, до записи `finished_at` | `migrate resolve --applied <имя>` → `db:migrate:deploy` |
+| `P2022` — column does not exist | Колонка добавлена в `schema.prisma` без миграции | Создать миграцию вручную (`migrate dev`) |
+
+---
+
 ## 🐳 Production-деплой
 
 ```bash
@@ -84,7 +123,6 @@ cp .env.example .env.prod
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 # 4. Миграции — запускать ПОСЛЕ старта контейнера, ОДИН раз за деплой
-#    Используйте npm-скрипт: он передаёт --schema явно и не зависит от CWD
 docker compose -f docker-compose.prod.yml exec api npm run db:migrate:deploy
 
 # 5. Healthcheck
@@ -110,7 +148,7 @@ gm-bank-app/
 │   ├── docker-compose.prod.yml      # Prod: healthchecks, Docker secrets, restart
 │   ├── prisma/
 │   │   ├── schema.prisma
-│   │   ├── migrations/
+│   │   ├── migrations/              # 10 последовательных миграций, дублей нет
 │   │   └── MIGRATIONS.md            # Expand-then-contract + CONCURRENT index policy
 │   ├── src/
 │   └── DEVELOPMENT.md               # Полный гайд по локальной разработке
@@ -137,8 +175,11 @@ gm-bank-app/
 | Админ | +79000000000 | 0000 |
 
 ```bash
-# Залить seed
+# Залить seed (после migrate deploy)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:seed
+
+# Или полный сброс + seed одной командой:
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api npm run db:reset
 ```
 
 ---
