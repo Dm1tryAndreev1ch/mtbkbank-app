@@ -133,6 +133,30 @@ function toAppError(e: any, fallbackMessage: string, fallbackCode = 'NETWORK_ERR
   return { code, message, ...(requestId ? { requestId } : {}) };
 }
 
+/**
+ * Merge a fresh transactions page into the existing local list.
+ *
+ * Transactions are append-only: they never mutate after creation.
+ * Strategy:
+ *   1. Build a Set of ids from the incoming page.
+ *   2. Prepend genuinely new items (not yet in state) in server order.
+ *   3. Keep all existing items that were NOT in the incoming window
+ *      (they belong to earlier pages the user may have loaded).
+ *
+ * This guarantees:
+ *   - A brand-new transaction appears immediately after loadTransactions.
+ *   - Pull-to-refresh replaces the visible top-N without losing scroll history.
+ *   - No stale balance / stale field issues (accounts use a separate replace path).
+ */
+function mergeTransactions(existing: any[], incoming: any[]): any[] {
+  if (!incoming.length) return existing;
+  const incomingIds = new Set(incoming.map((t: any) => t.id));
+  // Items from previous pages that are not in this window — keep them.
+  const tail = existing.filter((t: any) => !incomingIds.has(t.id));
+  // Incoming page is already ordered desc by server; prepend to tail.
+  return [...incoming, ...tail];
+}
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -388,7 +412,9 @@ export const useStore = create<AppState>()(
       loadAccounts: async () => {
         try {
           const { data } = await api.getAccounts();
-          set((s) => ({ accounts: mergeList(s.accounts ?? [], data ?? [], 'http') }));
+          // Accounts mutate (balance, frozen state, etc.) — always replace
+          // wholesale from the server response so stale balances never stick.
+          set({ accounts: data ?? [] });
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить счета') });
         }
@@ -397,8 +423,10 @@ export const useStore = create<AppState>()(
       loadTransactions: async (params) => {
         try {
           const { data } = await api.getTransactions(params);
+          // Transactions are append-only — use prepend-merge so new items
+          // surface immediately without losing previously loaded pages.
           set((s) => ({
-            transactions: mergeList(s.transactions ?? [], data.transactions ?? [], 'http'),
+            transactions: mergeTransactions(s.transactions ?? [], data.transactions ?? []),
           }));
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить транзакции') });
