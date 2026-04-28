@@ -29,6 +29,9 @@ services:
   api:
     build: .
     restart: always
+    # Ensures `docker compose exec api <cmd>` lands in /app so Prisma can
+    # resolve prisma/schema.prisma without an explicit --schema flag.
+    working_dir: /app
     ports:
       - "3000:3000"
     environment:
@@ -45,9 +48,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    volumes:
-      - ./src:/app/src
-      - ./prisma:/app/prisma
+    # No volume mounts here — src/ and prisma/ are baked into the image via
+    # COPY in the Dockerfile runtime stage. Dev-only mounts live in
+    # docker-compose.dev.yml so they don't shadow production image files.
 
 volumes:
   pgdata:

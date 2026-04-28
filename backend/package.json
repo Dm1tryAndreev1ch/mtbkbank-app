@@ -9,12 +9,13 @@
     "test": "jest",
     "lint": "eslint .",
     "postinstall": "prisma generate",
-    "db:generate": "npx prisma generate",
-    "db:migrate": "npx prisma migrate dev",
-    "db:push": "npx prisma db push",
+    "db:generate": "npx prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "npx prisma migrate dev --schema prisma/schema.prisma",
+    "db:migrate:deploy": "npx prisma migrate deploy --schema prisma/schema.prisma",
+    "db:push": "npx prisma db push --schema prisma/schema.prisma",
     "db:seed": "node src/seed/index.js",
     "db:ensure-decks": "node src/scripts/ensure-active-decks.js",
-    "db:reset": "npx prisma migrate reset --force && node src/seed/index.js"
+    "db:reset": "npx prisma migrate reset --force --schema prisma/schema.prisma && node src/seed/index.js"
   },
   "dependencies": {
     "@prisma/client": "^6.5.0",
