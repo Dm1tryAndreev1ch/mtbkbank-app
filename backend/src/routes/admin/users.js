@@ -32,10 +32,13 @@ const router = express.Router();
 // alongside for back-compat with the existing admin SPA UsersPage load() until
 // the SPA is fully migrated to the new shape (it reads `data.users ?? []`
 // today and ignores extra keys, so adding `items` is safe).
+//
+// ADMIN-SEARCH fix: accept ?search=<query> for substring match on id/name/phone,
+// and ?id=<exact> for direct ID lookup.
 // ---------------------------------------------------------------------------
 router.get('/', async (req, res) => {
   try {
-    const { limit = 50, offset = 0, page } = req.query;
+    const { limit = 50, offset = 0, page, search, id } = req.query;
     const safeLimit = Math.min(parseInt(limit) || 50, 100);
     // Accept either ?page=N (new) or ?offset=N (legacy). page wins when present.
     const safeOffset = page
@@ -45,7 +48,19 @@ router.get('/', async (req, res) => {
       ? Math.max(parseInt(page) || 1, 1)
       : Math.floor(safeOffset / safeLimit) + 1;
 
+    // Build where clause: support ?id=<exact> and ?search=<substring on id/name/phone>.
     const where = { deletedAt: null };
+    if (id) {
+      where.id = id;
+    } else if (search) {
+      const q = search.trim();
+      where.OR = [
+        { id:    { contains: q, mode: 'insensitive' } },
+        { name:  { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
     const users = await req.prisma.user.findMany({
       where,
       select: {
@@ -279,7 +294,6 @@ router.delete('/:id',
       requireFreshAdmin.invalidate(id);
       return res.json(result);
     } catch (err) {
-      (req.log ?? logger).error({ err, userId: req.params.id }, 'Admin user delete error');
       next(err);
     }
   }
