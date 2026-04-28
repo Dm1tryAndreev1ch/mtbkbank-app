@@ -243,16 +243,40 @@ async function decayAllCardHealth(prisma) {
 
 /**
  * Remove cards that have reached 0 health.
+ *
+ * Phase 6 D-16 (ANIM-07): emits `CARD_EXPIRED` over Socket.IO BEFORE
+ * `prisma.userCard.deleteMany` so the mobile client can render the toast +
+ * 0-HP collapse animation while the card metadata is still resolvable.
+ * Mobile gates the collapse animation on this event; the deletion is the
+ * server-side source of truth (no client-side optimistic delete).
  */
 async function cleanupDeadCards(prisma) {
   const deadCards = await prisma.userCard.findMany({
     where: { health: { lte: 0 } },
-    select: { id: true, userId: true, collectionCard: true },
+    // D-18 payload extension: nested select narrows CollectionCard to the
+    // exact fields the mobile CARD_EXPIRED toast needs (id, name, rarity,
+    // brandIcon) — no over-fetch, stable contract.
+    select: {
+      id: true,
+      userId: true,
+      collectionCard: {
+        select: { id: true, name: true, rarity: true, brandIcon: true },
+      },
+    },
   });
 
   for (const card of deadCards) {
     await prisma.deckCard.deleteMany({
       where: { userCardId: card.id },
+    });
+  }
+
+  // D-16: emit CARD_EXPIRED BEFORE deleteMany so client can render
+  // toast + collapse animation while card metadata is still resolvable.
+  for (const card of deadCards) {
+    broadcastToUser(card.userId, 'CARD_EXPIRED', {
+      userCardId: card.id,
+      collectionCard: card.collectionCard,
     });
   }
 
