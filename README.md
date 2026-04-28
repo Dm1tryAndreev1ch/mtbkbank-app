@@ -31,27 +31,34 @@
 
 | Компонент | Технология | Порт |
 |-----------|-----------|------|
-| Backend API | Node.js + Express + Prisma | :3000 |
+| Backend API | Node.js 20 + Express + Prisma | :3000 |
 | База данных | PostgreSQL 16 (Docker) | :5432 |
-| Кэш | Redis 7 (Docker) | :6379 |
+| Кэш / Rate-limiter | Redis 7 (Docker) | :6379 |
 | Мобильное приложение | React Native (Expo) | :8081 |
 | Админ-панель | React (Vite) | :5173 |
 
 ---
-Ветка *main* - рабочая, стабильная версия
 
-Ветка *push-alerts* - самая новая, измено отображения админки и приложения (полную работоспособность не гарантируем)
+## 🚀 Быстрый старт (локальная разработка)
 
----
-## 🚀 Быстрый старт
+### Предварительные требования
+- Docker Desktop ≥ 24
+- Node.js 20 LTS
+- npm ≥ 9
 
 ### 1. Бэкенд
 ```bash
 cd backend
-docker-compose up -d
-docker-compose exec api npx prisma migrate dev --name init
-docker-compose exec api node src/seed/index.js
+cp .env.example .env          # заполните значения
+docker compose up -d          # поднимает postgres + redis + api
+
+# Применить миграции и загрузить seed-данные (только при первом запуске)
+docker compose exec api npx prisma migrate deploy
+docker compose exec api node src/seed/index.js
 ```
+
+API доступен по адресу http://localhost:3000  
+Проверка здоровья: http://localhost:3000/healthz
 
 ### 2. Мобильное приложение
 ```bash
@@ -67,7 +74,27 @@ npm install
 npm run dev
 ```
 
-### Тестовые аккаунты
+---
+
+## 🐳 Production-деплой
+
+Подробные инструкции: [OPERATIONS.md](OPERATIONS.md)
+
+```bash
+cd backend
+mkdir -p secrets
+echo -n "<strong-jwt-secret>" > secrets/jwt_secret.txt
+echo -n "<strong-refresh-secret>" > secrets/jwt_refresh_secret.txt
+chmod 600 secrets/*.txt
+
+cp .env.example .env.prod   # заполните POSTGRES_PASSWORD, ALLOWED_ORIGINS, SENTRY_DSN
+
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
+
+---
+
+### Тестовые аккаунты (seed)
 | Роль | Телефон | ПИН |
 |------|---------|-----|
 | Клиент (Gold) | +79001234567 | 1234 |
@@ -80,14 +107,25 @@ npm run dev
 
 ```
 mtbbank-app/
-├── backend/           # API + Docker
-├── mobile/            # React Native (Expo)
-├── admin/             # Админ-панель (Vite + React)
-├── docs/              # Документация
-│   ├── API.md         # REST API
-│   ├── ARCHITECTURE.md # Архитектура
-│   ├── CARD_SYSTEM.md  # Система карточек
-│   └── DEPLOYMENT.md   # Развёртывание
+├── backend/                   # API + Docker
+│   ├── Dockerfile             # Multi-stage: builder → runtime (node:20-alpine)
+│   ├── docker-compose.yml     # Dev: postgres + redis + api (hot-reload)
+│   ├── docker-compose.prod.yml# Prod: с healthchecks, restart, Docker secrets
+│   ├── prisma/
+│   │   ├── schema.prisma
+│   │   ├── migrations/
+│   │   └── MIGRATIONS.md      # Expand-then-contract + CONCURRENT index policy
+│   └── src/
+├── mobile/                    # React Native (Expo)
+│   └── eas.json               # preview + production EAS profiles
+├── admin/                     # Админ-панель (Vite + React)
+├── docs/
+│   ├── adr/
+│   │   └── ADR-001-no-csrf-middleware.md
+│   ├── API.md
+│   ├── ARCHITECTURE.md
+│   └── CARD_SYSTEM.md
+├── OPERATIONS.md              # Single-VPS ops guide
 └── README.md
 ```
 
@@ -108,15 +146,23 @@ mtbbank-app/
 - [API Reference](docs/API.md)
 - [Архитектура](docs/ARCHITECTURE.md)
 - [Система карточек](docs/CARD_SYSTEM.md)
-- [Развёртывание](docs/DEPLOYMENT.md)
+- [Операционное руководство](OPERATIONS.md)
+- [Политика миграций БД](backend/prisma/MIGRATIONS.md)
+- [ADR-001: No CSRF middleware](docs/adr/ADR-001-no-csrf-middleware.md)
 
 ---
 
-## 🤖 Android APK
+## 🤖 Android APK (EAS Build)
 
 ```bash
 cd mobile
+# Preview (APK, internal distribution)
 npx eas build -p android --profile preview
+
+# Production (store-ready APK)
+npx eas build -p android --profile production
 ```
+
+CI использует секрет `EXPO_TOKEN`. `EXPO_PUBLIC_*` переменные содержат только публичные значения (Sentry DSN, API URL). Секреты (`JWT_SECRET`, `SENTRY_AUTH_TOKEN`) никогда не попадают в артефакт сборки.
 
 Дизайн: **Pristine Vault** — Manrope, Electric Blue (#4F8EF7), Gold (#fdcf49), glassmorphism

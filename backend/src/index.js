@@ -19,6 +19,7 @@ const { env } = require('./env');             // envalid fail-fast (plan 02)
 const { logger } = require('./logger');       // pino factory (plan 01)
 const { errorNormalizer, notFoundHandler } = require('./errors/errorNormalizer'); // plan 07
 const healthRoutes = require('./routes/health'); // plan 08 — /healthz, /readyz, /version
+const { cspMiddleware } = require('./middleware/csp'); // DEPLOY-07 / A-L2
 
 const { router: authRoutes, loginHandler, registerHandler } = require('./routes/auth');
 const { reqValidator } = require('./middleware/reqValidator');
@@ -95,6 +96,10 @@ app.use((req, res, next) => {
   }
   return next();
 });
+
+// DEPLOY-07 / A-L2 — CSP header (Report-Only for v1.0; switch to enforcement in v1.1)
+app.use(cspMiddleware);
+
 app.use(pinoHttp({
   logger,
   genReqId: (req, res) => {

@@ -4,7 +4,23 @@
   },
   "build": {
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://staging.mtbbank.example.com"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.mtbbank.example.com",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://placeholder@o0.ingest.sentry.io/0"
+      }
     }
   }
 }

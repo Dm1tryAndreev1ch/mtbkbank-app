@@ -1,0 +1,93 @@
+# Production compose file — DEPLOY-02
+# Usage:
+#   cp .env.example .env.prod          # fill real values
+#   mkdir -p secrets
+#   echo -n "<strong-secret>" > secrets/jwt_secret.txt
+#   echo -n "<strong-secret>" > secrets/jwt_refresh_secret.txt
+#   chmod 600 secrets/*.txt
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# JWT_SECRET and JWT_REFRESH_SECRET are injected via Docker Compose secrets
+# (NOT plain env-vars) so they never appear in `docker inspect` output.
+
+version: "3.9"
+
+secrets:
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  jwt_refresh_secret:
+    file: ./secrets/jwt_refresh_secret.txt
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://mtbbank:${POSTGRES_PASSWORD}@postgres:5432/mtbbank
+      REDIS_URL: redis://redis:6379
+      # Secrets are mounted at /run/secrets/<name> by Docker;
+      # backend/src/env.js reads JWT_SECRET / JWT_REFRESH_SECRET from env.
+      # To bridge the Docker secrets file-mount to env-vars, the CMD below
+      # sources the files before starting Node.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      SENTRY_DSN: ${SENTRY_DSN:-""}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    secrets:
+      - jwt_secret
+      - jwt_refresh_secret
+    # Wrap CMD to export secret file contents as env-vars before Node starts.
+    # This keeps secrets out of `docker inspect` while staying compatible with
+    # envalid's process.env reads in env.js.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        export JWT_SECRET=$(cat /run/secrets/jwt_secret)
+        export JWT_REFRESH_SECRET=$(cat /run/secrets/jwt_refresh_secret)
+        exec node src/index.js
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mtbbank
+      POSTGRES_USER: mtbbank
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mtbbank"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
