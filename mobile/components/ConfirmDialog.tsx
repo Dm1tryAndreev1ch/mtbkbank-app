@@ -1,6 +1,6 @@
 // Plan 04-01 D-03 — ConfirmDialog. Extracted from AppAlert.tsx `type='confirm'`
 // branch. Destructive primary button (#ef4444) when isDestructive; cancel
-// label "Отмена" by default. Manrope-ExtraBold primary; Manrope-Medium cancel.
+// label «Отмена» by default. Manrope-ExtraBold primary; Manrope-Medium cancel.
 // Reanimated 4 enter/exit verbatim from AppAlert.
 import React, { useEffect } from 'react';
 import {
@@ -84,7 +84,9 @@ export function ConfirmDialog({
   return (
     <Modal transparent visible={visible} statusBarTranslucent animationType="none" accessibilityViewIsModal>
       <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, overlayStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss} accessibilityLabel="Закрыть" />
+        {/* fix: guard with ?? undefined so backdrop tap is a no-op when
+            onDismiss is not provided (e.g. SacrificeOverlay owns dismissal) */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss ?? undefined} accessibilityLabel="Закрыть" />
       </Animated.View>
       <View style={styles.center} pointerEvents="box-none">
         <Animated.View
@@ -101,7 +103,8 @@ export function ConfirmDialog({
               style={[styles.btnBase, styles.btnCancel]}
               onPress={() => {
                 cancelButton?.onPress?.();
-                onDismiss();
+                // fix: optional chaining prevents crash when onDismiss is undefined
+                onDismiss?.();
               }}
               activeOpacity={0.75}
               accessibilityRole="button"
@@ -117,8 +120,9 @@ export function ConfirmDialog({
                 // fix: если suppressDismissOnConfirm=true — НЕ вызываем onDismiss,
                 // чтобы не сбросить phase/state до завершения флоу (например,
                 // SacrificeOverlay управляет закрытием через onComplete).
+                // Optional chaining guards against undefined onDismiss.
                 if (!suppressDismissOnConfirm) {
-                  onDismiss();
+                  onDismiss?.();
                 }
               }}
               activeOpacity={0.85}
