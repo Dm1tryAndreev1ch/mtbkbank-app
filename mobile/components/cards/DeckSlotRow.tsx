@@ -75,12 +75,12 @@ export function DeckSlotRow({ slots, onSlotTap, disabled = false, onSlotMeasured
               key={stableKey}
               ref={slotRefs.current[i]}
               layout={SLOT_LAYOUT}
-              testID={testID}
               style={[styles.deckSlot, styles.deckSlotFilled, { borderColor: rarityColor }]}
             >
               <TouchableOpacity
                 activeOpacity={0.8}
                 disabled={disabled}
+                testID={testID}
                 onPress={() => onSlotTap(card, i)}
                 style={styles.fill}
               >
@@ -119,7 +119,6 @@ export function DeckSlotRow({ slots, onSlotTap, disabled = false, onSlotMeasured
             key={stableKey}
             ref={slotRefs.current[i]}
             layout={SLOT_LAYOUT}
-            testID={testID}
             style={[
               styles.deckSlot,
               styles.deckSlotEmpty,
@@ -129,6 +128,7 @@ export function DeckSlotRow({ slots, onSlotTap, disabled = false, onSlotMeasured
             <TouchableOpacity
               activeOpacity={0.7}
               disabled={disabled}
+              testID={testID}
               onPress={() => onSlotTap(null, i)}
               style={[styles.fill, styles.emptySlotInner]}
             >

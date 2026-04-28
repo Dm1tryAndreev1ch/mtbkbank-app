@@ -17,6 +17,7 @@ import { useThemeColor } from '../../hooks/useThemeColor';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActionButton } from '../../components/ActionButton';
 import { DeckSlotRow } from '../../components/cards/DeckSlotRow';
+import { InventoryGrid } from '../../components/cards/InventoryGrid';
 
 type Rarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
@@ -795,52 +796,22 @@ export default function CardsScreen() {
             </View>
           </View>
 
-          <View style={styles.cardGrid}>
-            {filteredCards.map((card: any) => {
-              const c = card.collectionCard;
-              const rarityColor = getRarityCol(c.rarity);
-              const iconName = toMaterialIconName(c.brandIcon);
-              const isInDeck = equippedCardIds.has(card.id);
-              return (
-                <TouchableOpacity key={card.id} activeOpacity={0.8} onPress={() => { setSelectedCard(card); setDetailModalVisible(true); }}
-                  style={[styles.cardItem, { borderColor: rarityColor }, isInDeck && styles.cardItemInDeck]}
-                >
-                  <View style={[styles.cardItemGlow, { backgroundColor: rarityColor }]} />
-                  {isInDeck && (
-                    <View style={styles.inDeckBadge}>
-                      <MaterialIcons name="shield" size={10} color={colors.onPrimary} />
-                      <Text style={styles.inDeckBadgeText}>В колоде</Text>
-                    </View>
-                  )}
-                  <View style={[styles.rarityBadge, { backgroundColor: rarityColor }]}>
-                    <Text style={styles.rarityBadgeText}>{getRarityName(c.rarity)}</Text>
-                  </View>
-                  <View style={styles.cardItemIcon}>
-                    <MaterialIcons name={iconName as any} size={32} color={rarityColor} />
-                  </View>
-                  <Text style={styles.cardItemName} numberOfLines={1}>{c.name}</Text>
-                  <Text style={styles.cardItemBrand}>{c.brandName}</Text>
-                  <View style={styles.cardItemStats}>
-                    <View style={styles.statRow}>
-                      <MaterialIcons name="favorite" size={12} color={card.health > 50 ? '#22c55e' : colors.error} />
-                      <Text style={styles.statText}>{card.health}%</Text>
-                    </View>
-                    <View style={styles.statRow}>
-                      <MaterialIcons name="percent" size={12} color={colors.primary} />
-                      <Text style={styles.statText}>{c.cashbackPercent}%</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-            {filteredCards.length === 0 && (
+          <InventoryGrid
+            cards={filteredCards as any}
+            equippedCardIds={equippedCardIds}
+            onCardTap={(card) => { setSelectedCard(card); setDetailModalVisible(true); }}
+            onSacrifice={(cardId) => {
+              const found = (cards as any[]).find((c) => c.id === cardId);
+              if (found) handleStartSacrifice(found);
+            }}
+            emptyState={
               <View style={styles.emptyContainer}>
                 <MaterialIcons name="style" size={48} color={colors.outlineVariant} />
                 <Text style={styles.emptyStateText}>Нет карточек</Text>
                 <Text style={styles.emptySubtext}>Купите карты в магазине или совершайте покупки!</Text>
               </View>
-            )}
-          </View>
+            }
+          />
           <View style={{ height: 120 }} />
         </ScrollView>
       )}
