@@ -1109,7 +1109,7 @@ export default function CardsScreen() {
                   onPress={() => handleStartSacrifice(selectedCard)}
                   activeOpacity={0.82}
                 >
-                  <MaterialIcons name="whatshot" size={22} color="#fff" />
+                  <MaterialIcons name="whatshot" size={26} color="#fff" />
                   <Text style={styles.sacrificeBtnText}>Принести в жертву</Text>
                 </TouchableOpacity>
               </ScrollView>
@@ -1236,24 +1236,26 @@ function getStyles(colors: any) {
     pickerItemName: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: colors.onSurface },
     pickerItemDetails: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Medium', color: colors.onSurfaceVariant },
     pickerRarity: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-ExtraBold' },
-    // Кнопка жертвования — полноразмерная CTA, красный деструктивный стиль
+    // Кнопка жертвования — увеличенная полноразмерная CTA
     sacrificeBtn: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: Spacing.sm,
+      gap: Spacing.base,
       backgroundColor: '#ef4444',
-      borderRadius: BorderRadius.base,
-      paddingVertical: 16,
-      marginTop: Spacing.base,
-      marginBottom: Spacing.sm,
-      ...Shadows.sm,
+      borderRadius: BorderRadius.lg,
+      paddingVertical: 20,
+      paddingHorizontal: Spacing.xl,
+      marginTop: Spacing.lg,
+      marginBottom: Spacing.base,
+      minHeight: 60,
+      ...Shadows.md,
     },
     sacrificeBtnText: {
-      fontSize: Fonts.sizes.base,
+      fontSize: Fonts.sizes.lg,
       fontFamily: 'Manrope-ExtraBold',
       color: '#fff',
-      letterSpacing: 0.2,
+      letterSpacing: 0.3,
     },
   });
 }
