@@ -1,9 +1,10 @@
 // Phase 6 P04 D-10/D-11 — drag-to-equip gesture composition.
 //
 // Lives in its own file to satisfy the Phase-5 ANIM-03 belt-and-suspenders
-// regression-guard check ("no worklet file references useStore"). cards.tsx
-// reads from useStore everywhere; this hook receives only SharedValues + a
-// JS-thread `equip` callback that's invoked through runOnJS at completion.
+// regression-guard check (no worklet file references the Zustand store hook).
+// cards.tsx reads from the Zustand store everywhere; this hook receives only
+// SharedValues + a JS-thread `equip` callback invoked through runOnJS at
+// completion. No store reads happen here.
 //
 // Pattern lifted verbatim from .planning/phases/06-gamified-animations-card-deck-hp/
 //   06-PATTERNS.md §"Analog A — gesture composition" (LongPress + Pan,
