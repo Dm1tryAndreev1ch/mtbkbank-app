@@ -17,6 +17,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useStore } from '../stores/useStore';
 import BiometricGuard from '../components/BiometricGuard';
 import BootGate from '../components/BootGate';
@@ -56,15 +57,17 @@ function RootLayout() {
 
   return (
     <ThemeProvider value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <ErrorBoundary scope="root">
-        <OfflineBanner />
-        <ToastHost />
-        <BootGate>
-          <BiometricGuard>
-            <Stack screenOptions={{ headerShown: false }} />
-          </BiometricGuard>
-        </BootGate>
-      </ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ErrorBoundary scope="root">
+          <OfflineBanner />
+          <ToastHost />
+          <BootGate>
+            <BiometricGuard>
+              <Stack screenOptions={{ headerShown: false }} />
+            </BiometricGuard>
+          </BootGate>
+        </ErrorBoundary>
+      </GestureHandlerRootView>
     </ThemeProvider>
   );
 }
