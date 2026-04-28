@@ -1,4 +1,4 @@
-// Must be first — Sentry must init before React Native bridges and Expo Router mount.
+// Must be first — Sentry.init runs synchronously on import; must precede React Native bridges.
 // eslint-disable-next-line import/first
 import '../services/sentry';
 import * as Sentry from '@sentry/react-native';
@@ -14,7 +14,7 @@ import {
 } from '@expo-google-fonts/manrope';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -25,20 +25,33 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { ToastHost } from '../components/Toast';
 import { useCardExpiredListener } from '../hooks/useCardExpiredListener';
-// ANIM-08: trade animation listener + overlay.
 import { useTradeAnimationListener } from '../hooks/useTradeAnimationListener';
 import { TradeFlipOverlay } from '../components/TradeFlipOverlay';
 
 SplashScreen.preventAutoHideAsync();
 
+// Maximum time to wait for fonts before rendering anyway (fallback to system fonts).
+const FONT_TIMEOUT_MS = 5000;
+
 function RootLayout() {
-  const [loaded] = useFonts({
+  const [fontsLoaded] = useFonts({
     Manrope: Manrope_400Regular,
     'Manrope-Medium': Manrope_500Medium,
     'Manrope-SemiBold': Manrope_600SemiBold,
     'Manrope-Bold': Manrope_700Bold,
     'Manrope-ExtraBold': Manrope_800ExtraBold,
   });
+
+  // Fallback: if fonts haven't loaded within FONT_TIMEOUT_MS, render anyway.
+  // This prevents a permanent black screen when @expo-google-fonts is slow/offline.
+  const [fontTimedOut, setFontTimedOut] = useState(false);
+  useEffect(() => {
+    if (fontsLoaded) return;
+    const t = setTimeout(() => setFontTimedOut(true), FONT_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [fontsLoaded]);
+
+  const loaded = fontsLoaded || fontTimedOut;
 
   const sysTheme = useColorScheme();
   const storeTheme = useStore((state) => state.theme);
@@ -48,14 +61,9 @@ function RootLayout() {
     if (loaded) SplashScreen.hideAsync();
   }, [loaded]);
 
-  // Plan 06-06 — root-mount the CARD_EXPIRED Socket.IO listener once so it
-  // survives tab switches.
   useCardExpiredListener();
-
-  // ANIM-08 — root-mount the TRADE_COMPLETED listener once; survives tab switches.
   useTradeAnimationListener();
 
-  // Plan 04-01 D-12 — wire NetInfo into useStore.network.
   useEffect(() => {
     const sub = NetInfo.addEventListener((s) =>
       useStore.getState().network.setOnline(Boolean(s.isConnected)),
@@ -63,7 +71,6 @@ function RootLayout() {
     return () => sub();
   }, []);
 
-  // ANIM-08: read trade animation state from store.
   const tradeAnim = useStore((s) => s.tradeAnim);
   const clearTradeAnim = useStore((s) => s.clearTradeAnim);
 
@@ -75,13 +82,11 @@ function RootLayout() {
         <ErrorBoundary scope="root">
           <OfflineBanner />
           <ToastHost />
-          {/* ANIM-08: render overlay above everything when a trade completes */}
           {tradeAnim ? (
             <TradeFlipOverlay payload={tradeAnim} onDone={clearTradeAnim} />
           ) : null}
           <BootGate>
             <BiometricGuard>
-              {/* ANIM-09: native push/pop curves via Reanimated stack */}
               <Stack
                 screenOptions={{
                   headerShown: false,
@@ -98,4 +103,7 @@ function RootLayout() {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+// Sentry.wrap requires Sentry.init to have been called first (done in services/sentry.ts above).
+// Guard against any edge-case where wrap returns falsy by falling back to RootLayout directly.
+const WrappedLayout = Sentry.wrap(RootLayout);
+export default WrappedLayout ?? RootLayout;

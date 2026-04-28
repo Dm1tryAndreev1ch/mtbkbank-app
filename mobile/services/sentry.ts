@@ -1,17 +1,17 @@
 /**
  * Phase 1 OBS-03 — mobile Sentry client.
  *
- * Initialises @sentry/react-native@8 ONLY when EXPO_PUBLIC_SENTRY_DSN is non-empty
- * (silent skip in dev without DSN). Mirrors the backend `instrument.js` redaction
- * shape: scrubs `pin / password / cardNumber / authorization / refreshToken / cookie`
- * (case-insensitive) across request data/headers/cookies/query, contexts.*, exception
- * stacktrace frame vars, breadcrumbs[].data + .message, extra, event.message; and
- * resets event.user to `{id}` only.
+ * Initialises @sentry/react-native ONLY when EXPO_PUBLIC_SENTRY_DSN is non-empty
+ * (no events sent in dev without DSN). Always calls Sentry.init so that
+ * Sentry.wrap in _layout.tsx never throws "wrap called before init".
  *
- * `beforeBreadcrumb` strips fetch-breadcrumb body for `/auth/(login|register|refresh)`
- * URLs so axios auto-instrumented bodies do not leak `{phone, pin}`.
+ * Mirrors backend `instrument.js` redaction shape: scrubs
+ * `pin / password / cardNumber / authorization / refreshToken / cookie`
+ * across request data/headers/cookies/query, contexts.*, exception frames,
+ * breadcrumbs[].data + .message, extra, event.message; resets user to `{id}`.
  *
- * Reference: .planning/phases/01-.../01-RESEARCH.md §5.2 + §5.7 + 01-VALIDATION.md row 1-05-01.
+ * `beforeBreadcrumb` strips fetch-breadcrumb body for /auth/(login|register|refresh)
+ * so axios auto-instrumented bodies do not leak `{phone, pin}`.
  */
 import * as Sentry from '@sentry/react-native';
 
@@ -81,32 +81,33 @@ export function authUrlBreadcrumbFilter(breadcrumb: any): any | null {
   return breadcrumb;
 }
 
-const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN ?? '';
 const isProduction = !__DEV__;
 
-if (dsn) {
-  Sentry.init({
-    dsn,
-    environment: isProduction ? 'production' : 'development',
-    debug: __DEV__,
-    release: process.env.EXPO_PUBLIC_BUILD_VERSION ?? 'dev',
+// Always call Sentry.init — even with an empty DSN — so that Sentry.wrap in
+// _layout.tsx never throws "wrap called before init". The SDK is a no-op when
+// dsn is empty: no events are captured or sent.
+Sentry.init({
+  dsn,
+  enabled: Boolean(dsn),
+  environment: isProduction ? 'production' : 'development',
+  debug: __DEV__ && Boolean(dsn),
+  release: process.env.EXPO_PUBLIC_BUILD_VERSION ?? 'dev',
 
-    tracesSampleRate: isProduction ? 0.1 : 1.0, // D-04
-    replaysSessionSampleRate: 0, // D-04 — never proactively record
-    replaysOnErrorSampleRate: isProduction ? 1.0 : 0, // D-04 — capture only on crash, only in prod
+  tracesSampleRate: isProduction ? 0.1 : 1.0,
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: isProduction ? 1.0 : 0,
 
-    integrations: [
-      Sentry.mobileReplayIntegration({
-        maskAllText: true, // D-04 — mandatory: balances/PINs
-        maskAllImages: true,
-        maskAllVectors: true,
-      }),
-      // Phase 8 may add Sentry.reactNavigationIntegration({...}) once router refs are stable.
-    ],
+  integrations: [
+    Sentry.mobileReplayIntegration({
+      maskAllText: true,
+      maskAllImages: true,
+      maskAllVectors: true,
+    }),
+  ],
 
-    beforeSend: piiBeforeSend,
-    beforeBreadcrumb: authUrlBreadcrumbFilter,
-  });
-}
+  beforeSend: piiBeforeSend,
+  beforeBreadcrumb: authUrlBreadcrumbFilter,
+});
 
 export { Sentry };
