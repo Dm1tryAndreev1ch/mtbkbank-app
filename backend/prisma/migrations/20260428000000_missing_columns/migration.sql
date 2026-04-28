@@ -17,13 +17,16 @@ ALTER TABLE "UserCard" ADD COLUMN IF NOT EXISTS "lastWarningAt" TIMESTAMP(3);
 -- Subscription.category — UI grouping label, defaults to 'Другое'
 ALTER TABLE "Subscription" ADD COLUMN IF NOT EXISTS "category" TEXT NOT NULL DEFAULT 'Другое';
 
--- CardSource enum: add SHOP value if not already present
--- (ALTER TYPE ADD VALUE is idempotent-safe via DO block)
+-- CardSource enum: add SHOP value if not already present.
+-- Uses pg_type JOIN instead of 'CardSource'::regtype cast — the cast raises
+-- ERROR 42704 if the type doesn't exist in the current session context
+-- (e.g. during migrate reset), making the guard useless.
 DO $$ BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_enum
-    WHERE enumlabel = 'SHOP'
-      AND enumtypid = 'CardSource'::regtype
+    SELECT 1 FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    WHERE t.typname = 'CardSource'
+      AND e.enumlabel = 'SHOP'
   ) THEN
     ALTER TYPE "CardSource" ADD VALUE 'SHOP';
   END IF;
