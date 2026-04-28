@@ -3,14 +3,20 @@
 // from the parent. ZERO behavior change vs. the inline code it replaces;
 // downstream plans (P04 long-press drag, P05 sacrifice overlay) will wire the
 // onLongPressDrag / onSacrifice props to gestures + ConfirmDialog respectively.
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { GestureDetector, type ComposedGesture, type GestureType } from 'react-native-gesture-handler';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { BorderRadius, Fonts, Shadows, Spacing, getRarityName, toMaterialIconName } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
+import { useCancellableAnimation } from '../../hooks/useCancellableAnimation';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { SLOT_LAYOUT } from './animationConstants';
 import { LowHpPulseBorder } from './LowHpPulseBorder';
 
@@ -66,64 +72,22 @@ export function InventoryGrid({
   emptyState,
 }: InventoryGridProps) {
   const colors = useThemeColor();
+  const reducedMotion = useReducedMotion();
 
   return (
     <View style={styles.cardGrid}>
       {cards.map((card) => {
-        const c = card.collectionCard;
-        const rarityKey = RARITY_COLOR_MAP[c.rarity] ?? 'rarityCommon';
-        const rarityColor = colors[rarityKey];
-        const iconName = toMaterialIconName(c.brandIcon);
-        const isInDeck = equippedCardIds.has(card.id);
         const gesture = cardGestureBuilder?.(card.id) ?? null;
         const inner = (
-          <Animated.View
+          <InventoryCardSlot
             key={card.id}
-            layout={SLOT_LAYOUT}
-            style={styles.cardItemWrap}
-          >
-            <TouchableOpacity
-              activeOpacity={0.8}
-              testID={`inventory-card-${card.id}`}
-              onPress={() => onCardTap(card)}
-              onLongPress={onLongPressDrag ? () => onLongPressDrag(card.id) : undefined}
-              style={[
-                styles.cardItem,
-                { borderColor: rarityColor, backgroundColor: colors.surfaceContainerLowest },
-                isInDeck && styles.cardItemInDeck,
-              ]}
-            >
-              <View style={[styles.cardItemGlow, { backgroundColor: rarityColor }]} />
-              {isInDeck && (
-                <View style={[styles.inDeckBadge, { backgroundColor: colors.primary }]}>
-                  <MaterialIcons name="shield" size={10} color={colors.onPrimary} />
-                  <Text style={[styles.inDeckBadgeText, { color: colors.onPrimary }]}>В колоде</Text>
-                </View>
-              )}
-              <View style={[styles.rarityBadge, { backgroundColor: rarityColor }]}>
-                <Text style={[styles.rarityBadgeText, { color: colors.onPrimary }]}>{getRarityName(c.rarity)}</Text>
-              </View>
-              <View style={[styles.cardItemIcon, { backgroundColor: colors.surfaceContainerLow }]}>
-                <MaterialIcons name={iconName as any} size={32} color={rarityColor} />
-              </View>
-              <Text style={[styles.cardItemName, { color: colors.onSurface }]} numberOfLines={1}>{c.name}</Text>
-              <Text style={[styles.cardItemBrand, { color: colors.onSurfaceVariant }]}>{c.brandName}</Text>
-              <View style={[styles.cardItemStats, { borderTopColor: colors.outlineVariant }]}>
-                <View style={styles.statRow}>
-                  <MaterialIcons name="favorite" size={12} color={card.health > 50 ? '#22c55e' : colors.error} />
-                  <Text style={[styles.statText, { color: colors.onSurfaceVariant }]}>{card.health}%</Text>
-                </View>
-                <View style={styles.statRow}>
-                  <MaterialIcons name="percent" size={12} color={colors.primary} />
-                  <Text style={[styles.statText, { color: colors.onSurfaceVariant }]}>{c.cashbackPercent}%</Text>
-                </View>
-              </View>
-              {/* P05-T1 — low-HP pulsing red border overlay (Gray Area E).
-                  Returns null when health/maxHealth >= 0.30, so it imposes
-                  zero cost on healthy cards. */}
-              <LowHpPulseBorder health={card.health} maxHealth={c.maxHealth ?? 100} />
-            </TouchableOpacity>
-          </Animated.View>
+            card={card}
+            isInDeck={equippedCardIds.has(card.id)}
+            onCardTap={onCardTap}
+            onLongPressDrag={onLongPressDrag}
+            reducedMotion={reducedMotion}
+            colors={colors}
+          />
         );
         if (gesture) {
           return (
@@ -136,6 +100,106 @@ export function InventoryGrid({
       })}
       {cards.length === 0 && emptyState}
     </View>
+  );
+}
+
+// Plan 06-06 D-19/D-22 — per-card slot owns its own collapse animation.
+// `card.pendingExpire === true` flips opacity → 0 + scale → 0.6 via withTiming;
+// the wrapper's `layout={SLOT_LAYOUT}` collapses the slot when the card is
+// physically removed from the parent's `cards` array (D-21).
+//
+// Reduced-motion (D-22): opacity-only 150ms; scale stays at 1; Layout transition
+// retained for structural feedback parity.
+//
+// SAFETY: useStore is NEVER read inside the worklet body of useAnimatedStyle —
+// the animated style reads SharedValue.value only (Phase 5 D-07 / mt-bank/no-zustand-in-worklet).
+function InventoryCardSlot({
+  card,
+  isInDeck,
+  onCardTap,
+  onLongPressDrag,
+  reducedMotion,
+  colors,
+}: {
+  card: InventoryGridCard;
+  isInDeck: boolean;
+  onCardTap: (card: InventoryGridCard) => void;
+  onLongPressDrag?: (cardId: string) => void;
+  reducedMotion: boolean;
+  colors: ReturnType<typeof useThemeColor>;
+}) {
+  const c = card.collectionCard;
+  const rarityKey = RARITY_COLOR_MAP[c.rarity] ?? 'rarityCommon';
+  const rarityColor = colors[rarityKey];
+  const iconName = toMaterialIconName(c.brandIcon);
+
+  const register = useCancellableAnimation();
+  const opacity = register(useSharedValue(1));
+  const scale = register(useSharedValue(1));
+
+  useEffect(() => {
+    if (card.pendingExpire) {
+      // D-19: 300ms collapse; D-22 reduced-motion: 150ms opacity-only.
+      const dur = reducedMotion ? 150 : 300;
+      opacity.value = withTiming(0, { duration: dur });
+      if (!reducedMotion) {
+        scale.value = withTiming(0.6, { duration: dur });
+      }
+    }
+  }, [card.pendingExpire, reducedMotion, opacity, scale]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View
+      layout={SLOT_LAYOUT}
+      style={[styles.cardItemWrap, animatedStyle]}
+    >
+      <TouchableOpacity
+        activeOpacity={0.8}
+        testID={`inventory-card-${card.id}`}
+        onPress={() => onCardTap(card)}
+        onLongPress={onLongPressDrag ? () => onLongPressDrag(card.id) : undefined}
+        style={[
+          styles.cardItem,
+          { borderColor: rarityColor, backgroundColor: colors.surfaceContainerLowest },
+          isInDeck && styles.cardItemInDeck,
+        ]}
+      >
+        <View style={[styles.cardItemGlow, { backgroundColor: rarityColor }]} />
+        {isInDeck && (
+          <View style={[styles.inDeckBadge, { backgroundColor: colors.primary }]}>
+            <MaterialIcons name="shield" size={10} color={colors.onPrimary} />
+            <Text style={[styles.inDeckBadgeText, { color: colors.onPrimary }]}>В колоде</Text>
+          </View>
+        )}
+        <View style={[styles.rarityBadge, { backgroundColor: rarityColor }]}>
+          <Text style={[styles.rarityBadgeText, { color: colors.onPrimary }]}>{getRarityName(c.rarity)}</Text>
+        </View>
+        <View style={[styles.cardItemIcon, { backgroundColor: colors.surfaceContainerLow }]}>
+          <MaterialIcons name={iconName as any} size={32} color={rarityColor} />
+        </View>
+        <Text style={[styles.cardItemName, { color: colors.onSurface }]} numberOfLines={1}>{c.name}</Text>
+        <Text style={[styles.cardItemBrand, { color: colors.onSurfaceVariant }]}>{c.brandName}</Text>
+        <View style={[styles.cardItemStats, { borderTopColor: colors.outlineVariant }]}>
+          <View style={styles.statRow}>
+            <MaterialIcons name="favorite" size={12} color={card.health > 50 ? '#22c55e' : colors.error} />
+            <Text style={[styles.statText, { color: colors.onSurfaceVariant }]}>{card.health}%</Text>
+          </View>
+          <View style={styles.statRow}>
+            <MaterialIcons name="percent" size={12} color={colors.primary} />
+            <Text style={[styles.statText, { color: colors.onSurfaceVariant }]}>{c.cashbackPercent}%</Text>
+          </View>
+        </View>
+        {/* P05-T1 — low-HP pulsing red border overlay (Gray Area E).
+            Returns null when health/maxHealth >= 0.30, so it imposes
+            zero cost on healthy cards. */}
+        <LowHpPulseBorder health={card.health} maxHealth={c.maxHealth ?? 100} />
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 

@@ -89,14 +89,17 @@ describe('mergeListWithRemovals (D-20 protect + D-21 onRemoved)', () => {
     expect(onRemoved).not.toHaveBeenCalled();
   });
 
-  test('5) skipPredicate=undefined → no protection (every existing not in incoming is removed)', () => {
+  test('5) skipPredicate=undefined → no protection: all unmatched items reported via onRemoved (D-21 hands removal off to queueLocalExpire so the items must remain in the result list to be animated out)', () => {
     const existing: Card[] = [a({ pendingExpire: true }), b()];
     const incoming: Card[] = []; // server says: all gone
     const onRemoved = jest.fn();
 
     const out = mergeListWithRemovals(existing, incoming, 'http', { onRemoved });
 
-    expect(out).toHaveLength(0);
+    // Wrapper does NOT physically drop ghost items — `queueLocalExpire`
+    // (the onRemoved callback) animates them out and calls removeCard later.
+    // If the wrapper removed them now, the collapse animation could not play.
+    expect(out.map((x) => x.id).sort()).toEqual(['a', 'b']);
     expect(onRemoved).toHaveBeenCalledTimes(1);
     const removed = onRemoved.mock.calls[0][0] as Card[];
     expect(removed.map((x) => x.id).sort()).toEqual(['a', 'b']);

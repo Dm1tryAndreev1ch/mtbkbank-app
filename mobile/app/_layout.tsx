@@ -24,6 +24,7 @@ import BootGate from '../components/BootGate';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { ToastHost } from '../components/Toast';
+import { useCardExpiredListener } from '../hooks/useCardExpiredListener';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -43,6 +44,11 @@ function RootLayout() {
   useEffect(() => {
     if (loaded) SplashScreen.hideAsync();
   }, [loaded]);
+
+  // Plan 06-06 — root-mount the CARD_EXPIRED Socket.IO listener once so it
+  // survives tab switches. The hook is idempotent (Pitfall 9) and no-ops until
+  // a token is present (the ws singleton handles lazy connect from P01).
+  useCardExpiredListener();
 
   // Plan 04-01 D-12 — wire NetInfo into useStore.network so OfflineBanner mounts
   // and ActionButton disables on connectivity loss.

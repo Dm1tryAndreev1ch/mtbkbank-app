@@ -121,15 +121,16 @@ export function mergeListWithRemovals<T extends Mergeable>(
     if (!incomingIds.has(String(e[idKey]))) removed.push(e);
   }
 
-  // Drop removals BEFORE delegating to mergeList — `mergeList` preserves
-  // existing items not present in incoming (its contract; do not touch),
-  // so we filter them here so the wrapper's "server is source of truth for
-  // unprotected removals" semantic holds.
-  const removedIds = new Set(removed.map((r) => String(r[idKey])));
-  const mergeableMinusRemoved = mergeable.filter(
-    (e) => !removedIds.has(String(e[idKey])),
-  );
-  const merged = mergeList<T>(mergeableMinusRemoved, incoming, source, idKey);
+  // Plan 06-06 D-21 — DO NOT physically drop removed items here. `onRemoved`
+  // hands them to `queueLocalExpire`, which (a) flips `pendingExpire: true` so
+  // the InventoryGrid plays the collapse animation, then (b) calls `removeCard`
+  // 800ms later. If we removed them now, the animation could not run because
+  // the card would already be gone from the store. Delegate to `mergeList` over
+  // the full `mergeable` list — `mergeList` preserves existing items missing
+  // from `incoming` (its documented contract), which is exactly what we want
+  // for the staggered-removal handoff. Existing callers that previously stripped
+  // ghost items rely on the caller's `onRemoved` to drive the actual removal.
+  const merged = mergeList<T>(mergeable, incoming, source, idKey);
 
   // Re-prepend protected items so their ordering survives. mergeList preserves
   // existing order for the items it received; protected items were filtered out
