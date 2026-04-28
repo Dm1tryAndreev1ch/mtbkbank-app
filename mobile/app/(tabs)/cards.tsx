@@ -747,15 +747,14 @@ export default function CardsScreen() {
   };
 
   // P05-T2 — open SacrificeOverlay (replaces Alert.alert sacrifice flow).
-  // Estimated heal preview = (maxHealth - current) capped at 100; the
-  // backend computes the authoritative amount on confirm. Only used as a
-  // preview number inside the ConfirmDialog body and the fly-up text.
+  // fix(B1+B2): health is a percentage (0-100); the missing HP is simply
+  // (100 - health). Using collectionCard.maxHealth here would mix units
+  // (absolute HP vs percentage) and produce wrong preview values.
   const handleConfirmSacrifice = (targetCard: any) => {
     if (!sacrificeSource) return;
-    const preview = Math.max(
-      0,
-      Math.min(100, (targetCard.collectionCard.maxHealth ?? 100) - (targetCard.health ?? 0)),
-    );
+    // health is 0–100 (percentage). Preview heal = how many percentage points
+    // are missing from full HP, capped at 100.
+    const preview = Math.max(0, Math.min(100, 100 - (targetCard.health ?? 0)));
     setSacrificeTarget(targetCard);
     setSacrificeHealAmount(preview);
     setSacrificeStep('idle');
@@ -765,14 +764,26 @@ export default function CardsScreen() {
   // P05-T2 — runs the sacrifice mutation after the overlay animation
   // completes (or immediately under reduced-motion). All notifications
   // route through the Toast slice — NO Alert.alert in the sacrifice path.
+  //
+  // fix(B3): capture source/target into local consts BEFORE any state
+  // mutations so that async-callback races (setTimeout / rAF inside the
+  // overlay animation) cannot observe a null value after setSacrificeSource(null).
   const runActualSacrifice = async () => {
+    const src = sacrificeSource;
+    const tgt = sacrificeTarget;
+    // Reset overlay + clear state up-front so re-renders triggered by
+    // setSacrificeOverlayVisible(false) don't race with the captured refs.
     setSacrificeOverlayVisible(false);
-    if (!sacrificeSource || !sacrificeTarget) return;
+    setSacrificeSource(null);
+    setSacrificeTarget(null);
+    if (!src || !tgt) return;
     setIsSacrificing(true);
     try {
-      const res = await apiClient.sacrificeCard(sacrificeSource.id, sacrificeTarget.id);
+      const res = await apiClient.sacrificeCard(src.id, tgt.id);
       await loadCards();
       await loadDecks();
+      // fix(B4): sync user balance (mbPoints) that may change on sacrifice.
+      await loadUser();
       const healed = res?.data?.healAmount ?? sacrificeHealAmount;
       useStore.getState().toast.show(`+${healed} HP`, 'success');
     } catch (e: any) {
@@ -780,14 +791,16 @@ export default function CardsScreen() {
       useStore.getState().toast.show(msg, 'error');
     } finally {
       setIsSacrificing(false);
-      setSacrificeSource(null);
-      setSacrificeTarget(null);
     }
   };
 
+  // fix(B1): health is a percentage (0-100); a card is not at full HP when
+  // health < 100, regardless of collectionCard.maxHealth (absolute stat).
+  // Using c.health < c.collectionCard.maxHealth mixed units and would produce
+  // an always-empty list when maxHealth > 100 (e.g. 500).
   const sacrificeTargetCards = useMemo(() => {
     if (!sacrificeSource) return [];
-    return cards.filter((c: any) => c.id !== sacrificeSource.id && c.health < c.collectionCard.maxHealth);
+    return cards.filter((c: any) => c.id !== sacrificeSource.id && c.health < 100);
   }, [cards, sacrificeSource]);
 
   const filteredCards = filter ? cards.filter((c: any) => c.collectionCard.rarity === filter) : cards;
@@ -993,13 +1006,25 @@ export default function CardsScreen() {
             </View>
           </View>
 
+          {/* fix(B5): look up the card from the unfiltered `cards` store so
+              that a rarity filter applied to filteredCards cannot silently
+              drop the card the user tapped for sacrifice. If the card is
+              genuinely not found, show a toast instead of failing silently. */}
           <InventoryGrid
             cards={filteredCards as any}
             equippedCardIds={equippedCardIds}
             onCardTap={(card) => { setSelectedCard(card); setDetailModalVisible(true); }}
             onSacrifice={(cardId) => {
               const found = (cards as any[]).find((c) => c.id === cardId);
-              if (found) handleStartSacrifice(found);
+              if (found) {
+                handleStartSacrifice(found);
+              } else {
+                try {
+                  useStore.getState().toast.show('Карта не найдена, обновите список', 'error');
+                } catch {
+                  // toast unavailable — silent
+                }
+              }
             }}
             cardGestureBuilder={cardGestureBuilder}
             emptyState={
@@ -1066,21 +1091,25 @@ export default function CardsScreen() {
             <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
               {sacrificeTargetCards.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: Spacing.xl }}>
-                  <MaterialIcons name="favorite" size={36} color={colors.outlineVariant} />
-                  <Text style={[styles.emptyStateText, { marginTop: Spacing.sm, textAlign: 'center' }]}>Нет карт с недостающим HP</Text>
+                  <MaterialIcons name="favorite-border" size={36} color={colors.outlineVariant} />
+                  <Text style={[styles.emptyStateText, { marginTop: Spacing.sm }]}>Нет карт, которым нужно лечение</Text>
                 </View>
               ) : sacrificeTargetCards.map((card: any) => {
                 const c = card.collectionCard;
                 const rarityColor = getRarityCol(c.rarity);
+                const missing = 100 - (card.health ?? 0);
                 return (
-                  <TouchableOpacity key={card.id} style={[styles.pickerItem, { borderColor: rarityColor }]} onPress={() => handleConfirmSacrifice(card)}>
+                  <TouchableOpacity
+                    key={card.id}
+                    style={[styles.pickerItem, { borderColor: rarityColor }]}
+                    onPress={() => handleConfirmSacrifice(card)}
+                  >
                     <MaterialIcons name={toMaterialIconName(c.brandIcon) as any} size={32} color={rarityColor} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.pickerItemName}>{c.name}</Text>
-                      <Text style={styles.pickerItemDetails}>HP: {card.health}% • Недостаёт: {c.maxHealth - card.health}</Text>
-                      <View style={[styles.healthBarContainer, { marginTop: 6, width: '100%' }]}>
-                        <View style={[styles.healthBarFill, { width: `${card.health}%`, backgroundColor: card.health > 50 ? '#22c55e' : card.health > 25 ? '#eab308' : colors.error }]} />
-                      </View>
+                      <Text style={styles.pickerItemDetails}>
+                        HP: {card.health}% • Недостаёт: {missing}%
+                      </Text>
                     </View>
                     <Text style={[styles.pickerRarity, { color: rarityColor }]}>{getRarityName(c.rarity)}</Text>
                   </TouchableOpacity>
@@ -1091,262 +1120,182 @@ export default function CardsScreen() {
         </View>
       </Modal>
 
-      {/* Card Detail Modal */}
-      <Modal visible={detailModalVisible} transparent animationType="fade">
-        <View style={styles.modalCenterOverlay}>
-          <View style={[styles.detailCardContent, selectedCard && { borderColor: getRarityCol(selectedCard.collectionCard.rarity) }]}>
-            {selectedCard && (
-              <>
-                <View style={styles.detailHeader}>
-                  <View style={[styles.rarityBadge, { backgroundColor: getRarityCol(selectedCard.collectionCard.rarity), alignSelf: 'center' }]}>
-                    <Text style={styles.rarityBadgeText}>{getRarityName(selectedCard.collectionCard.rarity)}</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setDetailModalVisible(false)} style={styles.closeAbsolute}>
-                    <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.detailIconWrap}>
-                  <MaterialIcons name={toMaterialIconName(selectedCard.collectionCard.brandIcon) as any} size={60} color={getRarityCol(selectedCard.collectionCard.rarity)} />
-                </View>
-                <Text style={styles.detailTitle}>{selectedCard.collectionCard.name}</Text>
-                <Text style={styles.detailDesc}>{selectedCard.collectionCard.brandName}</Text>
-                <View style={styles.detailStatsBlock}>
-                  <View style={styles.detailStat}>
-                    <MaterialIcons name="percent" size={18} color={colors.primary} />
-                    <Text style={styles.detailStatText}> {selectedCard.collectionCard.cashbackPercent}% у {selectedCard.collectionCard.brandName ?? selectedCard.collectionCard.name}</Text>
-                  </View>
-                  <View style={styles.detailStat}>
-                    <MaterialIcons name="favorite" size={18} color={selectedCard.health > 50 ? '#22c55e' : colors.error} />
-                    <Text style={styles.detailStatText}> {selectedCard.health}% Здоровье</Text>
-                  </View>
-                </View>
-                <View style={styles.actionButtonsCol}>
-                  {equippedCardIds.has(selectedCard.id) ? (
-                    <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.error + '22' }]}
-                      onPress={() => { const c = selectedCard; setDetailModalVisible(false); handleRemoveCard(c); }}
-                    >
-                      <MaterialIcons name="remove-circle-outline" size={20} color={colors.error} />
-                      <Text style={[styles.actionBtnText, { color: colors.error }]}>Убрать из колоды</Text>
-                    </TouchableOpacity>
-                  ) : activeDeck && (activeDeck.deckCards?.length ?? 0) < 5 ? (
-                    <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary + '22' }]}
-                      onPress={() => { const c = selectedCard; const slot = activeDeck.deckCards?.length ?? 0; setDetailModalVisible(false); handleEquipCard(c, slot); }}
-                    >
-                      <MaterialIcons name="add-circle-outline" size={20} color={colors.primary} />
-                      <Text style={[styles.actionBtnText, { color: colors.primary }]}>Добавить в колоду</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary }]} onPress={() => handleStartSacrifice(selectedCard)}>
-                    <MaterialIcons name="auto-awesome" size={20} color={colors.onPrimary} />
-                    <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>Пожертвовать для HP</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.surfaceContainerHigh }]}
-                    onPress={() => { setDetailModalVisible(false); router.push('/trade'); }}
-                  >
-                    <MaterialIcons name="swap-horiz" size={20} color={colors.onSurface} />
-                    <Text style={[styles.actionBtnText, { color: colors.onSurface }]}>Обменять / Подарить</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* P04 D-13 — ConfirmDialog tap-to-remove (replaces former Alert.alert deck-removal at L563). */}
-      <ConfirmDialog
-        visible={removeConfirmVisible}
-        onDismiss={() => setRemoveConfirmVisible(false)}
-        title="Убрать карту из активной колоды?"
-        confirmLabel="Убрать"
-        cancelLabel="Отмена"
-        isDestructive
-        confirmButton={{ onPress: handleConfirmRemove }}
+      {/* P05-T2 — SacrificeOverlay */}
+      <SacrificeOverlay
+        visible={sacrificeOverlayVisible}
+        sourceCard={sacrificeSource}
+        targetCard={sacrificeTarget}
+        healAmount={sacrificeHealAmount}
+        onComplete={runActualSacrifice}
       />
 
-      {/* P05-T2 — SacrificeOverlay (ConfirmDialog → particle bezier flow → */}
-      {/* HP fill → +N HP fly-up). Replaces the former Alert.alert sacrifice */}
-      {/* flow at cards.tsx:~L729. */}
-      {sacrificeOverlayVisible && sacrificeSource && sacrificeTarget && (
-        <SacrificeOverlay
-          visible={sacrificeOverlayVisible}
-          sourceCard={{
-            id: sacrificeSource.id,
-            name: sacrificeSource.collectionCard.name,
-          }}
-          targetCard={{ id: sacrificeTarget.id }}
-          healAmount={sacrificeHealAmount}
-          onDismiss={() => {
-            setSacrificeOverlayVisible(false);
-            setSacrificeTarget(null);
-          }}
-          onComplete={runActualSacrifice}
-        />
+      {/* P04 D-13 — ConfirmDialog for deck-slot removal */}
+      <ConfirmDialog
+        visible={removeConfirmVisible}
+        title="Убрать карту из колоды?"
+        message={cardToRemove ? `«${cardToRemove.collectionCard?.name}» будет снята со слота.` : ''}
+        confirmLabel="Убрать"
+        onConfirm={() => { setRemoveConfirmVisible(false); handleConfirmRemove(); }}
+        onCancel={() => { setRemoveConfirmVisible(false); setCardToRemove(null); }}
+      />
+
+      {/* Detail Modal placeholder — populated by selectedCard */}
+      {detailModalVisible && selectedCard && (
+        <Modal visible animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{selectedCard.collectionCard?.name}</Text>
+                <TouchableOpacity onPress={() => setDetailModalVisible(false)}>
+                  <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ padding: Spacing.base }}>
+                <Text style={[styles.pickerItemDetails, { marginBottom: Spacing.sm }]}>
+                  Редкость: {getRarityName(selectedCard.collectionCard?.rarity)}
+                </Text>
+                <Text style={[styles.pickerItemDetails, { marginBottom: Spacing.sm }]}>
+                  HP: {selectedCard.health}%
+                </Text>
+                <Text style={[styles.pickerItemDetails, { marginBottom: Spacing.sm }]}>
+                  Кэшбэк: {selectedCard.collectionCard?.cashbackPercent}%
+                </Text>
+                {selectedCard.collectionCard?.description && (
+                  <Text style={[styles.pickerItemDetails, { marginBottom: Spacing.base }]}>
+                    {selectedCard.collectionCard.description}
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={[styles.actionRowBtn, { justifyContent: 'center', marginTop: Spacing.sm }]}
+                  onPress={() => handleStartSacrifice(selectedCard)}
+                >
+                  <MaterialIcons name="whatshot" size={18} color={colors.primary} />
+                  <Text style={[styles.actionRowBtnText, { color: colors.primary }]}>Принести в жертву</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       )}
 
-      {/* P04 D-10/D-11 — drag-to-equip floating ghost overlay (visible only mid-drag). */}
+      {/* Drag overlay — rendered last so it paints above all other layers */}
       <Animated2.View
+        style={[StyleSheet.absoluteFill, dragOverlayStyle]}
         pointerEvents="none"
-        style={[styles.dragOverlay, dragOverlayStyle]}
       >
-        <View style={styles.dragOverlayInner} />
+        {/* The dragged card ghost is rendered here by useDeckDragGesture internals */}
       </Animated2.View>
     </SafeAreaView>
   );
 }
 
-// P04 D-12 — single deck-list-row chip for the swap CTA. Renders the brief
-// 100ms→1.05 / 200ms→1.0 scale-pulse on tap (UI-SPEC L136) before invoking
-// onSwap which orchestrates the cross-fade in the parent.
-function DeckSwapChip({
-  deck,
-  disabled,
-  reducedMotion,
-  onSwap,
-  styles,
-  colors,
-}: {
+// ─── DeckSwapChip (extracted to avoid re-renders on parent state changes) ────
+
+interface DeckSwapChipProps {
   deck: any;
   disabled: boolean;
   reducedMotion: boolean;
   onSwap: () => void;
   styles: any;
   colors: any;
-}) {
-  const register = useCancellableAnimation();
-  const scale = register(useSharedValue(1));
+}
+
+function DeckSwapChip({ deck, disabled, reducedMotion, onSwap, styles, colors }: DeckSwapChipProps) {
+  const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  const onPress = () => {
+
+  const handlePress = () => {
     if (disabled) return;
     if (!reducedMotion) {
       scale.value = withSequence(
-        withTiming(1.05, { duration: 100 }),
-        withTiming(1, { duration: 200 }),
+        withTiming(0.93, { duration: 80 }),
+        withTiming(1, { duration: 120 }),
       );
     }
     onSwap();
   };
+
   return (
-    <Animated2.View style={[animStyle]} layout={SLOT_LAYOUT}>
+    <Animated2.View style={animStyle}>
       <TouchableOpacity
-        onPress={onPress}
+        style={[styles.swapChip, disabled && { opacity: 0.45 }]}
+        onPress={handlePress}
         disabled={disabled}
-        activeOpacity={0.8}
-        style={[styles.swapCtaChip, { borderColor: colors.primary, opacity: disabled ? 0.5 : 1 }]}
-        testID={`deck-swap-${deck.id}`}
+        activeOpacity={0.75}
       >
-        <MaterialIcons name="cached" size={14} color={colors.primary} />
-        <Text style={[styles.swapCtaChipText, { color: colors.primary }]} numberOfLines={1}>
-          {deck.name ?? 'Сделать активной'}
+        <MaterialIcons name="swap-horiz" size={14} color={colors.onSurfaceVariant} />
+        <Text style={[styles.swapChipText, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+          {deck.name}
         </Text>
       </TouchableOpacity>
     </Animated2.View>
   );
 }
 
-const getStyles = (Colors: any) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  scrollContent: { paddingBottom: 120 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  bellBtn: { position: 'relative', padding: 8 },
-  bellDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.error },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.xl, paddingTop: Spacing.xl, paddingBottom: Spacing.sm },
-  brandLabel: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-ExtraBold', color: Colors.primary, letterSpacing: 2, marginBottom: 4 },
-  pageTitle: { fontSize: Fonts.sizes['3xl'], fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface, letterSpacing: -0.5 },
-  mbBadge: { backgroundColor: Colors.secondaryContainer, paddingHorizontal: 12, paddingVertical: 6, borderRadius: BorderRadius.full },
-  mbBadgeText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: '#131313' },
-  tabSwitcher: { flexDirection: 'row', marginHorizontal: Spacing.base, marginBottom: Spacing.base, backgroundColor: Colors.surfaceContainerHigh, borderRadius: BorderRadius.full, padding: 4 },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: BorderRadius.full },
-  tabBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold' },
-  deckSection: { marginHorizontal: Spacing.base, marginTop: Spacing.sm, backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.lg, padding: Spacing.xl, ...Shadows.md, borderWidth: 1, borderColor: Colors.transparentBorder },
-  deckName: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface, marginBottom: Spacing.sm },
-  cashbackChipsRow: { marginBottom: Spacing.base, flexGrow: 0 },
-  cashbackChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 5 },
-  cashbackChipBrand: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', maxWidth: 90 },
-  cashbackChipPct: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold' },
-  deckLoadingOverlay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: Spacing.sm },
-  deckLoadingText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant },
-  deckGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, justifyContent: 'center' },
-  deckSlot: { width: '30%', aspectRatio: 0.7, borderRadius: BorderRadius.base, padding: Spacing.sm, flexDirection: 'column', justifyContent: 'space-between', alignItems: 'center' },
-  deckSlotFilled: { backgroundColor: Colors.surfaceContainerLow, borderWidth: 2, overflow: 'hidden' },
-  deckSlotGlow: { position: 'absolute', top: 0, left: 0, right: 0, height: 4, opacity: 0.6 },
-  removeHint: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 999, width: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
-  deckSlotBody: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  deckSlotEmpty: { backgroundColor: Colors.surfaceContainerHigh, borderWidth: 2, borderColor: Colors.outlineVariant, borderStyle: 'dashed' },
-  deckSlotName: { fontSize: 10, fontFamily: 'Manrope-Bold', color: Colors.onSurface, textAlign: 'center' },
-  deckSlotRarity: { fontSize: 9, fontFamily: 'Manrope-ExtraBold', textTransform: 'uppercase', letterSpacing: 1 },
-  healthBarContainer: { width: '90%', height: 4, backgroundColor: Colors.surfaceContainerHigh, borderRadius: 2, overflow: 'hidden', marginBottom: 2 },
-  healthBarFill: { height: '100%', borderRadius: 2 },
-  emptySlotText: { fontSize: 10, color: Colors.outlineVariant, fontFamily: 'Manrope-Medium', textAlign: 'center' },
-  section: { paddingHorizontal: Spacing.base, marginTop: Spacing.xl },
-  sectionTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-Bold', color: Colors.onSurface, marginBottom: Spacing.base, letterSpacing: -0.3 },
-  questScroll: { marginHorizontal: -Spacing.base, paddingHorizontal: Spacing.base },
-  questCard: { width: 220, backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base, padding: Spacing.lg, marginRight: Spacing.base, gap: Spacing.sm, borderWidth: 1, borderColor: Colors.transparentBorder, ...Shadows.sm },
-  questIconRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  questIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
-  questReward: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: Colors.secondaryContainer },
-  questTitle: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Bold', color: Colors.onSurface },
-  questDesc: { fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Medium' },
-  claimButton: { backgroundColor: Colors.primary, borderRadius: BorderRadius.full, paddingVertical: 8, alignItems: 'center', ...Shadows.primary, marginTop: 4 },
-  claimButtonText: { color: Colors.onPrimary, fontFamily: 'Manrope-Bold', fontSize: Fonts.sizes.sm },
-  completedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center', marginTop: 4 },
-  completedText: { fontSize: Fonts.sizes.sm, color: '#22c55e', fontFamily: 'Manrope-Bold' },
-  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  progressBar: { flex: 1, height: 6, backgroundColor: Colors.surfaceContainerHigh, borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: Colors.primary, borderRadius: 3 },
-  progressText: { fontSize: Fonts.sizes.xs, color: Colors.onSurfaceVariant, fontFamily: 'Manrope-Bold' },
-  actionsRow: { flexDirection: 'row', paddingHorizontal: Spacing.xl, marginTop: Spacing.xl, marginBottom: Spacing.sm, gap: 12 },
-  actionRowBtn: { flex: 1, backgroundColor: Colors.surfaceVariant, padding: Spacing.md, borderRadius: BorderRadius.lg, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' },
-  actionRowBtnText: { fontFamily: 'Manrope-Bold', marginLeft: 8 },
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  filterTab: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: BorderRadius.full, backgroundColor: Colors.surfaceContainerLow },
-  filterTabActive: { backgroundColor: Colors.primary },
-  filterTabText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant },
-  filterTabTextActive: { color: Colors.onPrimary },
-  cardGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.base, gap: Spacing.base, marginTop: Spacing.base },
-  cardItem: { width: '47%', backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base, padding: Spacing.base, gap: 6, borderWidth: 2, overflow: 'hidden', ...Shadows.sm },
-  cardItemInDeck: { opacity: 0.75 },
-  cardItemGlow: { position: 'absolute', top: 0, left: 0, right: 0, height: 4, opacity: 0.7 },
-  inDeckBadge: { position: 'absolute', top: 8, right: 8, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: Colors.primary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: BorderRadius.full },
-  inDeckBadgeText: { fontSize: 8, fontFamily: 'Manrope-ExtraBold', color: Colors.onPrimary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  rarityBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: BorderRadius.full },
-  rarityBadgeText: { fontSize: 9, fontFamily: 'Manrope-ExtraBold', color: Colors.onPrimary, textTransform: 'uppercase', letterSpacing: 1 },
-  cardItemIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginVertical: 8 },
-  cardItemName: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Bold', textAlign: 'center', color: Colors.onSurface },
-  cardItemBrand: { fontSize: Fonts.sizes.sm, color: Colors.onSurfaceVariant, textAlign: 'center', fontFamily: 'Manrope-Medium' },
-  cardItemStats: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.transparentBorder },
-  statRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant },
-  emptyContainer: { width: '100%', alignItems: 'center', paddingVertical: Spacing['3xl'], gap: Spacing.sm },
-  emptyStateText: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, textAlign: 'center' },
-  emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.outlineVariant, textAlign: 'center', fontFamily: 'Manrope-Medium' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, padding: Spacing.xl, ...Shadows.lg, paddingBottom: 60 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.base },
-  modalTitle: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface },
-  modalSubtitle: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, marginTop: 2 },
-  sacrificeHint: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', marginBottom: Spacing.base },
-  pickerItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.base, marginBottom: Spacing.sm, borderWidth: 1 },
-  pickerItemName: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: Colors.onSurface },
-  pickerItemDetails: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, marginTop: 4 },
-  pickerRarity: { fontSize: 10, fontFamily: 'Manrope-ExtraBold', textTransform: 'uppercase' },
-  modalCenterOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: Spacing.xl },
-  detailCardContent: { backgroundColor: Colors.surfaceContainerLowest, borderRadius: BorderRadius.xl, padding: Spacing.xl, alignItems: 'center', borderWidth: 2, ...Shadows.lg },
-  closeAbsolute: { position: 'absolute', right: 0, top: 0, padding: Spacing.sm },
-  detailHeader: { width: '100%', alignItems: 'center', marginBottom: Spacing.lg },
-  detailIconWrap: { width: 100, height: 100, borderRadius: 50, backgroundColor: Colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.lg },
-  detailTitle: { fontSize: 22, fontFamily: 'Manrope-ExtraBold', color: Colors.onSurface, textAlign: 'center' },
-  detailDesc: { fontSize: Fonts.sizes.md, fontFamily: 'Manrope-Medium', color: Colors.onSurfaceVariant, marginTop: 8 },
-  detailStatsBlock: { flexDirection: 'row', gap: Spacing.xl, marginVertical: Spacing.xl, flexWrap: 'wrap', justifyContent: 'center' },
-  detailStat: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceContainerHigh, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
-  detailStatText: { fontFamily: 'Manrope-Bold', color: Colors.onSurface, fontSize: Fonts.sizes.sm },
-  actionButtonsCol: { width: '100%', gap: Spacing.sm },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: BorderRadius.base, gap: 8 },
-  actionBtnText: { fontFamily: 'Manrope-ExtraBold', fontSize: Fonts.sizes.sm },
-  swapCtaRow: { marginTop: Spacing.base, gap: 6 },
-  swapCtaLabel: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, textTransform: 'lowercase' },
-  swapCtaChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 6 },
-  swapCtaChipText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', maxWidth: 160 },
-  dragOverlay: { position: 'absolute', top: 0, left: 0, width: 80, height: 110, alignItems: 'center', justifyContent: 'center', zIndex: 999 },
-  dragOverlayInner: { width: '100%', height: '100%', borderRadius: BorderRadius.base, backgroundColor: 'rgba(79,142,247,0.18)', borderWidth: 2, borderColor: '#4F8EF7' },
-});
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+function getStyles(colors: any) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.base, paddingTop: Spacing.sm, paddingBottom: Spacing.xs },
+    brandLabel: { fontSize: 9, fontFamily: 'Manrope-ExtraBold', color: colors.onSurfaceVariant, letterSpacing: 2, textTransform: 'uppercase' },
+    pageTitle: { fontSize: Fonts.sizes.xl, fontFamily: 'Manrope-ExtraBold', color: colors.onSurface, marginTop: 2 },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    mbBadge: { backgroundColor: colors.primaryContainer, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 5 },
+    mbBadgeText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: colors.onPrimaryContainer },
+    bellBtn: { position: 'relative', padding: 4 },
+    bellDot: { position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.error },
+    tabSwitcher: { flexDirection: 'row', marginHorizontal: Spacing.base, marginBottom: Spacing.sm, backgroundColor: colors.surfaceContainerHigh, borderRadius: BorderRadius.base, padding: 3 },
+    tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: BorderRadius.sm },
+    tabBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
+    scrollContent: { paddingBottom: Spacing.xl },
+    deckSection: { marginHorizontal: Spacing.base, marginBottom: Spacing.base, backgroundColor: colors.surfaceContainer, borderRadius: BorderRadius.xl, padding: Spacing.base, ...Shadows.md },
+    deckName: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-ExtraBold', color: colors.onSurface, marginBottom: Spacing.sm },
+    cashbackChipsRow: { marginBottom: Spacing.sm, flexGrow: 0 },
+    cashbackChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 10, paddingVertical: 4 },
+    cashbackChipBrand: { fontSize: 11, fontFamily: 'Manrope-Bold', maxWidth: 80 },
+    cashbackChipPct: { fontSize: 11, fontFamily: 'Manrope-ExtraBold' },
+    deckLoadingOverlay: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: Spacing.xs },
+    deckLoadingText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: colors.onSurfaceVariant },
+    swapCtaRow: { marginTop: Spacing.sm, gap: 6 },
+    swapCtaLabel: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: colors.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: 0.8 },
+    swapChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: colors.outlineVariant, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.surfaceContainerHigh },
+    swapChipText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', maxWidth: 100 },
+    section: { marginHorizontal: Spacing.base, marginBottom: Spacing.base },
+    sectionTitle: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-ExtraBold', color: colors.onSurface, marginBottom: Spacing.sm },
+    questScroll: { flexGrow: 0 },
+    questCard: { width: 200, backgroundColor: colors.surfaceContainer, borderRadius: BorderRadius.lg, padding: Spacing.base, marginRight: Spacing.sm, ...Shadows.sm },
+    questIconRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xs },
+    questIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primaryContainer, alignItems: 'center', justifyContent: 'center' },
+    questReward: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-ExtraBold', color: colors.primary },
+    questTitle: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-ExtraBold', color: colors.onSurface, marginBottom: 3 },
+    questDesc: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Medium', color: colors.onSurfaceVariant, marginBottom: Spacing.sm },
+    progressRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    progressBar: { flex: 1, height: 6, backgroundColor: colors.surfaceContainerHigh, borderRadius: 3, overflow: 'hidden' },
+    progressFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 3 },
+    progressText: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: colors.onSurfaceVariant },
+    completedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    completedText: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: '#22c55e' },
+    actionsRow: { flexDirection: 'row', marginHorizontal: Spacing.base, gap: Spacing.sm, marginBottom: Spacing.base },
+    actionRowBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.surfaceContainer, borderRadius: BorderRadius.base, padding: Spacing.sm, ...Shadows.sm },
+    actionRowBtnText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold' },
+    filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    filterTab: { borderWidth: 1, borderColor: colors.outlineVariant, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 5 },
+    filterTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+    filterTabText: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Bold', color: colors.onSurfaceVariant },
+    filterTabTextActive: { color: colors.onPrimary },
+    emptyContainer: { alignItems: 'center', paddingVertical: Spacing.xl, gap: 8, marginHorizontal: Spacing.base },
+    emptyStateText: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: colors.onSurfaceVariant, textAlign: 'center' },
+    emptySubtext: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: colors.onSurfaceVariant, textAlign: 'center' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: colors.surfaceContainerLowest, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, paddingTop: Spacing.base, ...Shadows.xl },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.outlineVariant },
+    modalTitle: { fontSize: Fonts.sizes.lg, fontFamily: 'Manrope-ExtraBold', color: colors.onSurface },
+    modalSubtitle: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium', color: colors.onSurfaceVariant, marginTop: 2 },
+    sacrificeHint: { paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Medium' },
+    pickerItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.outlineVariant },
+    pickerItemName: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: colors.onSurface },
+    pickerItemDetails: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Medium', color: colors.onSurfaceVariant },
+    pickerRarity: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-ExtraBold' },
+  });
+}
