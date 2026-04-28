@@ -16,6 +16,7 @@ import Animated2, { FadeIn } from 'react-native-reanimated';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActionButton } from '../../components/ActionButton';
+import { DeckSlotRow } from '../../components/cards/DeckSlotRow';
 
 type Rarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
@@ -711,40 +712,16 @@ export default function CardsScreen() {
                 </View>
               )}
 
-              <View style={[styles.deckGrid, (isEquipping || isSacrificing) && { opacity: 0.4 }]}>
-                {[0, 1, 2, 3, 4].map((slot) => {
-                  const deckCard = activeDeck.deckCards?.find((dc: any) => dc.slotIndex === slot) ?? activeDeck.deckCards?.[slot];
-                  if (deckCard) {
-                    const card = deckCard.userCard;
-                    const rarityColor = getRarityCol(card.collectionCard.rarity);
-                    const iconName = toMaterialIconName(card.collectionCard.brandIcon);
-                    return (
-                      <TouchableOpacity key={slot} activeOpacity={0.8} disabled={isEquipping || isSacrificing}
-                        onPress={() => handleSlotTap(card, slot)}
-                        style={[styles.deckSlot, styles.deckSlotFilled, { borderColor: rarityColor }]}
-                      >
-                        <View style={[styles.deckSlotGlow, { backgroundColor: rarityColor }]} />
-                        <View style={styles.removeHint}><MaterialIcons name="close" size={10} color={colors.onSurfaceVariant} /></View>
-                        <View style={styles.deckSlotBody}>
-                          <MaterialIcons name={iconName as any} size={28} color={rarityColor} />
-                          <Text style={styles.deckSlotName} numberOfLines={1}>{card.collectionCard.name}</Text>
-                          <Text style={[styles.deckSlotRarity, { color: rarityColor }]}>{getRarityName(card.collectionCard.rarity)}</Text>
-                        </View>
-                        <View style={styles.healthBarContainer}>
-                          <View style={[styles.healthBarFill, { width: `${card.health}%`, backgroundColor: card.health > 50 ? '#22c55e' : card.health > 25 ? '#eab308' : colors.error }]} />
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  }
-                  return (
-                    <TouchableOpacity key={slot} activeOpacity={0.7} disabled={isEquipping || isSacrificing}
-                      onPress={() => handleSlotTap(null, slot)} style={[styles.deckSlot, styles.deckSlotEmpty]}
-                    >
-                      <MaterialIcons name="add" size={28} color={colors.outlineVariant} />
-                      <Text style={styles.emptySlotText}>Экипировать</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <View style={(isEquipping || isSacrificing) ? { opacity: 0.4 } : undefined}>
+                <DeckSlotRow
+                  slots={[0, 1, 2, 3, 4].map((slot) => {
+                    const deckCard = activeDeck.deckCards?.find((dc: any) => dc.slotIndex === slot) ?? activeDeck.deckCards?.[slot];
+                    const card = deckCard?.userCard;
+                    return { cardId: card?.id ?? null, card };
+                  })}
+                  disabled={isEquipping || isSacrificing}
+                  onSlotTap={handleSlotTap}
+                />
               </View>
             </Animated2.View>
           ) : (
