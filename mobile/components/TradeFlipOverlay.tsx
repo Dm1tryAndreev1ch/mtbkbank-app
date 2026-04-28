@@ -4,6 +4,12 @@
 //
 // ANIM-10 compliance: when useReducedMotion() is true the flip is replaced
 // by a simple opacity fade. No motion blocks completion.
+//
+// Worklets note: `payload` is a Zustand-derived object that Reanimated
+// serialises for the UI thread. To avoid "Tried to modify key N of an
+// object which has been passed to a worklet" warnings, all fields are
+// snapshotted into local consts before being used in shared-value init
+// or JSX. The original prop object is never mutated after that point.
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, {
@@ -29,13 +35,21 @@ export function TradeFlipOverlay({ payload, onDone }: Props) {
   const colors = useThemeColor();
   const reducedMotion = useReducedMotion();
 
+  // Snapshot payload fields into local consts BEFORE any shared-value
+  // initialisation so Reanimated never sees a mutation on the frozen object.
+  const role = payload.role;
+  const card = role === 'SENDER' ? payload.outgoingCard : payload.incomingCard;
+  const cardName = card?.name ?? '—';
+  const cardIcon = (card?.brandIcon as any) ?? 'style';
+  const label = role === 'SENDER' ? '🃏 Карта отправлена' : '🎉 Карта получена!';
+  const initialRotateY = role === 'SENDER' ? 0 : -90;
+
   const opacity = useSharedValue(0);
-  const rotateY = useSharedValue(payload.role === 'SENDER' ? 0 : -90);
+  const rotateY = useSharedValue(initialRotateY);
   const cardScale = useSharedValue(0.9);
 
   useEffect(() => {
     if (reducedMotion) {
-      // ANIM-10: fade-only path — no flip, no spring.
       opacity.value = withSequence(
         withTiming(1, { duration: 250 }),
         withDelay(
@@ -49,12 +63,10 @@ export function TradeFlipOverlay({ payload, onDone }: Props) {
       return;
     }
 
-    // Full animation path.
     opacity.value = withTiming(1, { duration: 200 });
     cardScale.value = withTiming(1, { duration: 300 });
 
-    if (payload.role === 'SENDER') {
-      // Flip OUT: card rotates away (0 → 90 deg).
+    if (role === 'SENDER') {
       rotateY.value = withDelay(
         400,
         withTiming(90, { duration: 450 }, (done) => {
@@ -63,7 +75,6 @@ export function TradeFlipOverlay({ payload, onDone }: Props) {
         }),
       );
     } else {
-      // Flip IN: card rotates into view (-90 → 0 deg).
       rotateY.value = withDelay(
         400,
         withTiming(0, { duration: 450 }, (done) => {
@@ -84,9 +95,6 @@ export function TradeFlipOverlay({ payload, onDone }: Props) {
     ],
   }));
 
-  const card =
-    payload.role === 'SENDER' ? payload.outgoingCard : payload.incomingCard;
-
   return (
     <Pressable
       onPress={onDone}
@@ -98,7 +106,7 @@ export function TradeFlipOverlay({ payload, onDone }: Props) {
       />
       <View style={styles.center}>
         <Text style={[styles.label, { color: colors.onBackground ?? '#fff' }]}>
-          {payload.role === 'SENDER' ? '🃏 Карта отправлена' : '🎉 Карта получена!'}
+          {label}
         </Text>
         <Animated.View
           style={[
@@ -111,12 +119,12 @@ export function TradeFlipOverlay({ payload, onDone }: Props) {
           ]}
         >
           <MaterialIcons
-            name={(card?.brandIcon as any) ?? 'style'}
+            name={cardIcon}
             size={48}
             color={colors.primary}
           />
           <Text style={[styles.cardName, { color: colors.onSurface ?? colors.onBackground }]}>
-            {card?.name ?? '—'}
+            {cardName}
           </Text>
         </Animated.View>
       </View>
