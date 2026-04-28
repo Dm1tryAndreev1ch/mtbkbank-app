@@ -30,7 +30,8 @@ import { TradeFlipOverlay } from '../components/TradeFlipOverlay';
 
 SplashScreen.preventAutoHideAsync();
 
-// Maximum time to wait for fonts before rendering anyway (fallback to system fonts).
+// How long to wait for @expo-google-fonts before giving up and rendering
+// with system fonts. Guarantees SplashScreen.hideAsync() always fires.
 const FONT_TIMEOUT_MS = 5000;
 
 function RootLayout() {
@@ -42,8 +43,7 @@ function RootLayout() {
     'Manrope-ExtraBold': Manrope_800ExtraBold,
   });
 
-  // Fallback: if fonts haven't loaded within FONT_TIMEOUT_MS, render anyway.
-  // This prevents a permanent black screen when @expo-google-fonts is slow/offline.
+  // Safety net: hide the native splash even if the font CDN never responds.
   const [fontTimedOut, setFontTimedOut] = useState(false);
   useEffect(() => {
     if (fontsLoaded) return;
@@ -57,6 +57,9 @@ function RootLayout() {
   const storeTheme = useStore((state) => state.theme);
   const activeTheme = storeTheme === 'system' ? sysTheme : storeTheme;
 
+  // Hide the native splash screen only once fonts are ready (or timed out).
+  // Do NOT gate the React tree on this — BootGate renders its own spinner
+  // so the user always sees something immediately.
   useEffect(() => {
     if (loaded) SplashScreen.hideAsync();
   }, [loaded]);
@@ -74,7 +77,10 @@ function RootLayout() {
   const tradeAnim = useStore((s) => s.tradeAnim);
   const clearTradeAnim = useStore((s) => s.clearTradeAnim);
 
-  if (!loaded) return null;
+  // NOTE: `return null` intentionally removed.
+  // Blocking the entire tree on font load caused a black screen on every cold
+  // start (especially on Expo Go where fonts are fetched from CDN at runtime).
+  // BootGate handles its own loading state with a themed ActivityIndicator.
 
   return (
     <ThemeProvider value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}>
