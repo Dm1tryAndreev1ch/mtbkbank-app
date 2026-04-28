@@ -1,28 +1,27 @@
 // mobile/components/BootGate.tsx
 //
 // REL-02 + D-01 / D-04 / D-05 / D-20 — explicit 4-state boot machine for the mobile app.
-// idle -> loading -> ready (or -> error). 8-second AbortController hard timeout.
+// idle -> loading -> ready (or -> error). 4-second AbortController hard timeout.
 //
 // Decoupled from Zustand for the BOOT path: tokenStore.hydrate() reads SecureStore directly,
 // avoiding the persist-rehydrate chicken-and-egg. After state === 'ready', the routing
 // useEffect SUBSCRIBES to useStore selectors (isAuthed, onboarded) so post-login state
-// transitions (Plan 02-05's tokenStore.subscribe -> useStore.setState({isAuthed: true})) re-fire
-// the effect and route to /(tabs). This is the canonical login-success path (W4); Plan 02-08's
-// submitLogin does NOT call router.replace.
-//
-// Routing is imperative via expo-router once 'ready'; mobile/app/index.tsx becomes a no-op.
+// transitions re-fire the effect and route to /(tabs). This is the canonical login-success
+// path (W4); submitLogin does NOT call router.replace.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import * as tokenStore from '../services/tokenStore';
 import { getOnboarded } from '../services/secureStorageUiPrefs';
 import { useStore } from '../stores/useStore';
+import { useThemeColor } from '../hooks/useThemeColor';
 import BootError from './BootError';
 
 type BootState = 'idle' | 'loading' | 'ready' | 'error';
 
-const HYDRATE_TIMEOUT_MS = 8000;
+// Reduced from 8000 — fast enough for real devices, short enough to surface errors quickly.
+const HYDRATE_TIMEOUT_MS = 4000;
 
 interface Props {
   children: React.ReactNode;
@@ -30,9 +29,9 @@ interface Props {
 
 export default function BootGate({ children }: Props) {
   const [state, setState] = useState<BootState>('idle');
-  // Subscribe to Zustand selectors so the routing useEffect re-runs when these change post-boot.
   const isAuthed = useStore((s) => s.isAuthed);
   const onboarded = useStore((s) => s.onboarded);
+  const colors = useThemeColor();
 
   const controllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,9 +54,6 @@ export default function BootGate({ children }: Props) {
         getOnboarded(),
       ]);
       if (controller.signal.aborted) throw new Error('Aborted');
-      // Mirror onboarded into Zustand so the routing useEffect (which selects from useStore) sees it.
-      // Mirror isAuthed too — tokenStore.subscribe (Plan 02-05) usually drives this, but on initial
-      // hydrate we set it explicitly so the first routing pass uses correct values.
       useStore.setState({
         onboarded: onboardedFromDisk,
         isAuthed: tokenStore.isAuthed(),
@@ -76,7 +72,6 @@ export default function BootGate({ children }: Props) {
     }
   }, []);
 
-  // Initial mount.
   useEffect(() => {
     runBoot();
     return () => {
@@ -85,18 +80,22 @@ export default function BootGate({ children }: Props) {
     };
   }, [runBoot]);
 
-  // Routing once 'ready'. Re-fires on isAuthed / onboarded transitions (W4 — post-login flow).
+  // Delay router.replace by one tick so expo-router's navigation container
+  // is fully mounted before we attempt navigation.
   useEffect(() => {
     if (state !== 'ready') return;
-    if (!onboarded) {
-      router.replace('/onboarding');
-      return;
-    }
-    if (isAuthed) {
-      router.replace('/(tabs)');
-    } else {
-      router.replace('/login');
-    }
+    const t = setTimeout(() => {
+      if (!onboarded) {
+        router.replace('/onboarding');
+        return;
+      }
+      if (isAuthed) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/login');
+      }
+    }, 0);
+    return () => clearTimeout(t);
   }, [state, isAuthed, onboarded]);
 
   const onRetry = useCallback(() => {
@@ -109,6 +108,22 @@ export default function BootGate({ children }: Props) {
   }, []);
 
   if (state === 'error') return <BootError onRetry={onRetry} onExit={onExit} />;
-  if (state !== 'ready') return <View testID="boot-splash" />;
+
+  if (state !== 'ready') {
+    return (
+      <View style={[styles.splash, { backgroundColor: colors.background }]} testID="boot-splash">
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   return <>{children}</>;
 }
+
+const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
