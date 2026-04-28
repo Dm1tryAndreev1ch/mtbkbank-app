@@ -450,7 +450,19 @@ export const useStore = create<AppState>()(
       loadDecks: async () => {
         try {
           const { data } = await api.getDecks();
-          set((s) => ({ decks: mergeList(s.decks ?? [], data ?? [], 'http') }));
+          // Decks are always replaced wholesale from the server response.
+          //
+          // mergeList's updatedAt tie-breaker silently keeps the *existing*
+          // object when the server returns the same (or missing) timestamp —
+          // which happens right after updateDeck because the client already
+          // holds a copy with an identical updatedAt. The result: deckCards
+          // never updates in the store, so the UI appears frozen even though
+          // the mutation persisted on the backend.
+          //
+          // Decks are small (<10 items), mutate on every equip/remove/sacrifice,
+          // and carry no local-only fields that need protection, so a full
+          // replace is both correct and safe.
+          set({ decks: data ?? [] });
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить колоды') });
         }
