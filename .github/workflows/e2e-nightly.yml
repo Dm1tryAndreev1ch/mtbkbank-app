@@ -1,0 +1,59 @@
+# TEST-06: Maestro E2E nightly run on merge-to-main.
+# Runs at 02:00 UTC every night. NOT a PR gate.
+name: E2E Nightly (Maestro)
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch: # manual trigger when needed
+
+jobs:
+  maestro-e2e:
+    name: Card-Drop Reveal E2E
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Maestro CLI
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> $GITHUB_PATH
+
+      - name: Start backend
+        run: docker compose up -d --wait
+
+      - name: Build Android debug APK
+        run: |
+          cd mobile
+          npx expo prebuild --platform android --no-install
+          cd android && ./gradlew assembleDebug --no-daemon
+
+      - name: Run Maestro flow on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          script: |
+            adb install mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            maestro test mobile/e2e/card-drop-reveal.yaml
+        env:
+          E2E_TEST_PHONE: ${{ secrets.E2E_TEST_PHONE }}
+          E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
+          E2E_TEST_TOKEN: ${{ secrets.E2E_TEST_TOKEN }}
+          E2E_API_HOST: localhost
+          E2E_API_PORT: '3000'
+
+      - name: Upload Maestro report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-report
+          path: ~/.maestro/tests/

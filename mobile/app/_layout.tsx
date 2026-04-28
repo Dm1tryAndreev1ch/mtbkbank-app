@@ -15,7 +15,7 @@ import {
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useStore } from '../stores/useStore';
@@ -25,6 +25,9 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { ToastHost } from '../components/Toast';
 import { useCardExpiredListener } from '../hooks/useCardExpiredListener';
+// ANIM-08: trade animation listener + overlay.
+import { useTradeAnimationListener } from '../hooks/useTradeAnimationListener';
+import { TradeFlipOverlay } from '../components/TradeFlipOverlay';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -46,18 +49,23 @@ function RootLayout() {
   }, [loaded]);
 
   // Plan 06-06 — root-mount the CARD_EXPIRED Socket.IO listener once so it
-  // survives tab switches. The hook is idempotent (Pitfall 9) and no-ops until
-  // a token is present (the ws singleton handles lazy connect from P01).
+  // survives tab switches.
   useCardExpiredListener();
 
-  // Plan 04-01 D-12 — wire NetInfo into useStore.network so OfflineBanner mounts
-  // and ActionButton disables on connectivity loss.
+  // ANIM-08 — root-mount the TRADE_COMPLETED listener once; survives tab switches.
+  useTradeAnimationListener();
+
+  // Plan 04-01 D-12 — wire NetInfo into useStore.network.
   useEffect(() => {
     const sub = NetInfo.addEventListener((s) =>
       useStore.getState().network.setOnline(Boolean(s.isConnected)),
     );
     return () => sub();
   }, []);
+
+  // ANIM-08: read trade animation state from store.
+  const tradeAnim = useStore((s) => s.tradeAnim);
+  const clearTradeAnim = useStore((s) => s.clearTradeAnim);
 
   if (!loaded) return null;
 
@@ -67,9 +75,21 @@ function RootLayout() {
         <ErrorBoundary scope="root">
           <OfflineBanner />
           <ToastHost />
+          {/* ANIM-08: render overlay above everything when a trade completes */}
+          {tradeAnim ? (
+            <TradeFlipOverlay payload={tradeAnim} onDone={clearTradeAnim} />
+          ) : null}
           <BootGate>
             <BiometricGuard>
-              <Stack screenOptions={{ headerShown: false }} />
+              {/* ANIM-09: native push/pop curves via Reanimated stack */}
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  animation:
+                    Platform.OS === 'ios' ? 'ios' : 'slide_from_right',
+                  animationDuration: 350,
+                }}
+              />
             </BiometricGuard>
           </BootGate>
         </ErrorBoundary>

@@ -2,10 +2,43 @@ import React, { useEffect } from 'react';
 import { Tabs } from 'expo-router';
 import { AppState, AppStateStatus, View, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { Shadows } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useStore } from '../../stores/useStore';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
+
+// ANIM-09 — animates tab icon scale on focus using Reanimated spring.
+// ANIM-10 — skips animation when reducedMotion is enabled.
+function AnimatedTabIcon({
+  focused,
+  children,
+}: {
+  focused: boolean;
+  children: React.ReactNode;
+}) {
+  const reducedMotion = useReducedMotion();
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    if (reducedMotion) return;
+    scale.value = focused
+      ? withSpring(1.18, { damping: 10, stiffness: 200 })
+      : withTiming(1, { duration: 150 });
+  }, [focused, reducedMotion, scale]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return <Animated.View style={animStyle}>{children}</Animated.View>;
+}
 
 function TabLayoutInner() {
   const colors = useThemeColor();
@@ -25,7 +58,7 @@ function TabLayoutInner() {
     return () => sub.remove();
   }, [token, loadNotifications, loadCards, loadDecks]);
 
-  /** Keep inventory and in-app notification badge in sync while the app is open (server ticks active-deck HP every minute). */
+  /** Keep inventory and in-app notification badge in sync while the app is open. */
   useEffect(() => {
     if (!token) return;
     const id = setInterval(() => {
@@ -76,8 +109,10 @@ function TabLayoutInner() {
         name="index"
         options={{
           title: 'Главная',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="home" size={26} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <AnimatedTabIcon focused={focused}>
+              <MaterialIcons name="home" size={26} color={color} />
+            </AnimatedTabIcon>
           ),
         }}
       />
@@ -85,8 +120,10 @@ function TabLayoutInner() {
         name="analytics"
         options={{
           title: 'Аналитика',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="insights" size={26} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <AnimatedTabIcon focused={focused}>
+              <MaterialIcons name="insights" size={26} color={color} />
+            </AnimatedTabIcon>
           ),
         }}
       />
@@ -96,7 +133,13 @@ function TabLayoutInner() {
           title: '',
           tabBarIcon: ({ color, focused }) => (
             <View style={styles.fabContainer}>
-              <View style={[styles.fab, focused && styles.fabActive, { backgroundColor: colors.primary }]}>
+              <View
+                style={[
+                  styles.fab,
+                  focused && styles.fabActive,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
                 <MaterialIcons name="arrow-upward" size={30} color={colors.onPrimary} />
               </View>
             </View>
@@ -107,8 +150,10 @@ function TabLayoutInner() {
         name="products"
         options={{
           title: 'Продукты',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="grid-view" size={26} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <AnimatedTabIcon focused={focused}>
+              <MaterialIcons name="grid-view" size={26} color={color} />
+            </AnimatedTabIcon>
           ),
         }}
       />
@@ -116,8 +161,10 @@ function TabLayoutInner() {
         name="account"
         options={{
           title: 'Профиль',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="person" size={26} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <AnimatedTabIcon focused={focused}>
+              <MaterialIcons name="person" size={26} color={color} />
+            </AnimatedTabIcon>
           ),
         }}
       />
@@ -132,8 +179,7 @@ function TabLayoutInner() {
   );
 }
 
-// M-M5 / D-05: per-route ErrorBoundary wraps the entire tabs subtree so a
-// crash in one tab renders the fallback instead of a white screen.
+// M-M5 / D-05: per-route ErrorBoundary wraps the entire tabs subtree.
 export default function TabLayout() {
   return (
     <ErrorBoundary scope="route" routeName="tabs">

@@ -7,6 +7,7 @@ import * as api from '../services/api';
 import * as tokenStore from '../services/tokenStore';
 import { secureStorageUiPrefs } from '../services/secureStorageUiPrefs';
 import { mergeList, mergeListWithRemovals } from './mergeByUpdatedAt';
+import type { TradeAnimPayload } from '../hooks/useTradeAnimationListener';
 
 interface User {
   id: string;
@@ -21,25 +22,16 @@ interface User {
 // D-06: structured error shape replacing the prior `string | null`.
 export type AppError = { code: string; message: string; requestId?: string } | null;
 
-// Plan 06-06 D-20 — local UserCard shape extended with the `pendingExpire` flag
-// that gates the per-card collapse animation in InventoryGrid. Set by the
-// `CARD_EXPIRED` Socket.IO listener (live event) OR by `queueLocalExpire` after
-// a `mergeListWithRemovals` reconciliation diff (replay tail). NEVER set by a UI
-// gesture — there is no optimistic local-only delete path (success criterion 4).
+// Plan 06-06 D-20 — local UserCard shape extended with the `pendingExpire` flag.
 export interface LocalUserCard {
   id: string;
   updatedAt?: string;
   pendingExpire?: boolean;
-  // Open shape — backend payload includes `health`, `collectionCard`, etc. The
-  // CARD_EXPIRED listener and InventoryGrid grid render are the actual consumers.
-  // Typed as `any` (not `unknown`) so existing consumers that treat cards as
-  // loose objects (e.g. `card.health`, `card.collectionCard.name`) keep
-  // compiling without forced narrowing.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 
-// Plan 04-01 D-01/D-02 — Toast slice driven by useStore; consumed by <ToastHost />.
+// Plan 04-01 D-01/D-02 — Toast slice.
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 export interface ToastEntry {
   key: string;
@@ -65,26 +57,15 @@ export interface NetworkSlice {
   setOnline: (v: boolean) => void;
 }
 
-// Plan 04-01 D-10 — rate-limit registry keyed by `${METHOD} ${path}`.
+// Plan 04-01 D-10 — rate-limit registry.
 export type RateLimitMap = Record<string, { until: number; remaining?: number }>;
 
 interface AppState {
   theme: 'light' | 'dark' | 'system';
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   user: User | null;
-  /**
-   * Derived view of the access token. Owned by tokenStore (REL-01); kept in sync via the
-   * module-level `tokenStore.subscribe` below. Existing screens (e.g. app/(tabs)/_layout.tsx)
-   * read this for "is the user logged in" gating until Plan 02-09 migrates them to `isAuthed`.
-   */
   token: string | null;
   isAuthed: boolean;
-  /**
-   * Onboarding-completed flag (Plan 02-07). Sourced from `secureStorageUiPrefs.getOnboarded()`
-   * by BootGate at boot time; selector-subscribed by BootGate's routing useEffect so completion
-   * of /onboarding (which calls `setOnboarded(true)` + `useStore.setState({onboarded: true})`)
-   * re-fires the routing effect.
-   */
   onboarded: boolean;
   isLoading: boolean;
   accounts: any[];
@@ -109,11 +90,6 @@ interface AppState {
     pin: string;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => Promise<void>;
-  /**
-   * @deprecated since Plan 02-05. BootGate (Plan 02-09) owns hydrate via `tokenStore.hydrate()`.
-   * Kept as a thin wrapper so app/index.tsx keeps booting until Plan 02-09 lands. Remove the
-   * wrapper (and its AppState entry) when app/index.tsx no longer references it.
-   */
   loadToken: () => Promise<boolean>;
 
   // Data loading
@@ -133,27 +109,23 @@ interface AppState {
   cardDesign: string;
   setCardDesign: (design: string) => Promise<void>;
 
-  // Plan 04-01 — UX primitives plumbing
+  // Plan 04-01 — UX primitives
   toast: ToastSlice;
   network: NetworkSlice;
   rateLimit: RateLimitMap;
   setRateLimit: (key: string, value: { until: number; remaining?: number }) => void;
   clearRateLimit: (key: string) => void;
 
-  // Plan 06-06 D-20 — flag a card mid-collapse animation. Reads stay local; never
-  // wired to a UI gesture (success criterion 4 — no optimistic local-only delete).
+  // Plan 06-06 D-20/D-19 — card expiry animation helpers.
   markCardPendingExpire: (userCardId: string) => void;
-  // Plan 06-06 D-19 — physically remove a card from the local store. Invoked
-  // ONLY by `queueLocalExpire` (server-confirmed CARD_EXPIRED OR reconciliation
-  // diff via mergeListWithRemovals). Never imported by any UI component.
   removeCard: (userCardId: string) => void;
+
+  // ANIM-08 — trade animation state.
+  tradeAnim: TradeAnimPayload | null;
+  showTradeAnim: (payload: TradeAnimPayload) => void;
+  clearTradeAnim: () => void;
 }
 
-/**
- * Build a structured AppError from any rejection. Backend Phase-1 codebook responses surface
- * `{ error, message, requestId }`; bare network errors fall back to a Russian fallback string
- * supplied by the caller.
- */
 function toAppError(e: any, fallbackMessage: string, fallbackCode = 'NETWORK_ERROR'): AppError {
   const code = e?.response?.data?.error || fallbackCode;
   const message = e?.response?.data?.message || fallbackMessage;
@@ -202,7 +174,7 @@ export const useStore = create<AppState>()(
             const queue = s.toast.queue
               .filter((e) => e.key !== key)
               .concat(entry)
-              .slice(-5); // cap 5; drop oldest
+              .slice(-5);
             return { toast: { ...s.toast, queue } };
           });
         },
@@ -229,7 +201,7 @@ export const useStore = create<AppState>()(
           return { rateLimit: next };
         }),
 
-      // Plan 06-06 — D-20: flag a card mid-collapse. Idempotent.
+      // Plan 06-06 — D-20.
       markCardPendingExpire: (userCardId) =>
         set((s) => ({
           cards: (s.cards ?? []).map((c) =>
@@ -237,14 +209,18 @@ export const useStore = create<AppState>()(
           ),
         })),
 
-      // Plan 06-06 — D-19: physically remove a card. Caller must be queueLocalExpire.
+      // Plan 06-06 — D-19.
       removeCard: (userCardId) =>
         set((s) => ({
           cards: (s.cards ?? []).filter((c) => c.id !== userCardId),
         })),
 
+      // ANIM-08 — trade animation slice.
+      tradeAnim: null,
+      showTradeAnim: (payload) => set({ tradeAnim: payload }),
+      clearTradeAnim: () => set({ tradeAnim: null }),
+
       setCardDesign: async (design) => {
-        // D-09: UI pref persist failure is non-sensitive — keep silent but breadcrumb.
         try {
           await secureStorageUiPrefs.setItem('cardDesign', design);
         } catch (e) {
@@ -262,27 +238,17 @@ export const useStore = create<AppState>()(
         set({ isLoading: true, error: null });
         try {
           const { data } = await api.login(phone, pin);
-          // api.ts persists tokens via tokenStore.setTokens (REL-01); we only mirror user state.
           const token = data.accessToken || data.token;
           if (!token) {
             set({
               isLoading: false,
-              error: {
-                code: 'AUTH_NO_TOKEN',
-                message: 'Сервер не вернул токен',
-              },
+              error: { code: 'AUTH_NO_TOKEN', message: 'Сервер не вернул токен' },
             });
             return false;
           }
           set({ user: data.user, isLoading: false });
-          // `token` and `isAuthed` are refreshed by the tokenStore subscription below.
           return true;
         } catch (e: any) {
-          // A persist failure surfaces as a thrown Error from tokenStore.setTokens (D-09).
-          // It has no `response` field (it's not an axios rejection), so we treat any rejection
-          // without a server response as a probable persist failure ONLY if the api call itself
-          // would have already produced a response — which it wouldn't have, since tokenStore
-          // throws AFTER the HTTP success. Heuristic: `e?.response` absent + `e?.message` set.
           const isPersistFailure =
             e?.message === 'AUTH_TOKEN_PERSIST_FAILED' ||
             (!e?.response && typeof e?.message === 'string' && e.message.length > 0);
@@ -320,9 +286,7 @@ export const useStore = create<AppState>()(
                   ? String((data as { error: string }).error)
                   : undefined;
             if (serverMsg) {
-              set({
-                error: toAppError(e, serverMsg, 'AUTH_REGISTER_FAILED'),
-              });
+              set({ error: toAppError(e, serverMsg, 'AUTH_REGISTER_FAILED') });
               return { ok: false, error: serverMsg };
             }
             if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
@@ -354,8 +318,6 @@ export const useStore = create<AppState>()(
       },
 
       logout: async () => {
-        // api.logout() best-effort calls /auth/logout AND tokenStore.clear() internally.
-        // Surface server errors via Sentry breadcrumb (NOT silent) — REL-04.
         await api.logout().catch((e: unknown) => {
           Sentry.addBreadcrumb({
             category: 'store.logout',
@@ -364,7 +326,6 @@ export const useStore = create<AppState>()(
             data: { error: String((e as any)?.message || e).slice(0, 200) },
           });
         });
-        // tokenStore.clear() already ran inside api.logout(); the subscription will sync token/isAuthed.
         set({
           user: null,
           accounts: [],
@@ -381,7 +342,6 @@ export const useStore = create<AppState>()(
       },
 
       loadToken: async () => {
-        // Deprecated wrapper (see interface JSDoc). Hydrates tokenStore once and reports authed-ness.
         try {
           if (!tokenStore.isHydrated()) {
             await tokenStore.hydrate();
@@ -403,7 +363,6 @@ export const useStore = create<AppState>()(
           set({ user: data });
           return true;
         } catch (e: any) {
-          // Hydrated tokens but /users/me rejected — clear and surface error so callers can route to login.
           await tokenStore.clear().catch((clearErr: unknown) => {
             Sentry.addBreadcrumb({
               category: 'store.loadToken',
@@ -412,9 +371,7 @@ export const useStore = create<AppState>()(
               data: { error: String((clearErr as any)?.message || clearErr).slice(0, 200) },
             });
           });
-          set({
-            error: toAppError(e, 'Не удалось загрузить профиль'),
-          });
+          set({ error: toAppError(e, 'Не удалось загрузить профиль') });
           return false;
         }
       },
@@ -431,7 +388,6 @@ export const useStore = create<AppState>()(
       loadAccounts: async () => {
         try {
           const { data } = await api.getAccounts();
-          // REL-12: HTTP loses ties; ws-pushed updates survive racing HTTP refresh.
           set((s) => ({ accounts: mergeList(s.accounts ?? [], data ?? [], 'http') }));
         } catch (e: any) {
           set({ error: toAppError(e, 'Не удалось загрузить счета') });
@@ -454,10 +410,7 @@ export const useStore = create<AppState>()(
           const { data } = await api.getInventory(params);
           set((s) => ({
             cards: mergeListWithRemovals(s.cards ?? [], data ?? [], 'http', {
-              // Plan 06-06 D-20: never replace or remove a card mid-collapse.
               skipPredicate: (existing) => existing.pendingExpire === true,
-              // Plan 06-06 D-21: server-confirmed reconciliation diff drives the
-              // same per-card collapse animation as a live CARD_EXPIRED event.
               onRemoved: (removed) => queueLocalExpire(removed),
             }),
           }));
@@ -541,25 +494,13 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'mtbank-storage',
-      // D-09: only NON-SENSITIVE UI prefs (theme, cardDesign) are persisted here. Auth tokens
-      // live in tokenStore (REL-01) and never touch this storage adapter.
       storage: createJSONStorage(() => secureStorageUiPrefs),
       partialize: (state) => ({ theme: state.theme, cardDesign: state.cardDesign }),
     },
   ),
 );
 
-// Plan 06-06 D-21 — reconciliation tail. Called by `loadCards`'s onRemoved hook
-// when a server response is missing one or more cards we still hold locally
-// (i.e. a CARD_EXPIRED Socket.IO event was dropped). Stagger removals 200ms
-// apart so the user sees a sequence of collapse animations rather than the
-// whole inventory disappearing at once.
-//
-// Each removed card: (1) flag `pendingExpire` (drives the collapse animation in
-// InventoryGrid); (2) after 800ms (300ms collapse + buffer), remove from store.
-//
-// Exported for test wiring; in production it is invoked only by `loadCards`
-// onRemoved. There is no UI surface that imports this directly.
+// Plan 06-06 D-21 — reconciliation tail.
 export function queueLocalExpire(removed: LocalUserCard[]): void {
   removed.forEach((card, i) => {
     setTimeout(() => {
@@ -569,9 +510,7 @@ export function queueLocalExpire(removed: LocalUserCard[]): void {
   });
 }
 
-// REL-01: keep store.token / store.isAuthed in sync with tokenStore (the SSOT for auth tokens).
-// Singleton subscription registered at module-load time; re-registers automatically on hot reload
-// because the new module instance constructs a fresh listener set.
+// REL-01: keep store.token / store.isAuthed in sync with tokenStore.
 tokenStore.subscribe(() => {
   useStore.setState({
     token: tokenStore.getAccess(),

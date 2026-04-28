@@ -1,0 +1,55 @@
+# TEST-06 — Maestro E2E: card-drop reveal end-to-end.
+# Runs nightly on merge-to-main (NOT a PR gate — see .github/workflows/e2e-nightly.yml).
+#
+# Flow:
+#   1. Login with test credentials
+#   2. Trigger purchase via test endpoint (POST /test/trigger-card-drop)
+#   3. Wait for CARD_DROPPED event → reveal overlay appears
+#   4. Assert card-front is visible (animation completed)
+#   5. Dismiss reveal
+#   6. Navigate to collection → assert card in inventory
+
+appId: com.gmbank.app
+---
+- launchApp:
+    clearState: true
+
+# 1. Login
+- tapOn:
+    id: "input-phone"
+- inputText: "${E2E_TEST_PHONE}"
+- tapOn:
+    id: "input-password"
+- inputText: "${E2E_TEST_PASSWORD}"
+- tapOn:
+    id: "btn-login"
+- assertVisible:
+    id: "tab-home"
+    timeout: 8000
+
+# 2. Simulate purchase via test endpoint
+- runScript:
+    file: ./scripts/triggerCardDrop.js
+
+# 3. Wait for CARD_DROPPED to surface the reveal overlay
+- assertVisible:
+    id: "card-drop-reveal-root"
+    timeout: 10000
+
+# 4. Assert reveal animation completes — card-front becomes visible
+- assertVisible:
+    id: "card-front"
+    timeout: 6000
+
+# 5. Dismiss reveal
+- tapOn:
+    id: "card-drop-reveal-root"
+
+# 6. Navigate to collection and assert card is in inventory
+- tapOn:
+    id: "tab-account"
+- tapOn:
+    text: "Коллекция"
+- assertVisible:
+    id: "collection-card-list"
+    timeout: 5000

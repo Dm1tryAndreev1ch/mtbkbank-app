@@ -1,5 +1,6 @@
 // Plan 04-01 D-06/D-10 — ActionButton. Single-flight async lock; offline-aware;
 // rate-limit countdown. Surfaces thrown errors via useStore.toast.
+// ANIM-09/ANIM-10: press-scale feedback guarded by useReducedMotion().
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, StyleSheet, ActivityIndicator, View, Pressable } from 'react-native';
 import Animated, {
@@ -9,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Fonts, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { useStore } from '../stores/useStore';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 function extractMessage(err: any): string {
   return (
@@ -79,6 +81,8 @@ export function ActionButton({
   const inflight = useRef<Promise<unknown> | null>(null);
   const isOnline = useStore((s) => s.network.isOnline);
   const rl = useStore((s) => (endpointKey ? s.rateLimit[endpointKey] : undefined));
+  // ANIM-10: skip press-scale animation when reduced-motion is enabled.
+  const reducedMotion = useReducedMotion();
   const scale = useSharedValue(1);
 
   const blockedByRate = !!rl && rl.until > Date.now();
@@ -122,10 +126,15 @@ export function ActionButton({
           onPress={handlePress}
           disabled={isDisabled}
           onPressIn={() => {
-            scale.value = withTiming(0.97, { duration: 80 });
+            // ANIM-09/ANIM-10: scale down on press; skip if reduced-motion.
+            if (!reducedMotion) {
+              scale.value = withTiming(0.97, { duration: 80 });
+            }
           }}
           onPressOut={() => {
-            scale.value = withTiming(1, { duration: 120 });
+            if (!reducedMotion) {
+              scale.value = withTiming(1, { duration: 120 });
+            }
           }}
           style={[
             styles.btn,
