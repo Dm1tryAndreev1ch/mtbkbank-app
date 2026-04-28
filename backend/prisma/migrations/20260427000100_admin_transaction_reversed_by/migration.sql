@@ -1,22 +1,36 @@
 -- Phase 4.5 / 04.5-02 / ADMIN-02 — Migration B: additive Transaction.reversedById.
 --
--- Adds the nullable self-FK column + UNIQUE index + FK constraint that admin
--- TRANSACTION_REVERSE uses for idempotency. A second reverse attempt against
--- the same original transaction collides on P2002 (UNIQUE violation), which
--- the route handler translates to 409 TRANSACTION_ALREADY_REVERSED.
---
--- Additive nullable column — safe to apply online; default Prisma transaction
--- semantics are fine (no `-- prisma-disable-transaction` needed because we
--- are NOT using CREATE INDEX CONCURRENTLY here; the unique index lock is
--- acceptable for the small Transaction backfill window).
+-- Idempotent version: every DDL statement is guarded with IF NOT EXISTS so the
+-- migration is safe to apply on a database that already has these objects
+-- (e.g. applied via the previous short-name dir 20260427_admin_transaction_reversed_by).
+-- Prisma P3009 is resolved because the statements no longer fail on duplicate objects.
 
-ALTER TABLE "Transaction" ADD COLUMN "reversedById" TEXT;
+-- 1. Add column only if it does not already exist.
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_name = 'Transaction' AND column_name = 'reversedById'
+  ) THEN
+    ALTER TABLE "Transaction" ADD COLUMN "reversedById" TEXT;
+  END IF;
+END $$;
 
-CREATE UNIQUE INDEX "Transaction_reversedById_key" ON "Transaction"("reversedById");
+-- 2. Create unique index only if it does not already exist.
+CREATE UNIQUE INDEX IF NOT EXISTS "Transaction_reversedById_key"
+  ON "Transaction"("reversedById");
 
-ALTER TABLE "Transaction"
-  ADD CONSTRAINT "Transaction_reversedById_fkey"
-  FOREIGN KEY ("reversedById")
-  REFERENCES "Transaction"("id")
-  ON DELETE SET NULL
-  ON UPDATE NO ACTION;
+-- 3. Add FK constraint only if it does not already exist.
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+     WHERE constraint_name = 'Transaction_reversedById_fkey'
+       AND table_name = 'Transaction'
+  ) THEN
+    ALTER TABLE "Transaction"
+      ADD CONSTRAINT "Transaction_reversedById_fkey"
+      FOREIGN KEY ("reversedById")
+      REFERENCES "Transaction"("id")
+      ON DELETE SET NULL
+      ON UPDATE NO ACTION;
+  END IF;
+END $$;
