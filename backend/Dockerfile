@@ -9,6 +9,26 @@ RUN npx prisma generate
 
 COPY src ./src/
 
+# ── dev ───────────────────────────────────────────────────────────────────────────────────
+# Full install (devDependencies included): pino-pretty, nodemon, etc.
+# src/ and prisma/ are mounted as volumes by docker-compose.dev.yml,
+# so no COPY needed — nodemon picks up live changes automatically.
+# Runs as root so volume-mounted files are always writable.
+FROM node:20-alpine AS dev
+WORKDIR /app
+
+ENV NODE_ENV=development
+
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm ci
+RUN npx prisma generate
+
+EXPOSE 3000
+
+# nodemon watches src/ for changes and restarts the process.
+CMD ["npx", "nodemon", "src/index.js"]
+
 # ── runtime ───────────────────────────────────────────────────────────────────────────────
 # node:20-alpine runtime, no devDependencies.
 # Target image size < 400 MB (DEPLOY-01).

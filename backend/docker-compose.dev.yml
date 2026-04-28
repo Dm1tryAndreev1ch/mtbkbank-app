@@ -1,0 +1,29 @@
+# Development overlay — use on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# What this file changes vs docker-compose.yml:
+#   - Builds the `dev` Dockerfile stage (full deps, nodemon, pino-pretty)
+#   - Sets NODE_ENV=development so pino-pretty pretty-prints logs
+#   - Mounts src/ and prisma/ for hot-reload without image rebuilds
+#   - Removes restart:always so crashes don't loop silently in dev
+
+services:
+  api:
+    build:
+      context: .
+      target: dev
+    restart: "no"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://mtbbank:mtbbank_secret_2024@postgres:5432/mtbbank
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: mtbbank_jwt_secret_change_in_production
+      JWT_REFRESH_SECRET: mtbbank_jwt_refresh_secret_change_in_production
+      PORT: 3000
+      LOG_LEVEL: debug
+    volumes:
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+      # Prevent host node_modules from overwriting container node_modules
+      - /app/node_modules
