@@ -1,0 +1,4 @@
+-- Migration stub: 20260427000200_refresh_token_expires_at
+-- This migration failed during a prior run and was rolled back.
+-- The actual schema change is applied in 20260427000500_refresh_token_expires_at.
+-- This file exists so Prisma can resolve the failed DB record.
