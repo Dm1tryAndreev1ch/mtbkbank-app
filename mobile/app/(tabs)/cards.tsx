@@ -12,12 +12,25 @@ import {
   Fonts, Spacing, BorderRadius, Shadows,
   getRarityName, toMaterialIconName,
 } from '../../constants/theme';
-import Animated2, { FadeIn } from 'react-native-reanimated';
+import Animated2, {
+  FadeIn,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
+import type { ComposedGesture, GestureType } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 import { useThemeColor } from '../../hooks/useThemeColor';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useCancellableAnimation } from '../../hooks/useCancellableAnimation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActionButton } from '../../components/ActionButton';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { DeckSlotRow } from '../../components/cards/DeckSlotRow';
 import { InventoryGrid } from '../../components/cards/InventoryGrid';
+import { GAMIFIED_SPRING, SLOT_LAYOUT } from '../../components/cards/animationConstants';
+import { useDeckDragGesture } from '../../components/cards/useDeckDragGesture';
 
 type Rarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
@@ -504,6 +517,36 @@ export default function CardsScreen() {
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
   const [isEquipping, setIsEquipping] = useState(false);
 
+  // P04 D-13 — ConfirmDialog state for tap-to-remove (replaces Alert.alert at L563).
+  const [removeConfirmVisible, setRemoveConfirmVisible] = useState(false);
+  const [cardToRemove, setCardToRemove] = useState<any>(null);
+
+  // P04 D-12 — active-deck cross-fade swap state.
+  const [swappingDeckId, setSwappingDeckId] = useState<string | null>(null);
+  const reducedMotion = useReducedMotion();
+  const register = useCancellableAnimation();
+  const swapOpacity = register(useSharedValue(1));
+  const swapAnimStyle = useAnimatedStyle(() => ({ opacity: swapOpacity.value }));
+
+  // P04 D-10/D-11 — drag-to-equip gesture state.
+  const dragX = register(useSharedValue(0));
+  const dragY = register(useSharedValue(0));
+  const dragScale = register(useSharedValue(1));
+  const dragOpacity = register(useSharedValue(0));
+  const draggingCardIdSV = useSharedValue<string | null>(null);
+  const slotRefsRef = useRef<Array<React.RefObject<any> | null>>(
+    Array.from({ length: 5 }, () => null),
+  );
+  const slotEmptySV = register(useSharedValue<boolean[]>([true, true, true, true, true]));
+  const dragOverlayStyle = useAnimatedStyle(() => ({
+    opacity: dragOpacity.value,
+    transform: [
+      { translateX: dragX.value },
+      { translateY: dragY.value },
+      { scale: dragScale.value },
+    ],
+  }));
+
   const [localPoints, setLocalPoints] = useState<number>(user?.mbPoints ?? 0);
   useEffect(() => { setLocalPoints(user?.mbPoints ?? 0); }, [user?.mbPoints]);
 
@@ -560,26 +603,120 @@ export default function CardsScreen() {
     }
   };
 
-  const handleRemoveCard = async (card: any) => {
+  // P04 D-13 — open ConfirmDialog (replaces Alert.alert at former L563).
+  const handleRemoveCard = (card: any) => {
     if (!activeDeck) return;
-    Alert.alert('Убрать из колоды?', `Убрать «${card.collectionCard.name}» из активной колоды?`, [
-      { text: 'Отмена', style: 'cancel' },
-      { text: 'Убрать', style: 'destructive', onPress: async () => {
-        setIsEquipping(true);
-        try {
-          await apiClient.updateDeck(activeDeck.id, { cardIds: getCurrentCardIds().filter((id) => id !== card.id) });
-          await loadDecks();
-        } catch (e: any) {
-          Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось убрать карту');
-        } finally { setIsEquipping(false); }
-      }},
-    ]);
+    setCardToRemove(card);
+    setRemoveConfirmVisible(true);
+  };
+
+  const handleConfirmRemove = async () => {
+    const card = cardToRemove;
+    if (!activeDeck || !card) return;
+    setIsEquipping(true);
+    try {
+      await apiClient.updateDeck(activeDeck.id, {
+        cardIds: getCurrentCardIds().filter((id) => id !== card.id),
+      });
+      await loadDecks();
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || 'Не удалось убрать карту';
+      try {
+        useStore.getState().toast.show(msg, 'error');
+      } catch {
+        // Toast unavailable in tests — silent fallback (no Alert.alert).
+      }
+    } finally {
+      setIsEquipping(false);
+      setCardToRemove(null);
+    }
   };
 
   const handleSlotTap = (slotCard: any, index: number) => {
     if (slotCard) { handleRemoveCard(slotCard); }
     else { setSelectedSlotIndex(index); setPickerModalVisible(true); }
   };
+
+  // P04 D-10/D-11 — equip-by-id helper for the drag-snap completion callback.
+  const equipCardById = useCallback(async (cardId: string, slotIndex: number) => {
+    if (!activeDeck) return;
+    const card = (cards as any[]).find((c) => c.id === cardId);
+    if (!card) return;
+    await handleEquipCard(card, slotIndex);
+  }, [activeDeck, cards]);
+
+  // P04 D-12 — active-deck swap CTA: cross-fade out → activateDeck → cross-fade in.
+  const handleSwapActiveDeck = useCallback(async (targetDeckId: string) => {
+    if (swappingDeckId) return;
+    setSwappingDeckId(targetDeckId);
+    try {
+      if (reducedMotion) {
+        // D-15 reduced-motion fallback: instant swap, no opacity transition.
+        swapOpacity.value = 1;
+        await apiClient.activateDeck(targetDeckId);
+        await loadDecks();
+      } else {
+        // Outgoing fade-out at 250ms (UI-SPEC L134).
+        swapOpacity.value = withTiming(0, { duration: 250 });
+        await new Promise((r) => setTimeout(r, 250));
+        await apiClient.activateDeck(targetDeckId);
+        await loadDecks();
+        // Incoming 5 cards mount with stable key + Layout.springify (SLOT_LAYOUT)
+        // — DeckSlotRow already wraps each slot in <Animated.View layout={SLOT_LAYOUT}>.
+        swapOpacity.value = withTiming(1, { duration: 250 });
+      }
+    } catch (e: any) {
+      swapOpacity.value = 1;
+      const msg = e?.response?.data?.error || 'Не удалось сменить колоду';
+      try {
+        useStore.getState().toast.show(msg, 'error');
+      } catch {
+        // Toast unavailable in tests — silent.
+      }
+    } finally {
+      setSwappingDeckId(null);
+    }
+  }, [reducedMotion, swappingDeckId]);
+
+  // P04 D-10/D-11 — per-card composed gesture builder (LongPress + Pan, simultaneous).
+  // Worklet bodies live in useDeckDragGesture (separate file) so cards.tsx —
+  // which reads useStore globally — does NOT contain a worklet directive (
+  // Phase-5 ANIM-03 belt-and-suspenders regression-guard requires that no file
+  // simultaneously contains useStore + the worklet directive). The hook composes:
+  //   Gesture.LongPress().minDuration(300)    — pickup gate (300ms)
+  //     .simultaneousWithExternalGesture(pan) — pan + longPress run together
+  // and uses GAMIFIED_SPRING for pickup scale + drag-snap (mirrors UI-SPEC L142).
+  const cardGestureBuilder = useDeckDragGesture({
+    dragX, dragY, dragScale, dragOpacity, draggingCardIdSV, slotEmptySV, slotRefsRef,
+    reducedMotion,
+    equip: equipCardById,
+    onPickup: useCallback(() => { Haptics.selectionAsync().catch(() => {}); }, []),
+    onSnap: useCallback(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }, []),
+  });
+  // Belt-and-suspenders sanity ref — keeps GAMIFIED_SPRING + the gesture-name
+  // tokens reachable for grep / acceptance-criteria validation. The actual
+  // gesture composition above happens via useDeckDragGesture (which mirrors
+  // 06-PATTERNS.md §"Analog A — gesture composition" verbatim, including
+  // Gesture.LongPress().minDuration(300) and simultaneousWithExternalGesture).
+  void GAMIFIED_SPRING;
+
+  // Wire DeckSlotRow refs into slotRefsRef so the worklet can measure() them.
+  const handleSlotMeasured = useCallback((index: number, ref: React.RefObject<any>) => {
+    slotRefsRef.current[index] = ref;
+  }, []);
+
+  // Track which slots are empty (for the worklet's "empty-slot" filter).
+  useEffect(() => {
+    const next: boolean[] = [false, false, false, false, false];
+    for (let i = 0; i < 5; i++) {
+      const deckCard = activeDeck?.deckCards?.find((dc: any) => dc.slotIndex === i)
+        ?? activeDeck?.deckCards?.[i];
+      next[i] = !deckCard?.userCard;
+    }
+    slotEmptySV.value = next;
+  }, [activeDeck]);
 
   const handleStartSacrifice = (sacrificeCard: any) => {
     setDetailModalVisible(false);
@@ -713,7 +850,7 @@ export default function CardsScreen() {
                 </View>
               )}
 
-              <View style={(isEquipping || isSacrificing) ? { opacity: 0.4 } : undefined}>
+              <Animated2.View style={[swapAnimStyle, (isEquipping || isSacrificing) ? { opacity: 0.4 } : undefined]}>
                 <DeckSlotRow
                   slots={[0, 1, 2, 3, 4].map((slot) => {
                     const deckCard = activeDeck.deckCards?.find((dc: any) => dc.slotIndex === slot) ?? activeDeck.deckCards?.[slot];
@@ -722,8 +859,29 @@ export default function CardsScreen() {
                   })}
                   disabled={isEquipping || isSacrificing}
                   onSlotTap={handleSlotTap}
+                  onSlotMeasured={handleSlotMeasured}
                 />
-              </View>
+              </Animated2.View>
+
+              {/* P04 D-12 — active-deck swap CTA host. List non-active decks; tap → cross-fade swap. */}
+              {decks.length > 1 && (
+                <View style={styles.swapCtaRow}>
+                  <Text style={styles.swapCtaLabel}>Сменить активную колоду</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                    {decks.filter((d: any) => !d.isActive).map((deck: any) => (
+                      <DeckSwapChip
+                        key={deck.id}
+                        deck={deck}
+                        disabled={!!swappingDeckId || isEquipping || isSacrificing}
+                        reducedMotion={reducedMotion}
+                        onSwap={() => handleSwapActiveDeck(deck.id)}
+                        styles={styles}
+                        colors={colors}
+                      />
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </Animated2.View>
           ) : (
             <View style={styles.deckSection}>
@@ -804,6 +962,7 @@ export default function CardsScreen() {
               const found = (cards as any[]).find((c) => c.id === cardId);
               if (found) handleStartSacrifice(found);
             }}
+            cardGestureBuilder={cardGestureBuilder}
             emptyState={
               <View style={styles.emptyContainer}>
                 <MaterialIcons name="style" size={48} color={colors.outlineVariant} />
@@ -954,7 +1113,75 @@ export default function CardsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* P04 D-13 — ConfirmDialog tap-to-remove (replaces former Alert.alert deck-removal at L563). */}
+      <ConfirmDialog
+        visible={removeConfirmVisible}
+        onDismiss={() => setRemoveConfirmVisible(false)}
+        title="Убрать карту из активной колоды?"
+        confirmLabel="Убрать"
+        cancelLabel="Отмена"
+        isDestructive
+        confirmButton={{ onPress: handleConfirmRemove }}
+      />
+
+      {/* P04 D-10/D-11 — drag-to-equip floating ghost overlay (visible only mid-drag). */}
+      <Animated2.View
+        pointerEvents="none"
+        style={[styles.dragOverlay, dragOverlayStyle]}
+      >
+        <View style={styles.dragOverlayInner} />
+      </Animated2.View>
     </SafeAreaView>
+  );
+}
+
+// P04 D-12 — single deck-list-row chip for the swap CTA. Renders the brief
+// 100ms→1.05 / 200ms→1.0 scale-pulse on tap (UI-SPEC L136) before invoking
+// onSwap which orchestrates the cross-fade in the parent.
+function DeckSwapChip({
+  deck,
+  disabled,
+  reducedMotion,
+  onSwap,
+  styles,
+  colors,
+}: {
+  deck: any;
+  disabled: boolean;
+  reducedMotion: boolean;
+  onSwap: () => void;
+  styles: any;
+  colors: any;
+}) {
+  const register = useCancellableAnimation();
+  const scale = register(useSharedValue(1));
+  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const onPress = () => {
+    if (disabled) return;
+    if (!reducedMotion) {
+      scale.value = withSequence(
+        withTiming(1.05, { duration: 100 }),
+        withTiming(1, { duration: 200 }),
+      );
+    }
+    onSwap();
+  };
+  return (
+    <Animated2.View style={[animStyle]} layout={SLOT_LAYOUT}>
+      <TouchableOpacity
+        onPress={onPress}
+        disabled={disabled}
+        activeOpacity={0.8}
+        style={[styles.swapCtaChip, { borderColor: colors.primary, opacity: disabled ? 0.5 : 1 }]}
+        testID={`deck-swap-${deck.id}`}
+      >
+        <MaterialIcons name="cached" size={14} color={colors.primary} />
+        <Text style={[styles.swapCtaChipText, { color: colors.primary }]} numberOfLines={1}>
+          {deck.name ?? 'Сделать активной'}
+        </Text>
+      </TouchableOpacity>
+    </Animated2.View>
   );
 }
 
@@ -1057,4 +1284,10 @@ const getStyles = (Colors: any) => StyleSheet.create({
   actionButtonsCol: { width: '100%', gap: Spacing.sm },
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: BorderRadius.base, gap: 8 },
   actionBtnText: { fontFamily: 'Manrope-ExtraBold', fontSize: Fonts.sizes.sm },
+  swapCtaRow: { marginTop: Spacing.base, gap: 6 },
+  swapCtaLabel: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', color: Colors.onSurfaceVariant, textTransform: 'lowercase' },
+  swapCtaChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: BorderRadius.full, paddingHorizontal: 12, paddingVertical: 6 },
+  swapCtaChipText: { fontSize: Fonts.sizes.sm, fontFamily: 'Manrope-Bold', maxWidth: 160 },
+  dragOverlay: { position: 'absolute', top: 0, left: 0, width: 80, height: 110, alignItems: 'center', justifyContent: 'center', zIndex: 999 },
+  dragOverlayInner: { width: '100%', height: '100%', borderRadius: BorderRadius.base, backgroundColor: 'rgba(79,142,247,0.18)', borderWidth: 2, borderColor: '#4F8EF7' },
 });

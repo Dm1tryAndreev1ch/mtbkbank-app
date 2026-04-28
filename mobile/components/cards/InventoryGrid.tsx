@@ -6,6 +6,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated from 'react-native-reanimated';
+import { GestureDetector, type ComposedGesture, type GestureType } from 'react-native-gesture-handler';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { BorderRadius, Fonts, Shadows, Spacing, getRarityName, toMaterialIconName } from '../../constants/theme';
@@ -35,6 +36,12 @@ export interface InventoryGridProps {
   onSacrifice?: (cardId: string) => void;
   /** P04 hook — wired to a LongPress + Pan gesture for drag-to-deck. No-op in P00. */
   onLongPressDrag?: (cardId: string) => void;
+  /**
+   * P04 hook — parent (cards.tsx) supplies a per-card composed gesture
+   * (`Gesture.Simultaneous(longPress, pan)`) that we wrap around each card via
+   * <GestureDetector>. Returning `null` skips the wrapper for that card.
+   */
+  cardGestureBuilder?: (cardId: string) => ComposedGesture | GestureType | null;
   /** Empty-state slot (rendered as a child after the grid when cards.length === 0). */
   emptyState?: React.ReactNode;
 }
@@ -51,7 +58,8 @@ export function InventoryGrid({
   equippedCardIds,
   onCardTap,
   onSacrifice: _onSacrifice,
-  onLongPressDrag: _onLongPressDrag,
+  onLongPressDrag,
+  cardGestureBuilder,
   emptyState,
 }: InventoryGridProps) {
   const colors = useThemeColor();
@@ -64,7 +72,8 @@ export function InventoryGrid({
         const rarityColor = colors[rarityKey];
         const iconName = toMaterialIconName(c.brandIcon);
         const isInDeck = equippedCardIds.has(card.id);
-        return (
+        const gesture = cardGestureBuilder?.(card.id) ?? null;
+        const inner = (
           <Animated.View
             key={card.id}
             layout={SLOT_LAYOUT}
@@ -74,6 +83,7 @@ export function InventoryGrid({
               activeOpacity={0.8}
               testID={`inventory-card-${card.id}`}
               onPress={() => onCardTap(card)}
+              onLongPress={onLongPressDrag ? () => onLongPressDrag(card.id) : undefined}
               style={[
                 styles.cardItem,
                 { borderColor: rarityColor, backgroundColor: colors.surfaceContainerLowest },
@@ -108,6 +118,14 @@ export function InventoryGrid({
             </TouchableOpacity>
           </Animated.View>
         );
+        if (gesture) {
+          return (
+            <GestureDetector key={card.id} gesture={gesture}>
+              {inner}
+            </GestureDetector>
+          );
+        }
+        return inner;
       })}
       {cards.length === 0 && emptyState}
     </View>
