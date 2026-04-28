@@ -22,8 +22,15 @@
 // Rule B errors against the setTimeout in app/login.tsx (line 43). This RED state
 // is intentional — Plan 02-99 (verify) gates `npm run lint` exit-0 as the
 // phase-completion check.
+//
+// Phase 5 D-07 — mt-bank/no-zustand-in-worklet (error). Custom AST rule at
+// eslint-rules/no-zustand-in-worklet.js blocks worklet bodies from reading
+// Zustand. Belt-and-suspenders: scripts/regression-guard.sh greps for the
+// same file-level proximity (Phase 5 plan 04). See CLAUDE.md
+// "worklets cannot reference Zustand".
 
 const expoConfig = require('eslint-config-expo/flat');
+const noZustandInWorklet = require('./eslint-rules/no-zustand-in-worklet');
 
 module.exports = [
   // Files / dirs ESLint should never look at.
@@ -138,5 +145,11 @@ module.exports = [
         },
       ],
     },
+  },
+
+  // Phase 5 D-07 — mt-bank/no-zustand-in-worklet (custom local rule).
+  {
+    plugins: { 'mt-bank': { rules: { 'no-zustand-in-worklet': noZustandInWorklet } } },
+    rules: { 'mt-bank/no-zustand-in-worklet': 'error' },
   },
 ];
