@@ -20,7 +20,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# --ignore-scripts skips the postinstall `prisma generate` hook — schema.prisma
+# is not present yet at this point, and the generated client is copied from the
+# builder stage anyway, so running generate here would fail and is unnecessary.
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # Copy the generated Prisma client from builder
 COPY --from=builder /app/node_modules/.prisma            ./node_modules/.prisma
