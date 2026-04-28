@@ -4,7 +4,14 @@ import { NativeModules, Platform } from 'react-native';
 import * as Sentry from '@sentry/react-native';
 import { router } from 'expo-router';
 import * as tokenStore from './tokenStore';
-import { useStore } from '../stores/useStore';
+
+// Lazy import to break the circular dependency:
+// useStore → api → useStore causes useStore to be undefined at module-init time.
+// Reading it lazily (at call-time) guarantees the module is fully initialized.
+function getStore() {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return require('../stores/useStore').useStore;
+}
 
 /** Только localhost / IPv4 — туннели *.exp.direct и т.п. на :3000 не подходят. */
 function isUsableDevApiHost(host: string): boolean {
@@ -22,7 +29,6 @@ function hostFromBundleScript(): string | null {
     const m = String(url).match(/^https?:\/\/([^/:[?#]+)/i);
     return m ? m[1] : null;
   } catch (e) {
-    // Defensive: NativeModules may be unavailable in some test envs. Surface via breadcrumb.
     Sentry.addBreadcrumb({
       category: 'api.hostFromBundleScript',
       level: 'warning',
@@ -116,8 +122,7 @@ api.interceptors.request.use((config) => {
 });
 
 // Plan 04-01 D-10/D-11 — 429 + 401-on-refresh side-effects.
-// Mounted FIRST so 401-refresh handling below sees an unhandled rejection it can
-// process; this interceptor only writes to the store + routes for refresh-401.
+// Mounted FIRST so the 401-retry interceptor below can check _isRefresh and bail.
 api.interceptors.response.use(undefined, async (err) => {
   const status = err?.response?.status;
   const config = err?.config ?? {};
@@ -128,11 +133,9 @@ api.interceptors.response.use(undefined, async (err) => {
     const path = String(config.url ?? '');
     const key = `${method} ${path}`;
     try {
-      useStore.getState().setRateLimit(key, { until: Date.now() + retryAfter * 1000 });
+      getStore().getState().setRateLimit(key, { until: Date.now() + retryAfter * 1000 });
       const minutes = Math.max(1, Math.ceil(retryAfter / 60));
-      useStore
-        .getState()
-        .toast.show(`Слишком много попыток. Попробуйте через ${minutes} мин.`, 'warning');
+      getStore().getState().toast.show(`Слишком много попыток. Попробуйте через ${minutes} мин.`, 'warning');
     } catch {
       // store may not be hydrated in early-boot edge case
     }
@@ -140,8 +143,8 @@ api.interceptors.response.use(undefined, async (err) => {
   if (status === 401 && config._isRefresh === true) {
     await tokenStore.clear().catch(() => undefined);
     try {
-      useStore.setState((s) => ({ ...s, isAuthed: false, user: null, token: null }));
-      useStore.getState().toast.show('Сессия истекла, войдите снова', 'warning');
+      getStore().setState((s: any) => ({ ...s, isAuthed: false, user: null, token: null }));
+      getStore().getState().toast.show('Сессия истекла, войдите снова', 'warning');
     } catch {
       // best-effort
     }
@@ -161,16 +164,14 @@ api.interceptors.response.use(
     const originalRequest = error?.config;
     const status = error?.response?.status;
 
-    // Refresh-flagged requests are handled by the side-effect interceptor above;
-    // do NOT attempt the access-token refresh dance for them (Plan 04-01 D-11).
-    if (originalRequest?._isRefresh === true) {
+    // Refresh-flagged requests and already-retried requests must not re-enter the refresh loop.
+    if (originalRequest?._isRefresh === true || originalRequest?._retried === true) {
       return Promise.reject(error);
     }
 
     if (
       status !== 401 ||
       !originalRequest ||
-      originalRequest._retried ||
       isPublicAuthPath(originalRequest.url)
     ) {
       return Promise.reject(error);
@@ -179,12 +180,12 @@ api.interceptors.response.use(
 
     try {
       const newAccessToken = await tokenStore.refreshOnce(async (currentRefresh) => {
-        // Bare axios.post (NOT the api instance) so the request interceptor doesn't
-        // attach a stale Authorization header to the refresh call.
-        // Plan 04-01 D-11 — `_isRefresh:true` so the side-effect interceptor in
-        // tokenStore-aware api instance routes 401s to /login. Bare axios doesn't
-        // hit that interceptor, so on rejection here we wipe + redirect ourselves.
-        const refreshResp = await axios.post(
+        // Use the `api` instance (NOT bare axios) so the request interceptor runs
+        // and skips the Authorization header for the refresh endpoint.
+        // `_isRefresh: true` in the config marks this request so the side-effect
+        // interceptor above can detect a 401 on the refresh call itself and wipe
+        // the session without triggering another retry loop.
+        const refreshResp = await api.post(
           absoluteApiUrl('/auth/refresh'),
           { refreshToken: currentRefresh },
           { _isRefresh: true } as any,
@@ -192,7 +193,6 @@ api.interceptors.response.use(
         return {
           accessToken: refreshResp.data?.accessToken,
           refreshToken: refreshResp.data?.refreshToken,
-          // userId is NOT included in /auth/refresh response — leave undefined.
         };
       });
 
@@ -200,11 +200,11 @@ api.interceptors.response.use(
       originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
       return api(originalRequest);
     } catch {
-      // Refresh failed — wipe local token state and surface UX-08 (D-11) redirect.
+      // Refresh failed — wipe local token state and redirect.
       await tokenStore.clear();
       try {
-        useStore.setState((s) => ({ ...s, isAuthed: false, user: null, token: null }));
-        useStore.getState().toast.show('Сессия истекла, войдите снова', 'warning');
+        getStore().setState((s: any) => ({ ...s, isAuthed: false, user: null, token: null }));
+        getStore().getState().toast.show('Сессия истекла, войдите снова', 'warning');
       } catch {
         // best-effort
       }
@@ -222,7 +222,6 @@ export const login = async (phone: string, pin: string) => {
   const res = await api.post(absoluteApiUrl('/auth/login'), { phone, pin });
   const { accessToken, refreshToken, user } = res.data || {};
   if (accessToken && refreshToken) {
-    // Let setTokens throw on persist failure — useStore surfaces D-09 Russian copy.
     await tokenStore.setTokens(
       accessToken,
       refreshToken,
@@ -241,7 +240,6 @@ export type RegisterPayload = {
 };
 
 export const register = async (body: RegisterPayload) => {
-  // Wipe any prior token state before registration (idempotent).
   await tokenStore.clear();
   const res = await api.post(absoluteApiUrl('/auth/register'), body);
   const { accessToken, refreshToken, user } = res.data || {};
@@ -256,7 +254,6 @@ export const register = async (body: RegisterPayload) => {
 };
 
 export const logout = async () => {
-  // Best-effort server-side revocation; surface via Sentry breadcrumb on failure (NOT silent).
   try {
     await api.post('/auth/logout');
   } catch (e) {
@@ -274,8 +271,6 @@ export const logout = async () => {
 export const getMe = () => api.get('/users/me');
 export const getMyStats = () => api.get('/users/me/stats');
 export const updateMe = (data: any) => api.put('/users/me', data);
-// SEC-09 / 03-12: backend now requires q.length >= 10 and returns
-// { items, total, page, limit } without a phone field.
 export const searchUsers = (q: string) => api.get('/users/search', { params: { q } });
 
 // Accounts
