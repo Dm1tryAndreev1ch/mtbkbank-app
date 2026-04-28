@@ -15,31 +15,31 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Create non-root user BEFORE any COPY so we can use --chown on every layer.
-# All files land as appuser:appgroup from the start — Prisma engine binaries
-# write a lock file on first run and require ownership of node_modules/@prisma.
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Create non-root user early. /app is owned by root at this point which is fine
+# — we chown the workdir so appuser can write into it, then switch USER before
+# npm ci so the entire node_modules tree is created with correct ownership.
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup \
+ && chown appuser:appgroup /app
+
+USER appuser
 
 COPY --chown=appuser:appgroup package*.json ./
-# --ignore-scripts skips the postinstall `prisma generate` hook — schema.prisma
-# is not present at this point and the generated client comes from builder.
+
+# Run as appuser so node_modules (including @prisma/engines) is owned by appuser.
+# --ignore-scripts skips postinstall `prisma generate` — schema not present yet
+# and the generated client is copied from builder below.
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
-# Copy the generated Prisma client from builder
+# Overwrite Prisma packages with the ones generated in builder.
+# These replace the npm-installed stubs with the correct generated client.
 COPY --chown=appuser:appgroup --from=builder /app/node_modules/.prisma        ./node_modules/.prisma
 COPY --chown=appuser:appgroup --from=builder /app/node_modules/@prisma/client  ./node_modules/@prisma/client
-
-# Copy Prisma CLI from builder so `prisma migrate deploy` works at runtime.
 COPY --chown=appuser:appgroup --from=builder /app/node_modules/prisma          ./node_modules/prisma
 COPY --chown=appuser:appgroup --from=builder /app/node_modules/.bin/prisma     ./node_modules/.bin/prisma
 
-# Application source
+# Application source and Prisma schema + migrations
 COPY --chown=appuser:appgroup --from=builder /app/src ./src
-
-# Full prisma/ directory: schema.prisma + migrations/
 COPY --chown=appuser:appgroup prisma ./prisma/
-
-USER appuser
 
 EXPOSE 3000
 
