@@ -56,10 +56,12 @@ jest.mock('../../hooks/useReducedMotion', () => ({
   useReducedMotion: () => mockReducedMotionValue,
 }));
 
-// Toast spy (reads via useStore.getState().toast.show).
+// Toast spy (reads via useStore.getState().toast.show). Factory must build
+// the spy inside the mock body — outside refs would be hoisted to TDZ.
 const mockToastShow = jest.fn();
 jest.mock('../../stores/useStore', () => {
-  const state = { toast: { show: mockToastShow } };
+  const show = (...args: any[]) => mockToastShow(...args);
+  const state = { toast: { show } };
   const useStore: any = () => state;
   useStore.getState = () => state;
   return { useStore };

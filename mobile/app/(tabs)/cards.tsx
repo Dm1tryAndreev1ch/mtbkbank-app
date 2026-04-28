@@ -29,6 +29,7 @@ import { ActionButton } from '../../components/ActionButton';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { DeckSlotRow } from '../../components/cards/DeckSlotRow';
 import { InventoryGrid } from '../../components/cards/InventoryGrid';
+import { SacrificeOverlay } from '../../components/cards/SacrificeOverlay';
 import { GAMIFIED_SPRING, SLOT_LAYOUT } from '../../components/cards/animationConstants';
 import { useDeckDragGesture } from '../../components/cards/useDeckDragGesture';
 
@@ -513,6 +514,11 @@ export default function CardsScreen() {
   const [sacrificeSource, setSacrificeSource] = useState<any>(null);
   const [isSacrificing, setIsSacrificing] = useState(false);
 
+  // P05-T2 — SacrificeOverlay state (replaces Alert.alert at former L729).
+  const [sacrificeOverlayVisible, setSacrificeOverlayVisible] = useState(false);
+  const [sacrificeTarget, setSacrificeTarget] = useState<any>(null);
+  const [sacrificeHealAmount, setSacrificeHealAmount] = useState(0);
+
   const [selectedCard, setSelectedCard] = useState<any>(null);
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
   const [isEquipping, setIsEquipping] = useState(false);
@@ -724,26 +730,43 @@ export default function CardsScreen() {
     setSacrificeStep('pick_target');
   };
 
-  const handleConfirmSacrifice = async (targetCard: any) => {
+  // P05-T2 — open SacrificeOverlay (replaces Alert.alert sacrifice flow).
+  // Estimated heal preview = (maxHealth - current) capped at 100; the
+  // backend computes the authoritative amount on confirm. Only used as a
+  // preview number inside the ConfirmDialog body and the fly-up text.
+  const handleConfirmSacrifice = (targetCard: any) => {
     if (!sacrificeSource) return;
-    Alert.alert(
-      '⚡ Жертвоприношение',
-      `Карта «${sacrificeSource.collectionCard.name}» будет уничтожена, а «${targetCard.collectionCard.name}» восстановит здоровье. Продолжить?`,
-      [
-        { text: 'Отмена', style: 'cancel', onPress: () => setSacrificeStep('idle') },
-        { text: 'Пожертвовать', style: 'destructive', onPress: async () => {
-          setSacrificeStep('idle');
-          setIsSacrificing(true);
-          try {
-            const res = await apiClient.sacrificeCard(sacrificeSource.id, targetCard.id);
-            await loadCards(); await loadDecks();
-            Alert.alert('✅ Успешно!', `«${targetCard.collectionCard.name}» восстановила ${res.data.healAmount} HP → теперь ${res.data.newHealth}%`);
-          } catch (e: any) {
-            Alert.alert('Ошибка', e?.response?.data?.error || 'Не удалось провести жертвоприношение');
-          } finally { setIsSacrificing(false); setSacrificeSource(null); }
-        }},
-      ]
+    const preview = Math.max(
+      0,
+      Math.min(100, (targetCard.collectionCard.maxHealth ?? 100) - (targetCard.health ?? 0)),
     );
+    setSacrificeTarget(targetCard);
+    setSacrificeHealAmount(preview);
+    setSacrificeStep('idle');
+    setSacrificeOverlayVisible(true);
+  };
+
+  // P05-T2 — runs the sacrifice mutation after the overlay animation
+  // completes (or immediately under reduced-motion). All notifications
+  // route through the Toast slice — NO Alert.alert in the sacrifice path.
+  const runActualSacrifice = async () => {
+    setSacrificeOverlayVisible(false);
+    if (!sacrificeSource || !sacrificeTarget) return;
+    setIsSacrificing(true);
+    try {
+      const res = await apiClient.sacrificeCard(sacrificeSource.id, sacrificeTarget.id);
+      await loadCards();
+      await loadDecks();
+      const healed = res?.data?.healAmount ?? sacrificeHealAmount;
+      useStore.getState().toast.show(`+${healed} HP`, 'success');
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || 'Не удалось провести жертвоприношение';
+      useStore.getState().toast.show(msg, 'error');
+    } finally {
+      setIsSacrificing(false);
+      setSacrificeSource(null);
+      setSacrificeTarget(null);
+    }
   };
 
   const sacrificeTargetCards = useMemo(() => {
@@ -1124,6 +1147,26 @@ export default function CardsScreen() {
         isDestructive
         confirmButton={{ onPress: handleConfirmRemove }}
       />
+
+      {/* P05-T2 — SacrificeOverlay (ConfirmDialog → particle bezier flow → */}
+      {/* HP fill → +N HP fly-up). Replaces the former Alert.alert sacrifice */}
+      {/* flow at cards.tsx:~L729. */}
+      {sacrificeOverlayVisible && sacrificeSource && sacrificeTarget && (
+        <SacrificeOverlay
+          visible={sacrificeOverlayVisible}
+          sourceCard={{
+            id: sacrificeSource.id,
+            name: sacrificeSource.collectionCard.name,
+          }}
+          targetCard={{ id: sacrificeTarget.id }}
+          healAmount={sacrificeHealAmount}
+          onDismiss={() => {
+            setSacrificeOverlayVisible(false);
+            setSacrificeTarget(null);
+          }}
+          onComplete={runActualSacrifice}
+        />
+      )}
 
       {/* P04 D-10/D-11 — drag-to-equip floating ghost overlay (visible only mid-drag). */}
       <Animated2.View
