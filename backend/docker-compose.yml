@@ -46,7 +46,6 @@ services:
     volumes:
       - ./src:/app/src
       - ./prisma:/app/prisma
-      - /app/node_modules
 
 volumes:
   pgdata:
