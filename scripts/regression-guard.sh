@@ -495,16 +495,28 @@ if [ -n "$worklet_files" ]; then
   bad=""
   while IFS= read -r f; do
     [ -z "$f" ] && continue
-    if grep -q "useStore" "$f" 2>/dev/null; then
+    # Phase 6 refinement (per L489): `useStore.getState()` is a JS-thread call,
+    # not a worklet-body access. Exclude lines where every `useStore` token is
+    # `useStore.getState(`. The mt-bank/no-zustand-in-worklet ESLint rule
+    # remains the precise AST-level enforcement; this script is belt-only.
+    # Strip lines that are import statements, comments, JSDoc, or
+    # `useStore.getState(...)` calls — these are JS-thread-safe and do not
+    # imply a worklet-body access. Anything left flagging `useStore` is
+    # either a selector subscription or a raw reference inside a worklet.
+    if grep -nE "\\buseStore\\b" "$f" 2>/dev/null \
+       | grep -vE "useStore\\.getState\\(" \
+       | grep -vE "^\\s*[0-9]+:\\s*(import|//|/\\*|\\*)" \
+       | grep -vE "^\\s*[0-9]+:\\s*\\*" \
+       >/dev/null; then
       bad="${bad}        ${f}\n"
     fi
   done <<< "$worklet_files"
   if [ -n "$bad" ]; then
-    echo "FAIL  Phase-5 D-10: worklet file(s) reference useStore:"
+    echo "FAIL  Phase-5 D-10: worklet file(s) reference useStore (selector/non-getState):"
     printf "%b" "$bad"
     FAIL=1
   else
-    echo "OK    Phase-5 D-10: no worklet file references useStore"
+    echo "OK    Phase-5 D-10: no worklet file accesses useStore outside getState()"
   fi
 else
   echo "OK    Phase-5 D-10: no worklet files yet"
@@ -516,6 +528,80 @@ fi
 
 if [[ $FAIL -eq 0 ]]; then
   echo "OK: Phase-4.5 final regression-guard"
+fi
+
+echo "=== Phase-6 regression-guard ==="
+
+# Phase-6 D-13: deck-card removal path in mobile/app/(tabs)/cards.tsx must NOT
+# call Alert.alert — the migration to ConfirmDialog (cancel) + Toast (success)
+# was completed in P04 D-13 / P05-T2. Narrow check: any Alert.alert with a
+# Russian deck-removal verb (убрать / удалить / снять) or the literal substring
+# "колод" on the same line is a regression. Generic Alert.alert calls on
+# unrelated paths (inventory load failure, buy-card error, etc.) are out of
+# scope for this gate — those are tracked separately.
+if git grep -nP "Alert\\.alert\\([^)]*(убрать|удалить|снять|колод)" -- 'mobile/app/(tabs)/cards.tsx' >/dev/null 2>&1; then
+  echo "FAIL  Phase-6 D-13: Alert.alert in deck-card removal path in mobile/app/(tabs)/cards.tsx — must use ConfirmDialog + Toast"
+  git grep -nP "Alert\\.alert\\([^)]*(убрать|удалить|снять|колод)" -- 'mobile/app/(tabs)/cards.tsx' || true
+  FAIL=1
+else
+  echo "OK    Phase-6 D-13: no Alert.alert on deck-card removal path"
+fi
+
+# Phase-6 D-02: register(useSharedValue(...)) adjacency check across the new
+# Phase-6 surface — CardDropReveal.tsx, every mobile/components/cards/*.tsx,
+# and useDeckDragGesture.ts. Belt-and-suspenders for useCancellableAnimation
+# leak protection (Pitfall — Reanimated SVs leak across unmount without an
+# explicit cancel). Any naked `useSharedValue(...)` declaration that is NOT
+# wrapped by `register(useSharedValue(...))` on the same line is a regression.
+P6_FILES=(
+  "mobile/components/CardDropReveal.tsx"
+  "mobile/hooks/useDeckDragGesture.ts"
+  "mobile/hooks/useCardExpiredListener.ts"
+  "mobile/lib/ws.ts"
+)
+while IFS= read -r f; do
+  P6_FILES+=("$f")
+done < <(find mobile/components/cards -maxdepth 1 -name '*.tsx' -type f 2>/dev/null | sort)
+
+P6_D02_FAIL=0
+for f in "${P6_FILES[@]}"; do
+  [ -f "$f" ] || continue
+  # Look for any line that calls useSharedValue but is NOT wrapped by register(...).
+  # Allow: `register(useSharedValue(...))` on the same line.
+  # Reject: bare `useSharedValue(...)` not wrapped.
+  if grep -nE 'useSharedValue\(' "$f" | grep -vE 'register\s*\(\s*useSharedValue' >/dev/null; then
+    echo "FAIL  Phase-6 D-02 register: $f has useSharedValue not wrapped in register(...)"
+    grep -nE 'useSharedValue\(' "$f" | grep -vE 'register\s*\(\s*useSharedValue' || true
+    P6_D02_FAIL=1
+  fi
+done
+if [[ $P6_D02_FAIL -eq 0 ]]; then
+  echo "OK    Phase-6 D-02 register: every useSharedValue wrapped in register(...) across Phase-6 files"
+else
+  FAIL=1
+fi
+
+# Phase-6 (b) — WARN only: useStore co-existence with useAnimatedStyle/useDerivedValue.
+# Phase 5 ESLint rule mt-bank/no-zustand-in-worklet provides AST-level precision;
+# this gate is a coarse file-level signal that something may be wrong. WARN, not FAIL,
+# because useStore.getState() inside non-worklet callbacks is legitimate.
+WARN_FILES=()
+while IFS= read -r f; do
+  WARN_FILES+=("$f")
+done < <(find mobile -type f \( -name '*.tsx' -o -name '*.ts' \) \
+  -not -path 'mobile/node_modules/*' \
+  -not -path '*/__tests__/*' \
+  -not -path 'mobile/hooks/useDeckDragGesture.ts' 2>/dev/null)
+for f in "${WARN_FILES[@]}"; do
+  [ -f "$f" ] || continue
+  if grep -qE "(useAnimatedStyle|useDerivedValue|'worklet')" "$f" 2>/dev/null \
+     && grep -qE "from\s+['\"][^'\"]*stores/useStore" "$f" 2>/dev/null; then
+    echo "WARN  Phase-6 (b): $f imports useStore AND uses useAnimatedStyle/useDerivedValue/'worklet' — verify useStore is only accessed outside worklet bodies (ESLint mt-bank/no-zustand-in-worklet provides precise enforcement)"
+  fi
+done
+
+if [[ $FAIL -eq 0 ]]; then
+  echo "OK: Phase-6 regression-guard"
 fi
 
 if [[ $FAIL -ne 0 ]]; then
