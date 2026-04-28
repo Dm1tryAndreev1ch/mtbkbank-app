@@ -431,6 +431,89 @@ else
   echo "OK    Phase-4.5 D-06: $setnull_count onDelete: SetNull entries (>=3 required)"
 fi
 
+echo "=== Phase-5 regression-guard ==="
+
+# Phase 5 ANIM-01 — GestureHandlerRootView provider mount in mobile/app/_layout.tsx.
+if grep -q "GestureHandlerRootView" mobile/app/_layout.tsx 2>/dev/null; then
+  echo "OK    Phase-5 ANIM-01: GestureHandlerRootView mounted in mobile/app/_layout.tsx"
+else
+  echo "FAIL  Phase-5 ANIM-01: GestureHandlerRootView missing from mobile/app/_layout.tsx"
+  FAIL=1
+fi
+
+# Phase 5 ANIM-01 — gesture-handler dependency pinned at 2.31.x.
+if grep -E '"react-native-gesture-handler":\s*"[\^~]?2\.31\.' mobile/package.json >/dev/null 2>&1; then
+  echo "OK    Phase-5 ANIM-01: react-native-gesture-handler@2.31.x in mobile/package.json"
+else
+  echo "FAIL  Phase-5 ANIM-01: react-native-gesture-handler@2.31.x missing from mobile/package.json"
+  FAIL=1
+fi
+
+# Phase 5 ANIM-02 — both hooks present in mobile/hooks/.
+if [ -f mobile/hooks/useReducedMotion.ts ] && [ -f mobile/hooks/useCancellableAnimation.ts ]; then
+  echo "OK    Phase-5 ANIM-02: mobile/hooks/{useReducedMotion,useCancellableAnimation}.ts present"
+else
+  echo "FAIL  Phase-5 ANIM-02: missing hook(s) in mobile/hooks/"
+  FAIL=1
+fi
+
+# Phase 5 ANIM-02 — useReducedMotion is a re-export of Reanimated's hook (D-02).
+if grep -q "from 'react-native-reanimated'" mobile/hooks/useReducedMotion.ts 2>/dev/null; then
+  echo "OK    Phase-5 ANIM-02: useReducedMotion re-exports from react-native-reanimated"
+else
+  echo "FAIL  Phase-5 ANIM-02: useReducedMotion no longer re-exports react-native-reanimated"
+  FAIL=1
+fi
+
+# Phase 5 D-01 — mobile/animations/ MUST NOT exist.
+if [ -d mobile/animations ]; then
+  echo "FAIL  Phase-5 D-01: mobile/animations/ exists (hooks must live in mobile/hooks/ only)"
+  FAIL=1
+else
+  echo "OK    Phase-5 D-01: mobile/animations/ does not exist"
+fi
+
+# Phase 5 ANIM-03 — custom rule file + wiring at error severity.
+if [ -f mobile/eslint-rules/no-zustand-in-worklet.js ] \
+   && grep -q "'mt-bank/no-zustand-in-worklet': 'error'" mobile/eslint.config.js 2>/dev/null; then
+  echo "OK    Phase-5 ANIM-03: mt-bank/no-zustand-in-worklet wired at error severity"
+else
+  echo "FAIL  Phase-5 ANIM-03: mt-bank/no-zustand-in-worklet rule or wiring missing"
+  FAIL=1
+fi
+
+# Phase 5 D-10 — belt-and-suspenders proximity check.
+# Lint rule (mt-bank/no-zustand-in-worklet) is the precise judgment; this grep
+# fails when ANY single mobile/ file contains BOTH a 'worklet' directive AND
+# a useStore identifier. Set-intersection of file lists keeps false-negatives
+# low; Phase 6 may refine if false positives surface.
+# Exclude mobile/eslint-rules/** — that directory contains the AST rule that
+# DETECTS this exact pattern, so its source + tests legitimately mention both
+# `'worklet'` and `useStore` as string literals. Those files are not worklets.
+worklet_files=$(git grep -lF "'worklet'" -- 'mobile/' ':!mobile/eslint-rules/**' 2>/dev/null || true)
+if [ -n "$worklet_files" ]; then
+  bad=""
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    if grep -q "useStore" "$f" 2>/dev/null; then
+      bad="${bad}        ${f}\n"
+    fi
+  done <<< "$worklet_files"
+  if [ -n "$bad" ]; then
+    echo "FAIL  Phase-5 D-10: worklet file(s) reference useStore:"
+    printf "%b" "$bad"
+    FAIL=1
+  else
+    echo "OK    Phase-5 D-10: no worklet file references useStore"
+  fi
+else
+  echo "OK    Phase-5 D-10: no worklet files yet"
+fi
+
+if [[ $FAIL -eq 0 ]]; then
+  echo "OK: Phase-5 regression-guard"
+fi
+
 if [[ $FAIL -eq 0 ]]; then
   echo "OK: Phase-4.5 final regression-guard"
 fi
