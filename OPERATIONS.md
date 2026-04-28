@@ -21,7 +21,7 @@
 ## 1. Требования к хосту
 
 | Ресурс | Минимум | Рекомендовано |
-|--------|---------|---------------|
+|---|---|---|
 | CPU | 1 vCPU | 2 vCPU |
 | RAM | 1 GB | 2 GB |
 | Диск | 20 GB SSD | 40 GB SSD |
@@ -33,18 +33,20 @@
 
 ## 2. Деплой-процедура
 
+### Первый деплой
+
 ```bash
-# 1. Клонируйте репозиторий
+# 1. Клонировать репо
 git clone https://github.com/Dm1tryAndreev1ch/gm-bank-app.git
 cd gm-bank-app/backend
 
-# 2. Создайте файлы секретов (никогда не коммитьте их)
+# 2. Создать файлы секретов (никогда не коммить)
 mkdir -p secrets
 echo -n "$(openssl rand -hex 32)" > secrets/jwt_secret.txt
 echo -n "$(openssl rand -hex 32)" > secrets/jwt_refresh_secret.txt
 chmod 600 secrets/*.txt
 
-# 3. Заполните prod-окружение
+# 3. Переменные окружения
 cp .env.example .env.prod
 # Отредактируйте .env.prod:
 #   POSTGRES_PASSWORD=<strong-password>
@@ -52,25 +54,33 @@ cp .env.example .env.prod
 #   SENTRY_DSN=https://...
 #   LOG_LEVEL=info
 
-# 4. Соберите и запустите
+# 4. Собрать и запустить
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
-# 5. Примените миграции БД
+# 5. Применить миграции БД (один раз)
+#    Важно: миграции НЕ запускаются автоматически при старте контейнера
 docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
 
-# 6. Проверьте здоровье
-curl http://localhost:3000/healthz
+# 6. Проверка
+curl http://localhost:3000/healthz   # → {"status":"ok"}
 ```
 
-### Обновление (zero-downtime на одном VPS)
+### Обновление
 
 ```bash
+cd gm-bank-app/backend
 git pull
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build --no-deps api
+
+# Пересобрать и перезапустить только api
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+  up -d --build --no-deps api
+
+# Применить новые миграции
 docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
 ```
 
-Сервис получает SIGTERM → `closeWithGrace` ждёт до 10 секунд, дренирует in-flight запросы, закрывает Prisma и Redis, затем завершается. Новый контейнер стартует параллельно.
+Сервис получает SIGTERM → `closeWithGrace` дренирует in-flight запросы, закрывает
+сокеты Socket.IO, сбрасывает cron-тик, закрывает Prisma и Redis в течение ≤10с.
 
 ---
 
@@ -81,14 +91,15 @@ docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
 | `JWT_SECRET` | Docker secret (`secrets/jwt_secret.txt`) | Подпись access-токенов |
 | `JWT_REFRESH_SECRET` | Docker secret (`secrets/jwt_refresh_secret.txt`) | Подпись refresh-токенов |
 | `POSTGRES_PASSWORD` | `.env.prod` | Пароль Postgres |
-| `DATABASE_URL` | `docker-compose.prod.yml` (строится из POSTGRES_PASSWORD) | Строка подключения Prisma |
+| `DATABASE_URL` | строится в `docker-compose.prod.yml` | Строка подключения Prisma |
 | `REDIS_URL` | `docker-compose.prod.yml` | `redis://redis:6379` |
-| `ALLOWED_ORIGINS` | `.env.prod` | Comma-separated список разрешённых CORS-источников |
-| `SENTRY_DSN` | `.env.prod` | Backend Sentry DSN (публичный, без auth token) |
+| `ALLOWED_ORIGINS` | `.env.prod` | CORS allowlist (comma-separated) |
+| `SENTRY_DSN` | `.env.prod` | Backend Sentry DSN (публичный) |
 | `LOG_LEVEL` | `.env.prod` | `info` (prod), `debug` (staging) |
-| `ACTIVE_DECK_HP_TICK_MS` | `.env.prod` (optional) | Интервал HP-тика, по умолчанию 60000 мс |
+| `ACTIVE_DECK_HP_TICK_MS` | `.env.prod` (необязат.) | Интервал HP-тика, умолч. 60000мс |
 
-> **Никогда** не помещайте `JWT_SECRET`, `JWT_REFRESH_SECRET` или `SENTRY_AUTH_TOKEN` в env-переменные контейнера напрямую — только через Docker secrets.
+> **Никогда** не помещайте `JWT_SECRET`, `JWT_REFRESH_SECRET` или `SENTRY_AUTH_TOKEN`
+> напрямую в `environment:` контейнера — только через Docker secrets.
 
 ---
 
@@ -96,8 +107,9 @@ docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
 
 Все сервисы в `docker-compose.prod.yml` имеют `restart: unless-stopped`.
 
-- `unless-stopped` — контейнер перезапускается при падении ИЛИ перезагрузке хоста, но **не** перезапускается после `docker compose stop` (ручная остановка).
+- `unless-stopped` — перезапускается при падении ИЛИ перезагрузке хоста.
 - `always` не используется, чтобы избежать бесконечных петель при неверной конфигурации.
+- Dev-оверлей (`docker-compose.dev.yml`) устанавливает `restart: "no"` — краши видны сразу.
 
 ---
 
@@ -111,19 +123,22 @@ docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
 
 Docker healthcheck API: интервал 30s, timeout 5s, 3 retries, start_period 15s.
 
+Health-эндпоинты подавлены на уровне `silent` в pino-http и не попадают в лог.
+
 ---
 
 ## 6. Redis — разделение клиентов
 
 Бэкенд использует **три логически отдельных** Redis-клиента на одном экземпляре Redis:
 
-| Клиент | Переменная/модуль | Назначение |
+| Клиент | Модуль | Назначение |
 |---|---|---|
-| **Cache** | `src/cache/index.js` (`redisClient`) | LRU-кэш (admin role, card lists и др.) |
-| **Rate-limiter** | `src/middleware/authRateLimits.js` (отдельный `createClient`) | Счётчики rate-limit (login, register, refresh, admin) |
-| **Future Socket.IO adapter** | не создан в v1.0 | Зарезервирован для горизонтального масштабирования Socket.IO через `@socket.io/redis-adapter` |
+| **Cache** | `src/cache/index.js` | LRU-кэш (admin role, card lists и др.) |
+| **Rate-limiter** | `src/middleware/authRateLimits.js` | Счётчики rate-limit (login, register, refresh, admin) |
+| **Future Socket.IO adapter** | не создан в v1.0 | Зарезервирован для `@socket.io/redis-adapter` |
 
-> При Redis-недоступности: cache-miss degradation (запросы идут в БД), rate-limiter переходит в fail-open режим (лимиты не применяются), HP-tick leader-election возвращает `true` (единственный процесс продолжает тикать).
+При недоступности Redis: cache-miss degradation (запросы идут в БД),
+rate-limiter → fail-open (лимиты не применяются), HP-tick leader-election → `true`.
 
 ---
 
@@ -132,9 +147,11 @@ Docker healthcheck API: интервал 30s, timeout 5s, 3 retries, start_perio
 **Важно**: HP-тик (`setInterval` в `bootRuntime`) должен выполняться **только в одном процессе**.
 
 - В v1.0 поддерживается **ровно один** работающий контейнер `api`.
-- Leader-election через Redis SET NX (`lock:hp-tick`, TTL = tickMs × 2) защищает от двойного срабатывания при ручном blue-green деплое.
-- **Дрейф HP после перезапуска**: при перезапуске контейнера тик возобновляется сразу. Карты, здоровье которых должно было уменьшиться в период простоя, получат декремент на следующем тике — не более одного шага (идемпотентная логика в `tickActiveDeckCardHealth`).
-- Если нужно запустить 2+ реплик, подключите `@socket.io/redis-adapter` и перенесите HP-тик в отдельный worker-процесс с Redis-distributed lock.
+- Leader-election через Redis SET NX (`lock:hp-tick`, TTL = tickMs × 2) защищает от двойного срабатывания при blue-green деплое.
+- **Дрейф HP после перезапуска**: тик возобновляется сразу. Карты, HP которых должно
+  было уменьшиться в период простоя, получат декремент на следующем тике — не более
+  одного шага (идемпотентная логика в `tickActiveDeckCardHealth`).
+- Для нескольких реплик: подключите `@socket.io/redis-adapter` и перенесите HP-тик в отдельный worker.
 
 ---
 
@@ -149,21 +166,37 @@ Docker healthcheck API: интервал 30s, timeout 5s, 3 retries, start_perio
 | Ошибки, warnings | < 1 | negligible |
 | **Итого** | ~1000 | **~500 MB/сутки** |
 
-Рекомендуется настроить logrotate или отправку в log-агрегатор (Loki, Datadog) при нагрузке > 100 RPS.
-
-Health-эндпоинты (`/healthz`, `/readyz`, `/version`) подавлены на уровне `silent` в pino-http и **не попадают в лог**.
+Рекомендуется logrotate или агрегация (Loki, Datadog) при > 100 RPS.
 
 ---
 
 ## 9. Rollback-процедура
 
 ```bash
-# Откат к предыдущему образу
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --no-deps api --scale api=0
-docker tag <previous-image-id> mtbbank-api:rollback
-# ... или git checkout <prev-tag> && docker compose ... up -d --build
+# Откат кода
+git checkout <prev-tag>
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+  up -d --build --no-deps api
 
 # Откат миграций БД (если нужно)
-# Prisma не поддерживает автоматический down-migration.
-# Следуйте expand-then-contract политике: см. backend/prisma/MIGRATIONS.md
+# Prisma не поддерживает down-миграции автоматически.
+# Следуйте expand-then-contract политике: backend/prisma/MIGRATIONS.md
+```
+
+### Если миграция упала с P3009
+
+```bash
+# Посмотреть какая разано упала
+docker compose -f docker-compose.prod.yml logs api | grep 'migration started'
+
+# Вариант A: SQL выполнился
+docker compose -f docker-compose.prod.yml exec api \
+  npx prisma migrate resolve --applied <migration_name>
+
+# Вариант B: SQL не выполнился
+docker compose -f docker-compose.prod.yml exec api \
+  npx prisma migrate resolve --rolled-back <migration_name>
+
+# Затем повторить
+docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
 ```
