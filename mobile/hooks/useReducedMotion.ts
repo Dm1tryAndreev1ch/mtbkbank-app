@@ -1,9 +1,12 @@
 /**
- * Phase-4 stub. Phase-5 ANIM-02 will read AccessibilityInfo.isReduceMotionEnabled()
- * and subscribe to changes. For now this returns false so primitives behave as if
- * the OS preference is unset — Phase-4 plans depend on the contract existing, not
- * on the value being live.
+ * ANIM-02 + D-02 — re-export Reanimated's useReducedMotion.
+ *
+ * Reads OS prefers-reduced-motion at app start (snapshot — see Phase 5
+ * RESEARCH.md Pitfall 1). We own the import path; Reanimated owns the impl.
+ * Single point of swap if the PROJECT animation-stack lock changes.
+ *
+ * NOTE: reads at app start only. A user toggling Reduce Motion in OS
+ * settings while the app is running will not see the new value until
+ * relaunch. Live-listener subscription is deferred to v1.1.
  */
-export function useReducedMotion(): boolean {
-  return false;
-}
+export { useReducedMotion } from 'react-native-reanimated';
