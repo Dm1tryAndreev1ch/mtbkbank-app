@@ -12,6 +12,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { BorderRadius, Fonts, Shadows, Spacing, getRarityName, toMaterialIconName } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import { SLOT_LAYOUT } from './animationConstants';
+import { LowHpPulseBorder } from './LowHpPulseBorder';
 
 export interface InventoryGridCard {
   id: string;
@@ -23,6 +24,8 @@ export interface InventoryGridCard {
     cashbackPercent: number;
     brandName?: string;
     brandIcon?: string;
+    /** Optional — falls back to 100 when missing (P05 LowHpPulseBorder gate). */
+    maxHealth?: number;
   };
 }
 
@@ -115,6 +118,10 @@ export function InventoryGrid({
                   <Text style={[styles.statText, { color: colors.onSurfaceVariant }]}>{c.cashbackPercent}%</Text>
                 </View>
               </View>
+              {/* P05-T1 — low-HP pulsing red border overlay (Gray Area E).
+                  Returns null when health/maxHealth >= 0.30, so it imposes
+                  zero cost on healthy cards. */}
+              <LowHpPulseBorder health={card.health} maxHealth={c.maxHealth ?? 100} />
             </TouchableOpacity>
           </Animated.View>
         );
