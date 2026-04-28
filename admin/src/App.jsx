@@ -503,16 +503,12 @@ const NAV_ITEMS = [
   { key: 'users',        label: 'Пользователи', icon: 'people' },
   { key: 'accounts',     label: 'Счета',        icon: 'account_balance' },
   { key: 'transactions', label: 'Операции',     icon: 'receipt_long' },
+  { key: 'payments',     label: 'Платежи',      icon: 'payments' },
   { key: 'cards',        label: 'Карты',        icon: 'style' },
   { key: 'simulate',     label: 'Симуляция',    icon: 'play_circle' },
   { key: 'audit',        label: 'Аудит',        icon: 'manage_search' },
 ];
 
-// Lazy page registry — each key maps to a component.
-// Pages that were defined earlier in this file are referenced directly.
-// DashboardPage, AccountsPage, TransactionsPage, CardsPage, SimulatePage,
-// AuditPage are defined in the rest of this module (below UsersPage).
-// If a page component is missing it will be surfaced as a clear error.
 function PageNotFound({ page }) {
   return (
     <div className="admin-page">
@@ -549,6 +545,7 @@ export default function App() {
       case 'users':        return <UsersPage />;
       case 'accounts':     return <AccountsPage />;
       case 'transactions': return <TransactionsPage />;
+      case 'payments':     return <PaymentsPage />;
       case 'cards':        return <CardsPage />;
       case 'simulate':     return <SimulatePage />;
       case 'audit':        return <AuditPage />;
@@ -594,6 +591,94 @@ export default function App() {
   );
 }
 
+// ==================== AUDIT LOG WIDGET ====================
+// Phase 4.5 / 04.5-04 / D-09 Plan 4 / D-12 — read-only "last 50" widget.
+// 4 columns (Время / Администратор / Действие / Цель) with destructive red dot.
+// Russian copy locked per UI-SPEC §"Audit-Log Dashboard Widget".
+function AuditLogWidget() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    apiFetch(token, `${API}/dashboard/audit`)
+      .then((r) => { if (!cancelled) setItems(Array.isArray(r.items) ? r.items : []); })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token]);
+  return (
+    <div className="table-container" style={{ marginTop: 32 }}>
+      <div className="table-header">
+        <span className="table-title">Последние действия администраторов</span>
+      </div>
+      {err ? (
+        <PageErrorBanner message={'Не удалось загрузить аудит-лог.'} />
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: 160 }}>Время</th>
+              <th style={{ width: 180 }}>Администратор</th>
+              <th style={{ width: 220 }}>Действие</th>
+              <th>Цель</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <SkeletonRow columns={4} rows={5} />
+            ) : items.length === 0 ? (
+              <tr><td colSpan={4}>
+                <EmptyState
+                  heading="Действий пока нет"
+                  body="Здесь появятся записи аудит-лога после первой операции."
+                  icon="history"
+                />
+              </td></tr>
+            ) : items.map((row) => {
+              const destructive = actionIsDestructive(row.action);
+              const label = actionToRussianLabel(row.action);
+              const actorName = row.actor?.name || '— (удалён)';
+              const targetText = row.targetType
+                ? `${row.targetType}: ${row.targetId ? row.targetId.slice(-8) : '—'}`
+                : '—';
+              return (
+                <tr key={row.id}>
+                  <td style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>
+                    {new Date(row.createdAt).toLocaleString('ru-RU')}
+                  </td>
+                  <td>{actorName}</td>
+                  <td>
+                    {destructive ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            display: 'inline-block',
+                            width: 8, height: 8, borderRadius: 4,
+                            background: 'var(--error, #d32f2f)',
+                          }}
+                        />
+                        {label}
+                      </span>
+                    ) : (
+                      <span style={{ paddingLeft: 16 }}>{label}</span>
+                    )}
+                  </td>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{targetText}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // ===== DASHBOARD =====
 function DashboardPage() {
   const { token } = useToken();
@@ -627,6 +712,11 @@ function DashboardPage() {
           <div className="stat-card"><div className="stat-label">Транзакций</div><div className="stat-value">{stats.totalTransactions}</div></div>
           {extended && <div className="stat-card"><div className="stat-label">Общий баланс</div><div className="stat-value" style={{ color: 'var(--success)' }}>₽ {extended.totalBalance?.toLocaleString('ru-RU')}</div></div>}
         </div>
+
+        {/* ==================== AUDIT LOG WIDGET ==================== */}
+        {/* Phase 4.5 / 04.5-04 / D-09 Plan 4 — last 50 entries, read-only */}
+        <AuditLogWidget />
+
         {extended && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, marginTop: 32 }}>
             <div className="table-container">
@@ -1273,6 +1363,152 @@ function TransactionsPage() {
   );
 }
 
+// ==================== PAYMENTS PAGE ====================
+// Phase 4.5 / 04.5-02 / ADMIN-08 — payments stored as Transaction rows with type='PAYMENT'.
+function PaymentsPage() {
+  const { token } = useToken();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [userIdFilter, setUserIdFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [editFor, setEditFor] = useState(null);
+  const [editStatus, setEditStatus] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [mutatingId, setMutatingId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setErr(null);
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (userIdFilter) params.set('userId', userIdFilter);
+    if (statusFilter) params.set('status', statusFilter);
+    if (fromDate) params.set('from', fromDate);
+    if (toDate) params.set('to', toDate);
+    apiFetch(token, `${API}/payments?${params.toString()}`)
+      .then((r) => {
+        if (cancelled) return;
+        setItems(Array.isArray(r.items) ? r.items : []);
+        setTotal(typeof r.total === 'number' ? r.total : 0);
+      })
+      .catch((e) => { if (!cancelled) setErr(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, page, userIdFilter, statusFilter, fromDate, toDate]);
+
+  const doStatusOverride = async (e) => {
+    e?.preventDefault?.();
+    if (!editFor) return;
+    if (!editStatus || !editReason || editReason.length < 3) return;
+    setMutatingId(editFor.id);
+    try {
+      const updated = await apiFetch(token, `${API}/payments/${editFor.id}/status`, {
+        method: 'POST',
+        body: { status: editStatus, reason: editReason },
+      });
+      toastSuccess('Статус платежа обновлён');
+      setItems((prev) => prev.map((p) => (p.id === editFor.id ? { ...p, status: updated.status } : p)));
+      setEditFor(null); setEditStatus(''); setEditReason('');
+    } catch (err2) {
+      toastErrorFromAppError(err2, 'Не удалось обновить статус');
+    } finally {
+      setMutatingId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="admin-page">
+        <div className="page-header" style={{ flexShrink: 0 }}>
+          <h1 className="page-title">Платежи</h1>
+          <p className="page-subtitle">Список платежей и переопределение статуса</p>
+        </div>
+        <div className="admin-page-scroll">
+          {err && <PageErrorBanner message="Не удалось загрузить платежи." />}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <input type="text" className="form-input" placeholder="ID пользователя" value={userIdFilter}
+              onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }} style={{ maxWidth: 220 }} />
+            <select className="form-select" value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={{ maxWidth: 200 }}>
+              <option value="">Все статусы</option>
+              <option value="completed">Завершено</option>
+              <option value="pending">В обработке</option>
+              <option value="scheduled">Запланировано</option>
+              <option value="failed">Ошибка</option>
+            </select>
+            <input type="date" className="form-input" value={fromDate}
+              onChange={(e) => { setFromDate(e.target.value); setPage(1); }} style={{ maxWidth: 160 }} />
+            <input type="date" className="form-input" value={toDate}
+              onChange={(e) => { setToDate(e.target.value); setPage(1); }} style={{ maxWidth: 160 }} />
+          </div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>ID</th><th>Дата</th><th>Мерчант</th><th>Сумма</th><th>Статус</th><th>Действия</th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonRow columns={6} rows={5} />
+                ) : items.length === 0 && !err ? (
+                  <tr><td colSpan={6}>
+                    <EmptyState heading="Платежей нет" body="Платежи появятся здесь после первой операции." icon="payments" />
+                  </td></tr>
+                ) : items.map((p) => (
+                  <tr key={p.id} style={mutatingId === p.id ? { opacity: 0.7, pointerEvents: 'none' } : undefined}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{p.id.slice(-8)}</td>
+                    <td>{new Date(p.createdAt).toLocaleString('ru-RU')}</td>
+                    <td>{p.merchant || '—'}</td>
+                    <td style={{ fontWeight: 700 }}>₽ {Number(p.amount).toLocaleString('ru-RU')}</td>
+                    <td>{p.status}</td>
+                    <td>
+                      <button className="btn btn-sm" onClick={() => { setEditFor(p); setEditStatus(p.status); setEditReason(''); }}>Изменить статус</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, justifyContent: 'flex-end' }}>
+            <span style={{ color: 'var(--on-surface-variant)' }}>Стр. {page} из {Math.max(1, Math.ceil(total / limit))} · Всего: {total}</span>
+            <button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>← Назад</button>
+            <button className="btn btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage((p) => p + 1)}>Вперёд →</button>
+          </div>
+        </div>
+      </div>
+
+      {editFor && (
+        <div className="modal-overlay" onClick={() => setEditFor(null)}>
+          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={doStatusOverride}>
+            <h2 className="modal-title">Изменить статус платежа</h2>
+            <div className="form-group">
+              <label className="form-label">Новый статус</label>
+              <select className="form-select" value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
+                <option value="completed">Завершено</option>
+                <option value="pending">В обработке</option>
+                <option value="scheduled">Запланировано</option>
+                <option value="failed">Ошибка</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Причина</label>
+              <input className="form-input" value={editReason} onChange={(e) => setEditReason(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="button" className="btn" onClick={() => setEditFor(null)}>Отмена</button>
+              <SpinnerButton type="submit" loading={mutatingId === editFor.id} className="btn btn-primary" disabled={!editReason || editReason.length < 3}>
+                Сохранить
+              </SpinnerButton>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ===== AUDIT =====
 function AuditPage() {
   const { token } = useToken();
@@ -1324,7 +1560,7 @@ function AuditPage() {
                       {actionToRussianLabel(entry.action)}
                     </span>
                   </td>
-                  <td style={{ fontSize: 12 }}>{entry.admin?.name ?? entry.adminId?.slice(-8)}</td>
+                  <td style={{ fontSize: 12 }}>{entry.actor?.name ?? entry.actorId?.slice(-8)}</td>
                   <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{entry.targetId?.slice(-8) ?? '—'}</td>
                   <td style={{ fontSize: 12 }}>{entry.createdAt ? new Date(entry.createdAt).toLocaleString('ru-RU') : '—'}</td>
                 </tr>
