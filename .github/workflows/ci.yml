@@ -1,35 +1,60 @@
-name: MTBank CI/CD Pipeline
+name: MTBank CI
 
 on:
   push:
+    branches: [main, 'gsd/**', 'feat/**', 'fix/**']
   pull_request:
+    branches: [main]
 
-# Отменяем предыдущий запуск для той же ветки при новом пуше
+# Cancel previous run for the same branch on new push
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
 
-  # ═══════════════════════════════════════════════
-  # BACKEND
-  # ═══════════════════════════════════════════════
+  # ─────────────────────────────────────────────────────────────────────────
+  # CI-01: paths-filter — determines which jobs run
+  # fetch-depth: 0 required so dorny/paths-filter can diff against base branch
+  # ─────────────────────────────────────────────────────────────────────────
+  changes:
+    name: "Detect changed paths"
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      mobile:  ${{ steps.filter.outputs.mobile }}
+      admin:   ${{ steps.filter.outputs.admin }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-  backend-test:
-    name: "Backend — Unit Tests (Jest)"
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            mobile:
+              - 'mobile/**'
+            admin:
+              - 'admin/**'
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # CI-02: Backend — lint + migrate + jest + regression-guard
+  # ─────────────────────────────────────────────────────────────────────────
+  backend:
+    name: "Backend — lint / test / regression-guard"
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./backend
 
-    # FIX: global-setup.js calls `prisma migrate deploy` before Jest starts.
-    # Without a live DB at localhost:5433 Prisma throws P1001 and the whole
-    # run crashes. The service below starts postgres:15, maps host-port 5433
-    # to container-port 5432, and GitHub Actions waits for it to be healthy
-    # before running any step.
     services:
       postgres:
-        image: postgres:15
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -42,58 +67,59 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run Jest tests
+      - name: ESLint
+        run: npx eslint . --max-warnings=0
+
+      - name: Prisma migrate deploy
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/mtbank_test
+
+      - name: Jest
         run: npm test -- --ci --forceExit --coverage --coverageReporters=text-summary
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/mtbank_test?schema=public
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/mtbank_test
+          REDIS_URL: redis://localhost:6380
+          JWT_SECRET: ci-test-secret
+          JWT_REFRESH_SECRET: ci-test-refresh-secret
+          NODE_ENV: test
 
-  backend-audit:
-    name: "Backend — Security Audit"
-    runs-on: ubuntu-latest
-    needs: backend-test
-    defaults:
-      run:
-        working-directory: ./backend
+      # CI-02: regression-guard — fails if any forbidden pattern found
+      - name: Regression guard
+        run: bash scripts/regression-guard.sh
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Фейлит только на high/critical уязвимостях
-      - name: Audit dependencies
-        run: npm audit --audit-level=high
-        continue-on-error: true
-
-      # Проверка устаревших пакетов (advisory)
-      - name: Check outdated packages
-        run: npm outdated || true
-
-  # ═══════════════════════════════════════════════
-  # MOBILE
-  # ═══════════════════════════════════════════════
-
-  mobile-typecheck:
-    name: "Mobile — TypeScript Check"
+  # ─────────────────────────────────────────────────────────────────────────
+  # CI-03: Mobile — tsc + jest
+  # ─────────────────────────────────────────────────────────────────────────
+  mobile:
+    name: "Mobile — tsc / jest"
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -101,77 +127,34 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: mobile/package-lock.json
 
-      # npm install синхронизирует lock-файл если package.json менялся вручную
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: TypeScript compiler check
+      - name: TypeScript — noEmit
         run: npx tsc --noEmit
 
-  mobile-audit:
-    name: "Mobile — Security Audit"
-    runs-on: ubuntu-latest
-    needs: mobile-typecheck
-    defaults:
-      run:
-        working-directory: ./mobile
+      - name: Jest
+        run: npx jest --ci --forceExit
+        env:
+          NODE_ENV: test
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Audit dependencies
-        run: npm audit --audit-level=high --legacy-peer-deps
-        continue-on-error: true
-
-      - name: Check outdated packages
-        run: npm outdated || true
-
-  mobile-expo-doctor:
-    name: "Mobile — Expo Doctor"
-    runs-on: ubuntu-latest
-    needs: mobile-typecheck
-    defaults:
-      run:
-        working-directory: ./mobile
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      # Проверяет совместимость версий пакетов с Expo SDK
-      - name: Run Expo Doctor
-        run: npx expo-doctor@latest
-        continue-on-error: true
-
-  # ═══════════════════════════════════════════════
-  # ADMIN (Vite + React)
-  # ═══════════════════════════════════════════════
-
-  admin-build:
-    name: "Admin — Vite Build"
+  # ─────────────────────────────────────────────────────────────────────────
+  # CI-04: Admin — vitest + build (+ optional Sentry sourcemap upload)
+  # ─────────────────────────────────────────────────────────────────────────
+  admin:
+    name: "Admin — vitest / build"
+    needs: changes
+    if: needs.changes.outputs.admin == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -179,106 +162,64 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: admin/package-lock.json
 
       - name: Install dependencies
-        # Если нет lock-файла — создаём его на месте
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-      # Убеждаемся что продакшн-сборка не сломана
+      - name: Vitest
+        run: npx vitest run
+
       - name: Build production bundle
         run: npm run build
+        env:
+          # Sentry sourcemap upload is gated on secret presence (CI-04)
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
-      - name: Upload build artifact
+      - name: Upload admin dist artifact
         uses: actions/upload-artifact@v4
         with:
           name: admin-dist
           path: admin/dist/
           retention-days: 7
 
-  admin-audit:
-    name: "Admin — Security Audit"
+  # ─────────────────────────────────────────────────────────────────────────
+  # CI-01: Aggregator — single required check for branch protection on main.
+  # Treats skipped jobs (path not changed) as success.
+  # ─────────────────────────────────────────────────────────────────────────
+  ci-ok:
+    name: "CI OK (branch protection gate)"
     runs-on: ubuntu-latest
-    needs: admin-build
-    defaults:
-      run:
-        working-directory: ./admin
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Audit dependencies
-        run: npm audit --audit-level=high
-        continue-on-error: true
-
-  # ═══════════════════════════════════════════════
-  # ИТОГОВЫЙ СТАТУС
-  # ═══════════════════════════════════════════════
-
-  ci-summary:
-    name: "✅ CI Summary"
-    runs-on: ubuntu-latest
-    needs:
-      - backend-test
-      - backend-audit
-      - mobile-typecheck
-      - mobile-audit
-      - mobile-expo-doctor
-      - admin-build
-      - admin-audit
     if: always()
-
+    needs: [backend, mobile, admin]
     steps:
-      - name: Evaluate results
+      - name: Check all required jobs
         run: |
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  MTBank CI — Full Pipeline Summary"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
-          echo "  BACKEND"
-          echo "    unit tests  : ${{ needs.backend-test.result }}"
-          echo "    audit       : ${{ needs.backend-audit.result }}  (advisory)"
-          echo ""
-          echo "  MOBILE"
-          echo "    typecheck   : ${{ needs.mobile-typecheck.result }}"
-          echo "    audit       : ${{ needs.mobile-audit.result }}  (advisory)"
-          echo "    expo-doctor : ${{ needs.mobile-expo-doctor.result }}  (advisory)"
-          echo ""
-          echo "  ADMIN"
-          echo "    vite build  : ${{ needs.admin-build.result }}"
-          echo "    audit       : ${{ needs.admin-audit.result }}  (advisory)"
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-          # Блокирующие проверки (обязательные)
           FAILED=0
-          if [ "${{ needs.backend-test.result }}"    != "success" ]; then echo "❌ backend-test failed";    FAILED=1; fi
-          if [ "${{ needs.mobile-typecheck.result }}" != "success" ]; then echo "❌ mobile-typecheck failed"; FAILED=1; fi
-          if [ "${{ needs.admin-build.result }}"     != "success" ]; then echo "❌ admin-build failed";     FAILED=1; fi
-
+          for job in backend mobile admin; do
+            result=$(echo '${{ toJSON(needs) }}' | python3 -c "
+import sys, json
+needs = json.load(sys.stdin)
+result = needs.get('$job', {}).get('result', 'skipped')
+print(result)
+")
+            echo "$job → $result"
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "❌ $job failed"
+              FAILED=1
+            fi
+          done
           if [ "$FAILED" = "1" ]; then
-            echo ""
-            echo "Pipeline FAILED — fix required checks above."
+            echo "Pipeline FAILED."
             exit 1
           fi
-
-          echo "✅ All required checks passed."
+          echo "✅ All required checks passed (skipped = path unchanged)."

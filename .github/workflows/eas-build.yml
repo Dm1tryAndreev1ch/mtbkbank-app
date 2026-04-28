@@ -1,0 +1,83 @@
+name: EAS Android Build
+
+# CI-05: Manual trigger via workflow_dispatch only.
+# Never runs automatically on push/PR to avoid burning EAS build minutes.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - preview
+
+concurrency:
+  group: eas-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  eas-build:
+    name: "EAS Android — ${{ inputs.profile || 'production' }}"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS Build — Android
+        id: eas_build
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ inputs.profile || 'production' }} \
+            --non-interactive \
+            --json \
+            --output ../eas-build-output.json
+        working-directory: ./mobile
+
+      - name: Download built APK
+        run: |
+          APK_URL=$(cat ../eas-build-output.json | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+if isinstance(data, list):
+    print(data[0]['artifacts']['buildUrl'])
+else:
+    print(data['artifacts']['buildUrl'])
+")
+          echo "APK_URL=$APK_URL" >> $GITHUB_ENV
+          curl -L -o ../app-release.apk "$APK_URL"
+        working-directory: ./mobile
+
+      # CI-06: Bundle scanner — detect leaked secrets in the APK
+      - name: CI-06 Bundle secret scanner
+        run: bash ../scripts/bundle-scanner.sh ../app-release.apk
+        working-directory: ./mobile
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-${{ inputs.profile || 'production' }}
+          path: app-release.apk
+          retention-days: 14
