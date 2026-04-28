@@ -22,6 +22,26 @@ jobs:
       run:
         working-directory: ./backend
 
+    # FIX: global-setup.js calls `prisma migrate deploy` before Jest starts.
+    # Without a live DB at localhost:5433 Prisma throws P1001 and the whole
+    # run crashes. The service below starts postgres:15, maps host-port 5433
+    # to container-port 5432, and GitHub Actions waits for it to be healthy
+    # before running any step.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mtbank_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mtbank_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +57,8 @@ jobs:
 
       - name: Run Jest tests
         run: npm test -- --ci --forceExit --coverage --coverageReporters=text-summary
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5433/mtbank_test?schema=public
 
   backend-audit:
     name: "Backend — Security Audit"
