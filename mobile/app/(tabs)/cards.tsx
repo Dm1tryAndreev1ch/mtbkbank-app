@@ -544,6 +544,14 @@ export default function CardsScreen() {
   const slotRefsRef = useRef<Array<React.RefObject<any> | null>>(
     Array.from({ length: 5 }, () => null),
   );
+  // fix(worklets): slotEmptySV holds a boolean[] that gets serialised into the
+  // UI runtime by useDeckDragGesture. Any subsequent JS-thread write to
+  // slotEmptySV.value must go through runOnUI — direct assignment after the
+  // SharedValue has crossed into a worklet triggers
+  // "Tried to modify key N of an object which has been converted to a
+  //  serializable" WARN for every array index (0-4).
+  // The useEffect below uses runOnUI((val) => { 'worklet'; slotEmptySV.value = val; })(next)
+  // to ensure the mutation happens on the UI thread where the array lives.
   const slotEmptySV = register(useSharedValue<boolean[]>([true, true, true, true, true]));
   const dragOverlayStyle = useAnimatedStyle(() => ({
     opacity: dragOpacity.value,
