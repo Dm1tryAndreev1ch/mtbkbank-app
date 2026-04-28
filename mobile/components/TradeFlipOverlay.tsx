@@ -115,7 +115,7 @@ export function TradeFlipOverlay({ payload, onDone }: Props) {
             size={48}
             color={colors.primary}
           />
-          <Text style={[styles.cardName, { color: colors.onSurface ?? colors.text }]}>
+          <Text style={[styles.cardName, { color: colors.onSurface ?? colors.onBackground }]}>
             {card?.name ?? '—'}
           </Text>
         </Animated.View>

@@ -86,7 +86,7 @@ function RootLayout() {
                 screenOptions={{
                   headerShown: false,
                   animation:
-                    Platform.OS === 'ios' ? 'ios' : 'slide_from_right',
+                    Platform.OS === 'ios' ? 'default' : 'slide_from_right',
                   animationDuration: 350,
                 }}
               />
