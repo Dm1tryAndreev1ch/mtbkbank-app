@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, ActivityIndicator
 } from 'react-native';
@@ -11,6 +11,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Fad
 import { Fonts, Spacing, BorderRadius, Shadows, formatMoney, toMaterialIconName } from '../../constants/theme';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import CardDropReveal from '../../components/CardDropReveal';
+import { ws } from '../../lib/ws';
 
 const CONTACTS = [
   { name: 'Анна М.', initials: 'АМ', color: '#9333EA' },
@@ -41,12 +42,29 @@ export default function PaymentsScreen() {
   const [isPaying, setIsPaying] = useState(false);
   const [droppedCard, setDroppedCard] = useState<any>(null);
 
+  // Plan 06-03 D-17 / Gray Area B — dedupe across HTTP and Socket CARD_DROP paths.
+  // Component-level Set survives re-renders, scoped to component lifetime.
+  const seenTxIds = useRef<Set<string>>(new Set<string>());
+
   const colors = useThemeColor();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
   useEffect(() => {
     loadAccounts();
     fetchData();
+  }, []);
+
+  // Plan 06-03 D-17 — register Socket.IO CARD_DROP listener once on mount;
+  // dedupe by transactionId against the same set the HTTP path marks.
+  useEffect(() => {
+    const handler = (payload: any) => {
+      const txId: string | undefined = payload?.transactionId;
+      if (txId && seenTxIds.current.has(txId)) return;
+      if (txId) seenTxIds.current.add(txId);
+      setDroppedCard(payload?.card ?? payload);
+    };
+    ws.on('CARD_DROP', handler);
+    return () => ws.off('CARD_DROP', handler);
   }, []);
 
   const fetchData = async () => {
@@ -98,6 +116,10 @@ export default function PaymentsScreen() {
       });
       setModalVisible(false);
       if (res.data?.cardDrop) {
+        // Mark this transactionId as seen BEFORE setDroppedCard so a near-
+        // simultaneous ws CARD_DROP for the same tx is a no-op (Gray Area B).
+        const txId: string | undefined = res.data?.transactionId;
+        if (txId) seenTxIds.current.add(txId);
         setDroppedCard(res.data.cardDrop);
       } else {
         Alert.alert('Успешно', 'Платеж успешно проведен');
