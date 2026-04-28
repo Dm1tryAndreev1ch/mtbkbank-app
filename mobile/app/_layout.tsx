@@ -1,7 +1,6 @@
 // Must be first — Sentry.init runs synchronously on import; must precede React Native bridges.
 // eslint-disable-next-line import/first
 import '../services/sentry';
-import * as Sentry from '@sentry/react-native';
 
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import {
@@ -109,7 +108,10 @@ function RootLayout() {
   );
 }
 
-// Sentry.wrap requires Sentry.init to have been called first (done in services/sentry.ts above).
-// Guard against any edge-case where wrap returns falsy by falling back to RootLayout directly.
-const WrappedLayout = Sentry.wrap(RootLayout);
-export default WrappedLayout ?? RootLayout;
+// Sentry.wrap was removed in @sentry/react-native v8. Calling a non-existent
+// function threw a TypeError on module load, preventing Expo Router from ever
+// receiving a default export — which surfaced as:
+//   ReferenceError: Can't find variable: App
+// Error monitoring is provided by <ErrorBoundary> (uses Sentry.captureException
+// internally) and the Sentry.init() call in services/sentry.ts above.
+export default RootLayout;
