@@ -44,7 +44,7 @@ interface CollectionCard {
   description?: string;
   brandName?: string;
   brandIcon?: string;
-  maxHealth: number;
+  maxHealth?: number;
   mbPrice?: number;
   isActive: boolean;
 }
@@ -188,7 +188,6 @@ function ShopTab({
   const [shopCards, setShopCards] = useState<CollectionCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(false);
-  // IDs of collectionCards purchased this session (derives "Куплено" badge)
   const [sessionPurchasedIds, setSessionPurchasedIds] = useState<Set<string>>(new Set());
   const [nextRefresh, setNextRefresh] = useState<Date>(() => {
     const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS); return d;
@@ -199,11 +198,10 @@ function ShopTab({
   const [successCard, setSuccessCard] = useState<CollectionCard | null>(null);
   const successAnim = useRef(new Animated.Value(0)).current;
 
-  // Load ALL collection cards from backend (all rarities)
   const loadShopCards = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await apiClient.getCollection(); // no rarity filter → all
+      const { data } = await apiClient.getCollection();
       setAllCards(data ?? []);
       rollFromPool(data ?? []);
     } catch {
@@ -221,7 +219,6 @@ function ShopTab({
     setSessionPurchasedIds(new Set());
   }
 
-  // Timer tick
   useEffect(() => {
     const tick = () => setTimerMs(Math.max(0, nextRefresh.getTime() - Date.now()));
     tick();
@@ -229,7 +226,6 @@ function ShopTab({
     return () => clearInterval(id);
   }, [nextRefresh]);
 
-  // Auto-refresh when timer expires
   useEffect(() => {
     if (timerMs === 0 && allCards.length > 0) {
       const d = new Date(); d.setHours(d.getHours() + REFRESH_HOURS);
@@ -266,9 +262,8 @@ function ShopTab({
     setBuying(true);
     try {
       const { data } = await apiClient.buyCard(confirmCard.id);
-      // data = { userCard, mbPoints, price }
       setSessionPurchasedIds((prev) => new Set([...prev, confirmCard.id]));
-      onPurchaseSuccess(data.mbPoints); // sync MB balance to parent
+      onPurchaseSuccess(data.mbPoints);
       setSuccessCard(confirmCard);
       successAnim.setValue(0);
       Animated.spring(successAnim, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }).start(
@@ -281,7 +276,6 @@ function ShopTab({
     }
   };
 
-  // A card is "purchased" if bought this session OR already in inventory
   const isPurchased = (card: CollectionCard) =>
     sessionPurchasedIds.has(card.id) || inventoryCollectionIds.has(card.id);
 
@@ -515,7 +509,6 @@ export default function CardsScreen() {
   const [sacrificeSource, setSacrificeSource] = useState<any>(null);
   const [isSacrificing, setIsSacrificing] = useState(false);
 
-  // P05-T2 — SacrificeOverlay state (replaces Alert.alert at former L729).
   const [sacrificeOverlayVisible, setSacrificeOverlayVisible] = useState(false);
   const [sacrificeTarget, setSacrificeTarget] = useState<any>(null);
   const [sacrificeHealAmount, setSacrificeHealAmount] = useState(0);
@@ -524,18 +517,16 @@ export default function CardsScreen() {
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
   const [isEquipping, setIsEquipping] = useState(false);
 
-  // P04 D-13 — ConfirmDialog state for tap-to-remove (replaces Alert.alert at L563).
+  // P04 D-13 — ConfirmDialog state for tap-to-remove.
   const [removeConfirmVisible, setRemoveConfirmVisible] = useState(false);
   const [cardToRemove, setCardToRemove] = useState<any>(null);
 
-  // P04 D-12 — active-deck cross-fade swap state.
   const [swappingDeckId, setSwappingDeckId] = useState<string | null>(null);
   const reducedMotion = useReducedMotion();
   const register = useCancellableAnimation();
   const swapOpacity = register(useSharedValue(1));
   const swapAnimStyle = useAnimatedStyle(() => ({ opacity: swapOpacity.value }));
 
-  // P04 D-10/D-11 — drag-to-equip gesture state.
   const dragX = register(useSharedValue(0));
   const dragY = register(useSharedValue(0));
   const dragScale = register(useSharedValue(1));
@@ -628,7 +619,7 @@ export default function CardsScreen() {
       try {
         useStore.getState().toast.show(msg, 'error');
       } catch {
-        // Toast unavailable in tests — silent fallback (no Alert.alert).
+        // Toast unavailable in tests — silent fallback.
       }
     } finally {
       setIsEquipping(false);
@@ -1019,7 +1010,10 @@ export default function CardsScreen() {
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>⚡ Жертвоприношение</Text>
-                <Text style={styles.modalSubtitle}>Жертва: {sacrificeSource?.collectionCard?.name}</Text>
+                {/* fix: используем collectionCard.name вместо прямого .name */}
+                <Text style={styles.modalSubtitle}>
+                  Жертва: {sacrificeSource?.collectionCard?.name ?? sacrificeSource?.name ?? '?'}
+                </Text>
               </View>
               <TouchableOpacity onPress={() => { setSacrificeStep('idle'); setSacrificeSource(null); }}>
                 <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
@@ -1059,22 +1053,45 @@ export default function CardsScreen() {
       </Modal>
 
       {/* P05-T2 — SacrificeOverlay */}
+      {/* fix: sourceCard передаётся как userCard; SacrificeOverlay теперь
+          резолвит имя через resolveCardName(collectionCard.name) внутри */}
       <SacrificeOverlay
         visible={sacrificeOverlayVisible}
         sourceCard={sacrificeSource}
         targetCard={sacrificeTarget}
         healAmount={sacrificeHealAmount}
+        onDismiss={() => setSacrificeOverlayVisible(false)}
         onComplete={runActualSacrifice}
       />
 
       {/* P04 D-13 — ConfirmDialog for deck-slot removal */}
+      {/* fix: было onCancel (несуществующий проп) → теперь onDismiss закрывает
+          диалог и сбрасывает cardToRemove; confirmButton.onPress выполняет
+          удаление и закрывает диалог после завершения операции */}
       <ConfirmDialog
         visible={removeConfirmVisible}
         title="Убрать карту из колоды?"
-        message={cardToRemove ? `«${cardToRemove.collectionCard?.name}» будет снята со слота.` : ''}
+        message={
+          cardToRemove
+            ? `«${
+                cardToRemove.collectionCard?.name ??
+                cardToRemove.collectionCard?.brandName ??
+                cardToRemove.name ??
+                'Карта'
+              }» будет снята со слота.`
+            : ''
+        }
         confirmLabel="Убрать"
-        onConfirm={() => { setRemoveConfirmVisible(false); handleConfirmRemove(); }}
-        onCancel={() => { setRemoveConfirmVisible(false); setCardToRemove(null); }}
+        onDismiss={() => {
+          setRemoveConfirmVisible(false);
+          setCardToRemove(null);
+        }}
+        confirmButton={{
+          onPress: () => {
+            setRemoveConfirmVisible(false);
+            handleConfirmRemove();
+          },
+        }}
       />
 
       {/* Detail Modal */}
@@ -1083,7 +1100,10 @@ export default function CardsScreen() {
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { maxHeight: '80%' }]}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{selectedCard.collectionCard?.name}</Text>
+                {/* fix: имя из collectionCard.name */}
+                <Text style={styles.modalTitle}>
+                  {selectedCard.collectionCard?.name ?? selectedCard.name ?? '?'}
+                </Text>
                 <TouchableOpacity onPress={() => setDetailModalVisible(false)}>
                   <MaterialIcons name="close" size={24} color={colors.onSurfaceVariant} />
                 </TouchableOpacity>
@@ -1103,7 +1123,6 @@ export default function CardsScreen() {
                     {selectedCard.collectionCard.description}
                   </Text>
                 )}
-                {/* Кнопка жертвования — увеличена до полноразмерной CTA */}
                 <TouchableOpacity
                   style={styles.sacrificeBtn}
                   onPress={() => handleStartSacrifice(selectedCard)}
@@ -1236,7 +1255,6 @@ function getStyles(colors: any) {
     pickerItemName: { fontSize: Fonts.sizes.base, fontFamily: 'Manrope-Bold', color: colors.onSurface },
     pickerItemDetails: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-Medium', color: colors.onSurfaceVariant },
     pickerRarity: { fontSize: Fonts.sizes.xs, fontFamily: 'Manrope-ExtraBold' },
-    // Кнопка жертвования — увеличенная полноразмерная CTA
     sacrificeBtn: {
       flexDirection: 'row',
       alignItems: 'center',
