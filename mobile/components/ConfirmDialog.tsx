@@ -25,7 +25,15 @@ export interface ConfirmDialogButton {
 
 export interface ConfirmDialogProps {
   visible: boolean;
-  onDismiss: () => void;
+  /**
+   * Called when the dialog should be dismissed (backdrop tap, cancel button,
+   * or confirm button when suppressDismissOnConfirm is false).
+   *
+   * Optional — some orchestrating components (e.g. SacrificeOverlay) manage
+   * their own close lifecycle and intentionally omit this prop. When absent,
+   * all internal dismiss paths become no-ops via optional chaining.
+   */
+  onDismiss?: () => void;
   title: string;
   message?: string;
   confirmLabel: string;
@@ -34,10 +42,9 @@ export interface ConfirmDialogProps {
   cancelButton?: ConfirmDialogButton;
   isDestructive?: boolean;
   /**
-   * Когда true — кнопка подтверждения НЕ вызывает onDismiss автоматически.
-   * Используется для сценариев, где подтверждение запускает собственный флоу
-   * (анимацию, async-операцию) и управляет закрытием самостоятельно.
-   * По умолчанию false (обратная совместимость).
+   * When true — the confirm button does NOT call onDismiss automatically.
+   * Used for flows that launch their own animation/async and own the close.
+   * Default false (backward compatible).
    */
   suppressDismissOnConfirm?: boolean;
 }
@@ -84,8 +91,7 @@ export function ConfirmDialog({
   return (
     <Modal transparent visible={visible} statusBarTranslucent animationType="none" accessibilityViewIsModal>
       <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, overlayStyle]}>
-        {/* fix: guard with ?? undefined so backdrop tap is a no-op when
-            onDismiss is not provided (e.g. SacrificeOverlay owns dismissal) */}
+        {/* Backdrop tap: no-op when onDismiss is absent */}
         <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss ?? undefined} accessibilityLabel="Закрыть" />
       </Animated.View>
       <View style={styles.center} pointerEvents="box-none">
@@ -103,7 +109,7 @@ export function ConfirmDialog({
               style={[styles.btnBase, styles.btnCancel]}
               onPress={() => {
                 cancelButton?.onPress?.();
-                // fix: optional chaining prevents crash when onDismiss is undefined
+                // Optional chaining: safe when onDismiss is absent
                 onDismiss?.();
               }}
               activeOpacity={0.75}
@@ -117,10 +123,9 @@ export function ConfirmDialog({
               style={[styles.btnBase, styles.btnPrimary, { backgroundColor: primaryBg }]}
               onPress={() => {
                 confirmButton?.onPress?.();
-                // fix: если suppressDismissOnConfirm=true — НЕ вызываем onDismiss,
-                // чтобы не сбросить phase/state до завершения флоу (например,
-                // SacrificeOverlay управляет закрытием через onComplete).
-                // Optional chaining guards against undefined onDismiss.
+                // suppressDismissOnConfirm=true: caller owns the close lifecycle
+                // (e.g. SacrificeOverlay animates then calls onComplete).
+                // Optional chaining guards against absent onDismiss.
                 if (!suppressDismissOnConfirm) {
                   onDismiss?.();
                 }

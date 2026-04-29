@@ -605,6 +605,9 @@ export default function CardsScreen() {
     setRemoveConfirmVisible(true);
   };
 
+  // fix(Bug2): dialog close + state reset moved into finally so they fire on
+  // both success and error paths. confirmButton.onPress no longer duplicates
+  // the close — it only triggers the async work.
   const handleConfirmRemove = async () => {
     const card = cardToRemove;
     if (!activeDeck || !card) return;
@@ -623,6 +626,8 @@ export default function CardsScreen() {
       }
     } finally {
       setIsEquipping(false);
+      // Always close the dialog and clear state, regardless of success/error.
+      setRemoveConfirmVisible(false);
       setCardToRemove(null);
     }
   };
@@ -1010,9 +1015,18 @@ export default function CardsScreen() {
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>⚡ Жертвоприношение</Text>
-                {/* fix: используем collectionCard.name вместо прямого .name */}
+                {/*
+                  fix(Bug1): sacrificeSource is a userCard object — name lives
+                  in collectionCard.name, not at the top level. Fallback chain:
+                  collectionCard.name → collectionCard.brandName → name → '?'
+                */}
                 <Text style={styles.modalSubtitle}>
-                  Жертва: {sacrificeSource?.collectionCard?.name ?? sacrificeSource?.name ?? '?'}
+                  Жертва: {
+                    sacrificeSource?.collectionCard?.name ??
+                    sacrificeSource?.collectionCard?.brandName ??
+                    sacrificeSource?.name ??
+                    '?'
+                  }
                 </Text>
               </View>
               <TouchableOpacity onPress={() => { setSacrificeStep('idle'); setSacrificeSource(null); }}>
@@ -1053,8 +1067,10 @@ export default function CardsScreen() {
       </Modal>
 
       {/* P05-T2 — SacrificeOverlay */}
-      {/* fix: sourceCard передаётся как userCard; SacrificeOverlay теперь
-          резолвит имя через resolveCardName(collectionCard.name) внутри */}
+      {/*
+        sourceCard is passed as a userCard object; SacrificeOverlay resolves
+        the display name via resolveCardName(collectionCard.name) internally.
+      */}
       <SacrificeOverlay
         visible={sacrificeOverlayVisible}
         sourceCard={sacrificeSource}
@@ -1064,10 +1080,15 @@ export default function CardsScreen() {
         onComplete={runActualSacrifice}
       />
 
-      {/* P04 D-13 — ConfirmDialog for deck-slot removal */}
-      {/* fix: было onCancel (несуществующий проп) → теперь onDismiss закрывает
-          диалог и сбрасывает cardToRemove; confirmButton.onPress выполняет
-          удаление и закрывает диалог после завершения операции */}
+      {/*
+        P04 D-13 — ConfirmDialog for deck-slot removal.
+
+        fix(Bug2): onDismiss is now wired so the dialog closes on cancel /
+        backdrop tap. confirmButton.onPress only triggers handleConfirmRemove;
+        the actual state reset (setRemoveConfirmVisible + setCardToRemove) now
+        lives in handleConfirmRemove's finally block, so it fires on both
+        success and error paths without a double-close race.
+      */}
       <ConfirmDialog
         visible={removeConfirmVisible}
         title="Убрать карту из колоды?"
@@ -1087,10 +1108,7 @@ export default function CardsScreen() {
           setCardToRemove(null);
         }}
         confirmButton={{
-          onPress: () => {
-            setRemoveConfirmVisible(false);
-            handleConfirmRemove();
-          },
+          onPress: handleConfirmRemove,
         }}
       />
 
@@ -1100,7 +1118,7 @@ export default function CardsScreen() {
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { maxHeight: '80%' }]}>
               <View style={styles.modalHeader}>
-                {/* fix: имя из collectionCard.name */}
+                {/* fix(Bug1): name from collectionCard.name */}
                 <Text style={styles.modalTitle}>
                   {selectedCard.collectionCard?.name ?? selectedCard.name ?? '?'}
                 </Text>
